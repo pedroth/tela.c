@@ -5,6 +5,7 @@
 
 #include "time.h"
 #include <time.h>
+// for some reason can't make a single .h file with this function
 
 u32 get_time_ms(void) {
   struct timespec ts;

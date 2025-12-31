@@ -5,6 +5,20 @@
 #include <stdlib.h>
 #include <string.h>
 
+void process_window_events(Window *window) {
+    SDL_Event event;
+    while (SDL_PollEvent(&event)) {
+        if (event.type == SDL_QUIT || 
+           (event.type == SDL_WINDOWEVENT && event.window.event == SDL_WINDOWEVENT_CLOSE)) {
+            
+            // This is where your callback gets triggered
+            if (window->on_close_callback) {
+                window->on_close_callback(window, window->on_close_context);
+            }
+        }
+    }
+}
+
 Window *new_window(i32 width, i32 height, const char *title) {
   Window *window = (Window *)malloc(sizeof(Window));
   window->width = width;
@@ -26,7 +40,7 @@ Window *new_window(i32 width, i32 height, const char *title) {
   // Initialize renderer and texture
   SDL_Renderer *renderer = SDL_CreateRenderer(
       sdl_window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
-  SDL_Texture *texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888,
+  SDL_Texture *texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA8888,
                                            SDL_TEXTUREACCESS_STREAMING,
                                            window->width, window->height);
   if (!sdl_window || !renderer || !texture) {
@@ -48,10 +62,10 @@ Window *paint_window(Window *window, Tela *tela) {
     return window;
   }
 
+  process_window_events(window);
+
   const u32 pixel_count = (u32)(window->width * window->height);
-  /* Convert float image data to ARGB8888 format
-     Compute mapping from window (i=row, j=col) to tela (tx, ty) and
-     account for color channels when indexing `tela->image`. */
+  // Convert float image data to RGBA8888 format
   for (u32 k = 0; k < pixel_count; k++) {
     u32 i = k / window->width;   // row
     u32 j = k % window->width;   // column
@@ -71,9 +85,9 @@ Window *paint_window(Window *window, Tela *tela) {
     b = (u8)(tela->image[tela_index + 2] * 255.0f);
     a = (u8)(tela->image[tela_index + 3] * 255.0f);
 
-    /* Pack as ARGB8888 */
+    /* Pack as RGBA8888 */
     u32 window_index = i * window->width + j;
-    window->pixels[window_index] = (a << 24) | (r << 16) | (g << 8) | b;
+    window->pixels[window_index] = (r << 24) | (g << 16) | (b << 8) | a;
   }
 
   // Update texture with converted pixel data
@@ -95,6 +109,16 @@ Window *set_window_title(Window *window, const char *title) {
   window->title = (char *)malloc(strlen(title) + 1);
   strcpy(window->title, title);
   SDL_SetWindowTitle(window->sdl_window, title);
+  return window;
+}
+
+
+Window* on_close_window( Window *window, void (*callback)(Window *, void *), void *context) {
+  if (!window) {
+    return window;
+  }
+  window->on_close_callback = callback;
+  window->on_close_context = context;
   return window;
 }
 

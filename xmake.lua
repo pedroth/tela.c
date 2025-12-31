@@ -10,7 +10,7 @@ set_toolchains("clang")
 
 target("vec_benchmark")
     set_kind("binary")
-    add_files("src/Vector/Vec.c", "src/utils/random.c", "src/utils/time.c")
+    add_files("src/Vector/Vec.c", "src/utils/time.c")
     add_includedirs("src")
     add_packages("sdl2")
     add_links("SDL2")
@@ -35,6 +35,20 @@ target("simple_animation_window")
         "src/Color/Color.c",
         "src/Tela/Tela.c",
         "src/Tela/Window.c",
+        "src/utils/time.c"
+    )
+    add_includedirs("src")
+    add_packages("sdl2")
+    add_links("SDL2")
+
+target("amazing_shader_window")
+    set_kind("binary")
+    add_files(
+        "test/amazing_shader_window.c",
+        "src/Color/Color.c",
+        "src/Tela/Tela.c",
+        "src/Tela/Window.c",
+        "src/io/io.c",
         "src/utils/time.c"
     )
     add_includedirs("src")

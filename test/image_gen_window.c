@@ -15,11 +15,7 @@ Color *shader(u32 x, u32 y) {
 
 int main() {
   Tela *tela = new_tela(WIDTH, HEIGHT);
-  Window *window = new_window(WIDTH, HEIGHT, "Simple image");
   map_tela(tela, shader, NULL);
   tela_to_image(tela, "output.png");
-  while (true) {
-    paint_window(window, tela);
-  }
   return 0;
 }

@@ -4,6 +4,8 @@
 #include <stdlib.h>
 
 // Random double between 0.0 and 1.0
-double random_double();
+static inline double random_double(void) {
+  return (double)rand() / RAND_MAX;
+}
 
 #endif // RANDOM_H

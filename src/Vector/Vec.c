@@ -7,7 +7,7 @@
 #define _POSIX_C_SOURCE 200112L
 
 #include "Vec.h"
-#include "Utils/random.h"
+#include "utils/random.h"
 #include <assert.h>
 #include <math.h>
 #include <stdlib.h>
