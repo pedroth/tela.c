@@ -5,18 +5,58 @@
 #include <stdlib.h>
 #include <string.h>
 
+void transform_mouse_coordinates(Window *window, i32 x, i32 y, i32 out[2]) {
+  i32 transformed_x = x;
+  i32 transformed_y = window->height - 1 - y;
+  out[0] = transformed_x;
+  out[1] = transformed_y;
+}
+
 void process_window_events(Window *window) {
-    SDL_Event event;
-    while (SDL_PollEvent(&event)) {
-        if (event.type == SDL_QUIT || 
-           (event.type == SDL_WINDOWEVENT && event.window.event == SDL_WINDOWEVENT_CLOSE)) {
-            
-            // This is where your callback gets triggered
-            if (window->on_close_callback) {
-                window->on_close_callback(window, window->on_close_context);
-            }
-        }
+  SDL_Event event;
+  while (SDL_PollEvent(&event)) {
+    if (event.type == SDL_QUIT ||
+        (event.type == SDL_WINDOWEVENT &&
+         event.window.event == SDL_WINDOWEVENT_CLOSE)) {
+
+      // This is where your callback gets triggered
+      if (window->on_close_callback) {
+        window->on_close_callback(window, window->on_close_context);
+      }
+    } else if (event.type == SDL_MOUSEBUTTONDOWN) {
+      if (window->on_mouse_down_callback) {
+        i32 transformed_coords[2];
+        transform_mouse_coordinates(window, event.button.x, event.button.y,
+                                    transformed_coords);
+        window->on_mouse_down_callback(
+            window, transformed_coords[0], transformed_coords[1],
+            event.button.button, window->on_mouse_down_context);
+      }
+    } else if (event.type == SDL_MOUSEBUTTONUP) {
+      if (window->on_mouse_up_callback) {
+        i32 transformed_coords[2];
+        transform_mouse_coordinates(window, event.button.x, event.button.y,
+                                    transformed_coords);
+        window->on_mouse_up_callback(window, transformed_coords[0],
+                                     transformed_coords[1], event.button.button,
+                                     window->on_mouse_up_context);
+      }
+    } else if (event.type == SDL_MOUSEMOTION) {
+      if (window->on_mouse_move_callback) {
+        i32 transformed_coords[2];
+        transform_mouse_coordinates(window, event.motion.x, event.motion.y,
+                                    transformed_coords);
+        window->on_mouse_move_callback(window, transformed_coords[0],
+                                       transformed_coords[1],
+                                       window->on_mouse_move_context);
+      }
+    } else if (event.type == SDL_MOUSEWHEEL) {
+      if (window->on_mouse_scroll_callback) {
+        window->on_mouse_scroll_callback(window, event.wheel.y,
+                                         window->on_mouse_scroll_context);
+      }
     }
+  }
 }
 
 Window *new_window(i32 width, i32 height, const char *title) {
@@ -67,8 +107,8 @@ Window *paint_window(Window *window, Tela *tela) {
   const u32 pixel_count = (u32)(window->width * window->height);
   // Convert float image data to RGBA8888 format
   for (u32 k = 0; k < pixel_count; k++) {
-    u32 i = k / window->width;   // row
-    u32 j = k % window->width;   // column
+    u32 i = k / window->width; // row
+    u32 j = k % window->width; // column
     /* normalized coordinates in [0,1) */
     f32 nx = (f32)j / (f32)window->width;  /* x fraction */
     f32 ny = (f32)i / (f32)window->height; /* y fraction */
@@ -112,13 +152,57 @@ Window *set_window_title(Window *window, const char *title) {
   return window;
 }
 
-
-Window* on_close_window( Window *window, void (*callback)(Window *, void *), void *context) {
+Window *on_close_window(Window *window, void (*callback)(Window *, void *),
+                        void *context) {
   if (!window) {
     return window;
   }
   window->on_close_callback = callback;
   window->on_close_context = context;
+  return window;
+}
+
+Window *on_mouse_down_window(Window *window,
+                             void (*callback)(Window *, i32, i32, u32, void *),
+                             void *context) {
+  if (!window) {
+    return window;
+  }
+  window->on_mouse_down_callback = callback;
+  window->on_mouse_down_context = context;
+  return window;
+}
+
+Window *on_mouse_up_window(Window *window,
+                           void (*callback)(Window *, i32, i32, u32, void *),
+                           void *context) {
+  if (!window) {
+    return window;
+  }
+  window->on_mouse_up_callback = callback;
+  window->on_mouse_up_context = context;
+  return window;
+}
+
+Window *on_mouse_move_window(Window *window,
+                             void (*callback)(Window *, i32, i32, void *),
+                             void *context) {
+  if (!window) {
+    return window;
+  }
+  window->on_mouse_move_callback = callback;
+  window->on_mouse_move_context = context;
+  return window;
+}
+
+Window *on_mouse_scroll_window(Window *window,
+                               void (*callback)(Window *, i32, void *),
+                               void *context) {
+  if (!window) {
+    return window;
+  }
+  window->on_mouse_scroll_callback = callback;
+  window->on_mouse_scroll_context = context;
   return window;
 }
 
@@ -143,6 +227,22 @@ void free_window(Window *window) {
     free(window->title);
     window->title = NULL;
   }
-  SDL_Quit();
+  /* Clear any callback pointers/contexts to avoid dangling references */
+  window->on_close_callback = NULL;
+  window->on_close_context = NULL;
+  window->on_mouse_down_callback = NULL;
+  window->on_mouse_down_context = NULL;
+  window->on_mouse_up_callback = NULL;
+  window->on_mouse_up_context = NULL;
+  window->on_mouse_move_callback = NULL;
+  window->on_mouse_move_context = NULL;
+  window->on_mouse_scroll_callback = NULL;
+  window->on_mouse_scroll_context = NULL;
+
+  /* Only quit SDL if it was initialized by this process */
+  if (SDL_WasInit(SDL_INIT_VIDEO)) {
+    SDL_Quit();
+  }
+
   free(window);
 }

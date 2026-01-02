@@ -54,3 +54,16 @@ target("amazing_shader_window")
     add_includedirs("src")
     add_packages("sdl2")
     add_links("SDL2")
+
+target("wave_window")
+    set_kind("binary")
+    add_files(
+        "test/wave_window.c",
+        "src/Color/Color.c",
+        "src/Tela/Tela.c",
+        "src/Tela/Window.c",
+        "src/utils/time.c"
+    )
+    add_includedirs("src")
+    add_packages("sdl2")
+    add_links("SDL2")
