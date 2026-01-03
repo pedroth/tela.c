@@ -67,3 +67,18 @@ target("wave_window")
     add_includedirs("src")
     add_packages("sdl2")
     add_links("SDL2")
+
+target("mesh_viewer_window")
+    set_kind("binary")
+    add_files(
+        "test/mesh_viewer_window.c",
+        "src/Color/Color.c",
+        "src/Tela/Tela.c",
+        "src/Tela/Window.c",
+        "src/Vector/Vec.c",
+        "src/io/io.c",
+        "src/utils/time.c"
+    )
+    add_includedirs("src")
+    add_packages("sdl2")
+    add_links("SDL2")

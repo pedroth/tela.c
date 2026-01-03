@@ -3,10 +3,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#ifndef USE_STB
-// If stb isn't available, fall back to writing P3 (ASCII PPM)
-#endif
-
 void tela_to_p3(Tela *tela, const char *filename) {
   if (!tela || !tela->image) {
     return;
@@ -46,4 +42,27 @@ void tela_to_image(Tela *tela, const char *filename) {
   printf("Executing command: %s\n", command);
   system(command);
   remove(temp_ppm);
+}
+
+char *io_read_file(const char *filename) {
+  FILE *file = fopen(filename, "rb");
+  if (!file) {
+    return NULL;
+  }
+
+  fseek(file, 0, SEEK_END);
+  long length = ftell(file);
+  fseek(file, 0, SEEK_SET);
+
+  char *buffer = (char *)malloc(length + 1);
+  if (!buffer) {
+    fclose(file);
+    return NULL;
+  }
+
+  fread(buffer, 1, length, file);
+  buffer[length] = '\0';
+
+  fclose(file);
+  return buffer;
 }
