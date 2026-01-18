@@ -52,19 +52,23 @@ Tela *fill_tela(Tela *tela, Color color) {
   return tela;
 }
 
+Tela *draw_convex_polygon_tela(Tela *tela, Vec2 *polygon_pos, u32 vertex_count,
+                               Color *(*lambda)(u32, u32, void const *),
+                               void const *context) {
+  (void)polygon_pos;
+  (void)vertex_count;
+  (void)lambda;
+  (void)context;
+  // TODO: implement convex polygon drawing
+  return tela;
+}
+
 Tela *draw_triangle_tela(Tela *tela, Vec2 triangle_pos[3],
                          Color *(*lambda)(u32, u32, void const *),
                          void const *context) {
   return draw_convex_polygon_tela(tela, triangle_pos, 3, lambda, context);
 }
 
-Tela *draw_convex_polygon_tela(Tela *tela, Vec2 *polygon_pos, u32 vertex_count,
-                               Color *(*lambda)(u32, u32, void const *),
-                               void const *context) {
-  u32 width = tela->width;
-  u32 height = tela->height;
-
-}
 
 Vec2 canvas2grid(Tela *tela, u32 x, u32 y) {
   const u32 h = tela->height;

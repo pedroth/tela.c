@@ -23,6 +23,10 @@ target("image_gen_window")
         "src/Color/Color.c",
         "src/Tela/Tela.c",
         "src/Tela/Window.c",
+        "src/Vector/Vec.c",
+        "src/Vector/Vec2.c",
+        "src/Vector/Vec3.c",
+        "src/Geometry/AABB.c",
         "src/io/io.c"
     )
     add_includedirs("src")
@@ -36,6 +40,10 @@ target("simple_animation_window")
         "src/Color/Color.c",
         "src/Tela/Tela.c",
         "src/Tela/Window.c",
+        "src/Vector/Vec.c",
+        "src/Vector/Vec2.c",
+        "src/Vector/Vec3.c",
+        "src/Geometry/AABB.c",
         "src/utils/time.c"
     )
     add_includedirs("src")
@@ -49,6 +57,10 @@ target("amazing_shader_window")
         "src/Color/Color.c",
         "src/Tela/Tela.c",
         "src/Tela/Window.c",
+        "src/Vector/Vec.c",
+        "src/Vector/Vec2.c",
+        "src/Vector/Vec3.c",
+        "src/Geometry/AABB.c",
         "src/io/io.c",
         "src/utils/time.c"
     )
@@ -63,6 +75,10 @@ target("wave_window")
         "src/Color/Color.c",
         "src/Tela/Tela.c",
         "src/Tela/Window.c",
+        "src/Vector/Vec.c",
+        "src/Vector/Vec2.c",
+        "src/Vector/Vec3.c",
+        "src/Geometry/AABB.c",
         "src/utils/time.c"
     )
     add_includedirs("src")
