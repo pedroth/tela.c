@@ -40,8 +40,10 @@ void tela_to_image(Tela *tela, const char *filename) {
   char command[256];
   snprintf(command, sizeof(command), "ffmpeg -y -i %s %s", temp_ppm, filename);
   printf("Executing command: %s\n", command);
-  system(command);
-  remove(temp_ppm);
+  int ret = system(command);
+  if (ret == 0) {
+    remove(temp_ppm);
+  }
 }
 
 char *io_read_file(const char *filename) {

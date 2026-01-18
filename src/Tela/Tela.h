@@ -3,12 +3,14 @@
 
 #include "../Utils/types.h"
 #include "../Color/Color.h"
+#include "../Geometry/AABB.h"
 
 typedef struct {
     i32 width;
     i32 height;
     i32 channels;
     f32* image;
+    AABB box;
 } Tela;
 
 #define COLOR_CHANNELS 4
@@ -16,6 +18,7 @@ typedef struct {
 // Tela API
 Tela* new_tela(u32 width, u32 height);
 Tela* map_tela(Tela *tela, Color* (*func)(u32, u32, void const *), void const *context);
+Tela* tela_fill(Tela *tela, Color color);
 void free_tela(Tela *tela);
 
 #endif // TELA_H

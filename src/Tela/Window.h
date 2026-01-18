@@ -1,9 +1,9 @@
 #ifndef WINDOW_H
 #define WINDOW_H
 
+#include <SDL2/SDL.h>
 #include "../Utils/types.h"
 #include "Tela.h"
-#include <SDL2/SDL.h>
 
 // need to forward declare because of self-referential callback
 typedef struct Window Window;
@@ -29,8 +29,7 @@ struct Window {
   void (*on_mouse_move_callback)(Window *window, i32 x, i32 y, void *context);
   void *on_mouse_move_context;
 
-  void (*on_mouse_scroll_callback)(Window *window, i32 scroll_y,
-                                  void *context);
+  void (*on_mouse_scroll_callback)(Window *window, i32 scroll_y, void *context);
   void *on_mouse_scroll_context;
 };
 

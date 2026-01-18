@@ -7,7 +7,7 @@
 const u32 WIDTH = 640;
 const u32 HEIGHT = 480;
 
-Color *shader(u32 x, u32 y) {
+Color *shader(u32 x, u32 y, const void *context) {
   f32 fx = (f32)x / (f32)(WIDTH);
   f32 fy = (f32)y / (f32)(HEIGHT);
   return new_color(fx, fy, 0.0f);

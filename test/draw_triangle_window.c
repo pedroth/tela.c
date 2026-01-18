@@ -23,16 +23,21 @@
 typedef struct {
   Tela *tela;
   Window *window;
-  Camera *camera;
-  Scene *scene;
 } AnimeContext;
 
 void anime_lambda(f32 dt, f32 time, void *context) {
   AnimeContext *anime_context = (AnimeContext *)context;
+  Tela *tela = anime_context->tela;
+  tela_fill(tela, (Color){0.0f, 0.0f, 0.0f, 1.0f});
+  Vec2 triangle_pos[3] = {
+      vec2(-0.5f, -0.5f),
+      vec2(0.5f, -0.5f),
+      vec2(0.0f, 0.5f),
+  };
+  draw_triangle(triangle_pos, tela, sg); // Draw triangle in blue color
   set_window_title(anime_context->window,
                    format_string("FPS: %.2f", 1.0f / dt));
-  raster_scene(anime_context->camera, anime_context->scene, anime_context->tela,
-               NULL);
+
   paint_window(anime_context->window, anime_context->tela);
 }
 
@@ -87,61 +92,18 @@ Vec3 transform_mesh2(const Vec3 v) {
 Vec3 transform_mesh3(const Vec3 v) { return vec3(v.x, v.z, v.y); }
 
 int main() {
-  NaiveScene scene = new_scene();
 
-  Camera camera = {.position = vec3(3, 0, 0),
-                   .look_at = vec3(0, 0, 0),
-                   .distance_to_plane = 1.0f};
-  set_orbit_camera(&camera, MAX_RADIUS, PI, 0.0f);
+  Vec2 triangle_pos[3] = {
+      vec2(-0.5f, -0.5f),
+      vec2(0.5f, -0.5f),
+      vec2(0.0f, 0.5f),
+  };
 
-  Triangle triangle = build_triangle(
-      "triangle1",
-      (Vec3[]){vec3(1.0f, 0.0f, 0.0f), vec3(0.0f, 1.0f, 0.0f),
-               vec3(0.0f, 0.0f, 1.0f)},
-      NULL, (Vec2[]){vec2(0.0f, 0.0f), vec2(1.0f, 0.0f), vec2(0.5f, 1.0f)},
-      (Color[]){{1.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 1.0f}},
-      NULL);
-  add_triangle_to_scene(&scene, &triangle);
-
-  Window *window = new_window(WIDTH, HEIGHT, "Mesh");
+  Window *window = new_window(WIDTH, HEIGHT, "Draw Triangle");
   Tela *tela = new_tela(WIDTH, HEIGHT);
-  AnimeContext anime_context = {tela, window, &camera, &scene};
+  AnimeContext anime_context = {tela, window};
   Loop *anime_loop = loop(anime_lambda, &anime_context);
   on_close_window(window, on_close_lambda, anime_loop);
-  handle_window_events(window, &camera);
   // must be last function to be called in main
   play_loop(anime_loop);
 }
-
-// int main0() {
-//   // NaiveScene scene = {0};
-//   Camera camera = {.position = vec3(3, 0, 0),
-//                    .look_at = vec3(0, 0, 0),
-//                    .distance_to_plane = 1.0f};
-//   set_orbit_camera(&camera, MAX_RADIUS, PI, 0.0f);
-
-//   char *obj_file = io_read_file("assets/megaman.obj");
-//   Mesh mesh = parse_obj_mesh(obj_file, "mesh");
-//   free(obj_file);
-//   AABB box = get_mesh_aabb(&mesh);
-//   // f32 scale_inv =
-//   //     2.0f / fold_vec(get_aabb_diagonal(box), get_max_fold, -INFINITY);
-//   // map_vertices_mesh(mesh, transform_mesh1);
-//   // map_vertices_mesh(mesh, transform_mesh2);
-//   // map_vertices_mesh(mesh, transform_mesh3);
-//   // add_texture_to_mesh(mesh, "test/assets/mesh/bunny_texture.png");
-
-//   // add_triangles_to_scene(scene, get_triangles(mesh));
-
-//   // Window *window = new_window(WIDTH, HEIGHT, "Mesh");
-//   // Tela *tela = new_tela(WIDTH, HEIGHT);
-
-//   // AnimeContext anime_context = {tela, window, &camera, &scene};
-//   // Loop *anime_loop = loop(anime_lambda, &anime_context);
-//   // on_close_window(window, on_close_lambda, anime_loop);
-//   // handle_window_events(window, &camera);
-//   // // must be last function to be called in main
-//   // play_loop(anime_loop);
-//   printf("Obj file content:\n%s\n", obj_file);
-//   return 0;
-// }

@@ -17,6 +17,7 @@ target("vec_benchmark")
 
 target("image_gen_window")
     set_kind("binary")
+    set_rundir("$(projectdir)")
     add_files(
         "test/image_gen_window.c",
         "src/Color/Color.c",
@@ -76,6 +77,16 @@ target("mesh_viewer_window")
         "src/Tela/Tela.c",
         "src/Tela/Window.c",
         "src/Vector/Vec.c",
+        "src/Vector/Vec2.c",
+        "src/Vector/Vec3.c",
+        "src/Camera/Camera.c",
+        "src/Camera/raster.c",
+        "src/Geometry/Mesh.c",
+        "src/Geometry/Triangle.c",
+        "src/Geometry/AABB.c",
+        "src/Scene/Scene.c",
+        "src/Utils/Array.c",
+        "src/Utils/strings.c",
         "src/io/io.c",
         "src/utils/time.c"
     )
