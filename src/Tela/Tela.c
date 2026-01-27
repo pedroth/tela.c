@@ -9,7 +9,8 @@ Tela *new_tela(u32 width, u32 height) {
   tela->width = width;
   tela->height = height;
   tela->channels = COLOR_CHANNELS;
-  tela->box = build_aabb(vec3(0.0f, 0.0f, 0.0f), vec3((f32)width, (f32)height, 0.0f));
+  tela->box =
+      build_aabb(vec3(0.0f, 0.0f, 0.0f), vec3((f32)width, (f32)height, 0.0f));
   tela->image = (f32 *)calloc(width * height * COLOR_CHANNELS, sizeof(f32));
   return tela;
 }
@@ -55,11 +56,35 @@ Tela *fill_tela(Tela *tela, Color color) {
 Tela *draw_convex_polygon_tela(Tela *tela, Vec2 *polygon_pos, u32 vertex_count,
                                Color *(*lambda)(u32, u32, void const *),
                                void const *context) {
-  (void)polygon_pos;
-  (void)vertex_count;
-  (void)lambda;
-  (void)context;
-  // TODO: implement convex polygon drawing
+  const {width, height} = tela;
+  u32 width = tela->width;
+  u32 height = tela->height;
+  AABB box = tela->box;
+  AABB boundingBox = EMPTY_AABB;
+  positions.forEach((x) = > { boundingBox = boundingBox.add(new Box(x, x)); });
+  const finalBox = canvasBox.intersection(boundingBox);
+  if (finalBox.isEmpty)
+    return tela;
+  const[xMin, yMin] = finalBox.min.toArray();
+  const[xMax, yMax] = finalBox.max.toArray();
+
+  const isInsideFunc = isInsideConvex(positions);
+  for (let x = xMin; x < xMax; x++) {
+    for (let y = yMin; y < yMax; y++) {
+      if (isInsideFunc(Vec2(x, y))) {
+        const j = x;
+        const i = height - 1 - y;
+        const color = shader(x, y);
+        if (!color)
+          continue;
+        const index = CHANNELS * (i * width + j);
+        tela.image[index] = color.red;
+        tela.image[index + 1] = color.green;
+        tela.image[index + 2] = color.blue;
+        tela.image[index + 3] = color.alpha;
+      }
+    }
+  }
   return tela;
 }
 
@@ -68,7 +93,6 @@ Tela *draw_triangle_tela(Tela *tela, Vec2 triangle_pos[3],
                          void const *context) {
   return draw_convex_polygon_tela(tela, triangle_pos, 3, lambda, context);
 }
-
 
 Vec2 canvas2grid(Tela *tela, u32 x, u32 y) {
   const u32 h = tela->height;

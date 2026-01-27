@@ -28,17 +28,19 @@ typedef struct {
 void anime_lambda(f32 dt, f32 time, void *context) {
   AnimeContext *anime_context = (AnimeContext *)context;
   Tela *tela = anime_context->tela;
+  Window * window = anime_context->window;
+
   tela_fill(tela, (Color){0.0f, 0.0f, 0.0f, 1.0f});
   Vec2 triangle_pos[3] = {
       vec2(-0.5f, -0.5f),
       vec2(0.5f, -0.5f),
       vec2(0.0f, 0.5f),
   };
-  draw_triangle(triangle_pos, tela, sg); // Draw triangle in blue color
-  set_window_title(anime_context->window,
+  draw_triangle_tela(tela, triangle_pos, (Color){0.0f, 0.0f, 1.0f, 1.0f}); // Draw triangle in blue color
+  set_window_title(window,
                    format_string("FPS: %.2f", 1.0f / dt));
 
-  paint_window(anime_context->window, anime_context->tela);
+  paint_window(window, tela);
 }
 
 void on_close_lambda(Window *window, void *context) {
