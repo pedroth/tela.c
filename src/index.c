@@ -393,9 +393,9 @@ typedef struct {
 #define COLOR_CHANNELS 4
 
 typedef struct {
-  i32 width;
-  i32 height;
-  i32 channels;
+  u32 width;
+  u32 height;
+  u32 channels;
   f32 *image;
   AABB_2D box;
 } Tela;
@@ -626,12 +626,14 @@ static inline Tela *draw_line_tela(Tela *tela, const Line_2D *line,
   for (u32 k = 0; k < n; k++) {
     f32 s = k / (nf - 1.0f);
     Vec2 lineP = add_vec2(pi, scale_vec2(v, s));
-    i32 x = (i32)floorf(lineP.x);
-    i32 y = (i32)floorf(lineP.y);
-    i32 j = x;
-    i32 i = (i32)h - 1 - y;
-    u32 index = COLOR_CHANNELS * (i * (i32)w + j);
-    Color color = func((u32)x, (u32)y, &clipped_line, context);
+    u32 x = floorf(lineP.x);
+    u32 y = floorf(lineP.y);
+    if(x < 0 || x >= w || y < 0 || y >= h)
+      continue;
+    u32 j = x;
+    u32 i = h - 1 - y;
+    u32 index = COLOR_CHANNELS * (i * w + j);
+    Color color = func(x, y, &clipped_line, context);
     if (color.alpha == 0.0f)
       continue;
     tela->image[index] = color.red;
