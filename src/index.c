@@ -64,6 +64,92 @@ static inline double random_double(void) { return (double)rand() / RAND_MAX; }
 
 //========================================================================================
 /*                                                                                      *
+ *                                         ARRAY *
+ *                                                                                      */
+//========================================================================================
+
+typedef struct {
+  void *data;
+  u32 length;
+  u32 capacity;
+  u32 element_size;
+} Array;
+
+Array new_array(u32 capacity, u32 element_size) {
+  Array array;
+  array.data = malloc(capacity * element_size);
+  array.length = 0;
+  array.capacity = capacity;
+  array.element_size = element_size;
+  return array;
+}
+
+bool push_array(Array *a, const void *element) {
+  // Grow array if at capacity
+  if (a->length >= a->capacity) {
+    u32 new_capacity = (a->capacity == 0) ? 4 : a->capacity * 2;
+    void *new_data = realloc(a->data, new_capacity * a->element_size);
+    if (!new_data) {
+      return false;
+    }
+    a->data = new_data;
+    a->capacity = new_capacity;
+  }
+
+  // Copy element to end of array
+  char *destination = (char *)a->data + (a->length * a->element_size);
+  memcpy(destination, element, a->element_size);
+  a->length++;
+
+  return true;
+}
+
+Array filter_array(Array *a, bool (*func)(void *element, u32 index)) {
+  Array ans = new_array(a->capacity, a->element_size);
+  for (u32 i = 0; i < a->length; i++) {
+    void *element = (char *)a->data + (i * a->element_size);
+    if (func(element, i)) {
+      push_array(&ans, element);
+    }
+  }
+  return ans;
+}
+
+void *get_array_element(Array *a, u32 index) {
+  if (index >= a->length || index < 0) {
+    return NULL;
+  }
+  char *base = (char *)a->data;
+  u32 offset = index * a->element_size;
+  return base + offset;
+}
+
+void *pop_array(Array *a) {
+  if (a->length == 0) {
+    return NULL;
+  }
+
+  a->length--;
+  if (a->length > 0 && a->length <= a->capacity / 4) {
+    u32 new_cap = a->capacity / 2;
+    void *new_data = realloc(a->data, new_cap * a->element_size);
+    if (new_data) {
+      a->data = new_data;
+      a->capacity = new_cap;
+    }
+  }
+  return (char *)a->data + (a->length * a->element_size);
+}
+
+void free_array(Array *array) {
+  free(array->data);
+  array->data = NULL;
+  array->length = 0;
+  array->capacity = 0;
+}
+
+//========================================================================================
+/*                                                                                      *
  *                                         VEC2 *
  *                                                                                      */
 //========================================================================================
@@ -217,6 +303,22 @@ static inline bool equals_vec3(const Vec3 a, const Vec3 b) {
          fabsf(a.z - b.z) < EPSILON;
 }
 
+static inline Vec3 map_vec3(Vec3 v, f32 (*func)(f32)) {
+  Vec3 result;
+  result.x = func(v.x);
+  result.y = func(v.y);
+  result.z = func(v.z);
+  return result;
+}
+
+static inline Vec3 op_vec3(Vec3 a, Vec3 b, f32 (*func)(f32, f32)) {
+  Vec3 result;
+  result.x = func(a.x, b.x);
+  result.y = func(a.y, b.y);
+  result.z = func(a.z, b.z);
+  return result;
+}
+
 //========================================================================================
 /*                                                                                      *
  *                                         COLOR *
@@ -307,6 +409,16 @@ static inline bool collides_aabb_2d(const AABB_2D *box, const AABB_2D *other) {
   return !sub_aabb_2d(box, other).is_empty;
 }
 
+static inline f32 max_comp_vec2(const Vec2 v) { return fmaxf(v.x, v.y); }
+
+static inline f32 distance_aabb_2d(const AABB_2D *box, const Vec2 point) {
+  const Vec2 p = sub_vec2(point, box->center);
+  const Vec2 r = sub_vec2(box->max, box->center);
+  const Vec2 q = sub_vec2(map_vec2(p, fabsf), r);
+  return length_vec2(op_vec2(q, vec2(0, 0), fmaxf)) +
+         fminf(0, max_comp_vec2(q));
+}
+
 //========================================================================================
 /*                                                                                      *
  *                                         AABB *
@@ -358,6 +470,37 @@ static inline AABB union_aabb(const AABB *a, const AABB *b) {
   Vec3 new_max = vec3(fmaxf(a->max.x, b->max.x), fmaxf(a->max.y, b->max.y),
                       fmaxf(a->max.z, b->max.z));
   return build_aabb(new_min, new_max);
+}
+
+static inline AABB sub_aabb(const AABB *box, const AABB *other) {
+  if (box->is_empty || other->is_empty)
+    return EMPTY_AABB;
+  Vec3 new_min =
+      vec3(fmaxf(box->min.x, other->min.x), fmaxf(box->min.y, other->min.y),
+           fmaxf(box->min.z, other->min.z));
+  Vec3 new_max =
+      vec3(fminf(box->max.x, other->max.x), fminf(box->max.y, other->max.y),
+           fminf(box->max.z, other->max.z));
+  const Vec3 new_diag = sub_vec3(new_max, new_min);
+  const bool is_all_positive =
+      new_diag.x >= 0 && new_diag.y >= 0 && new_diag.z >= 0;
+  return is_all_positive ? build_aabb(new_min, new_max) : EMPTY_AABB;
+}
+
+static inline bool collides_aabb(const AABB *box, const AABB *other) {
+  return !sub_aabb(box, other).is_empty;
+}
+
+static inline f32 max_comp_vec3(const Vec3 v) {
+  return fmaxf(fmaxf(v.x, v.y), v.z);
+}
+
+static inline f32 distance_aabb(const AABB *box, const Vec3 point) {
+  const Vec3 p = sub_vec3(point, box->center);
+  const Vec3 r = sub_vec3(box->max, box->center);
+  const Vec3 q = sub_vec3(map_vec3(p, fabsf), r);
+  return length_vec3(op_vec3(q, vec3(0, 0, 0), fmaxf)) +
+         fminf(0, max_comp_vec3(q));
 }
 
 //========================================================================================
@@ -628,7 +771,7 @@ static inline Tela *draw_line_tela(Tela *tela, const Line_2D *line,
     Vec2 lineP = add_vec2(pi, scale_vec2(v, s));
     u32 x = floorf(lineP.x);
     u32 y = floorf(lineP.y);
-    if(x < 0 || x >= w || y < 0 || y >= h)
+    if (x < 0 || x >= w || y < 0 || y >= h)
       continue;
     u32 j = x;
     u32 i = h - 1 - y;
@@ -755,6 +898,42 @@ static inline char *format_string(const char *fmt, ...) {
 
   return buffer;
 }
+
+//========================================================================================
+/*                                                                                      *
+ *                                         LOOP *
+ *                                                                                      */
+//========================================================================================
+
+typedef struct {
+  void (*update)(f32, f32, void *context);
+  void *context;
+  bool running;
+} Loop;
+
+static inline void stop_loop(Loop *loop) { loop->running = false; }
+
+static inline Loop *loop(void (*update)(f32, f32, void *ctx), void *context) {
+  Loop *new_loop = (Loop *)malloc(sizeof(Loop));
+  new_loop->update = update;
+  new_loop->context = context;
+  new_loop->running = true;
+  return new_loop;
+}
+
+static inline void play_loop(Loop *loop) {
+  u32 old_time = get_time_ms();
+  f32 time = 0.0f;
+  while (loop->running) {
+    f32 dt = (get_time_ms() - old_time) / 1000.0f;
+    old_time = get_time_ms();
+    time += dt;
+    loop->update(dt, time, loop->context);
+  }
+}
+
+static inline void free_loop(Loop *loop) { free(loop); }
+
 //========================================================================================
 /*                                                                                      *
  *                                        WINDOW *
@@ -1015,123 +1194,122 @@ static inline void free_window(Window *window) {
 
 //========================================================================================
 /*                                                                                      *
- *                                         LOOP *
+ *                                       CAMERA_2D *
  *                                                                                      */
 //========================================================================================
 
 typedef struct {
-  void (*update)(f32, f32, void *context);
-  void *context;
-  bool running;
-} Loop;
-
-static inline void stop_loop(Loop *loop) { loop->running = false; }
-
-static inline Loop *loop(void (*update)(f32, f32, void *ctx), void *context) {
-  Loop *new_loop = (Loop *)malloc(sizeof(Loop));
-  new_loop->update = update;
-  new_loop->context = context;
-  new_loop->running = true;
-  return new_loop;
-}
-
-static inline void play_loop(Loop *loop) {
-  u32 old_time = get_time_ms();
-  f32 time = 0.0f;
-  while (loop->running) {
-    f32 dt = (get_time_ms() - old_time) / 1000.0f;
-    old_time = get_time_ms();
-    time += dt;
-    loop->update(dt, time, loop->context);
-  }
-}
-
-static inline void free_loop(Loop *loop) { free(loop); }
+  AABB_2D view_box;
+} Camera_2D;
 
 //========================================================================================
 /*                                                                                      *
- *                                         ARRAY *
+ *                                          RAY *
+ *                                                                                      */
+//========================================================================================
+typedef struct {
+  Vec3 init;
+  Vec3 dir;
+} Ray;
+
+Ray ray(Vec3 init, Vec3 dir) { return (Ray){init, dir}; }
+
+Vec3 trace_ray(Ray ray, f32 t) {
+  return add_vec3(ray.init, scale_vec3(ray.dir, t));
+}
+
+//========================================================================================
+/*                                                                                      *
+ *                                        CAMERA *
  *                                                                                      */
 //========================================================================================
 
 typedef struct {
-  void *data;
-  u32 length;
-  u32 capacity;
-  u32 element_size;
-} Array;
+  Vec3 position;
+  Vec3 look_at;
+  f32 distance_to_plane;
+  Vec3 orbit_coords; // radius, theta, phi
+  Vec2 orientation;  // theta, phi
+  Vec3 basis[3];     // matrix transforming camera space to world space
+} Camera;
 
-Array new_array(u32 capacity, u32 element_size) {
-  Array array;
-  array.data = malloc(capacity * element_size);
-  array.length = 0;
-  array.capacity = capacity;
-  array.element_size = element_size;
-  return array;
+Camera set_orient_camera(Camera *camera, f32 theta, f32 phi) {
+  camera->orientation = vec2(theta, phi);
+
+  f32 cosT = cosf(theta);
+  f32 sinT = sinf(theta);
+  f32 cosP = cosf(phi);
+  f32 sinP = sinf(phi);
+
+  // right hand coordinate system
+  // z-axis
+  camera->basis[2] = vec3(-cosP * cosT, -cosP * sinT, -sinP);
+  // y-axis
+  camera->basis[1] = vec3(-sinP * cosT, -sinP * sinT, cosP);
+  // x-axis
+  camera->basis[0] = vec3(-sinT, cosT, 0.0f);
+  return *camera;
 }
 
-bool push_array(Array *a, const void *element) {
-  // Grow array if at capacity
-  if (a->length >= a->capacity) {
-    u32 new_capacity = (a->capacity == 0) ? 4 : a->capacity * 2;
-    void *new_data = realloc(a->data, new_capacity * a->element_size);
-    if (!new_data) {
-      return false;
-    }
-    a->data = new_data;
-    a->capacity = new_capacity;
-  }
+Camera set_orbit_camera(Camera *camera, f32 radius, f32 theta, f32 phi) {
+  set_orient_camera(camera, theta, phi);
 
-  // Copy element to end of array
-  char *destination = (char *)a->data + (a->length * a->element_size);
-  memcpy(destination, element, a->element_size);
-  a->length++;
+  f32 cosT = cosf(theta);
+  f32 sinT = sinf(theta);
+  f32 cosP = cosf(phi);
+  f32 sinP = sinf(phi);
 
-  return true;
+  Vec3 sphere_coords =
+      vec3(radius * cosP * cosT, radius * cosP * sinT, radius * sinP);
+
+  camera->orbit_coords = sphere_coords;
+  camera->position = add_vec3(sphere_coords, camera->look_at);
+  return *camera;
 }
 
-Array filter_array(Array *a, bool (*func)(void *element, u32 index)) {
-  Array ans = new_array(a->capacity, a->element_size);
-  for (u32 i = 0; i < a->length; i++) {
-    void *element = (char *)a->data + (i * a->element_size);
-    if (func(element, i)) {
-      push_array(&ans, element);
-    }
-  }
-  return ans;
+Vec3 get_camera_orbit(const Camera *camera) { return camera->orbit_coords; }
+
+typedef struct {
+  Camera *camera;
+  Tela *tela;
+  void *lambda_context;
+  Color (*lambdaWithRays)(Ray, void *);
+} LambdaRayContext;
+
+Color lambda_tela_from_ray(u32 x, u32 y, void const *context) {
+  const LambdaRayContext *lambda_context = (const LambdaRayContext *)context;
+  Camera *camera = lambda_context->camera;
+  Tela *tela = lambda_context->tela;
+  u32 w = tela->width;
+  f32 invW = 1 / w;
+  f32 h = tela->height;
+  f32 invH = 1 / h;
+  Vec3 dirInLocal = {(x * invW - 0.5), (y * invH - 0.5),
+                     camera->distance_to_plane};
+  Vec3 dir = vec3(
+      camera->basis[0].x * dirInLocal.x + camera->basis[1].x * dirInLocal.y +
+          camera->basis[2].x * dirInLocal.z,
+      camera->basis[0].y * dirInLocal.x + camera->basis[1].y * dirInLocal.y +
+          camera->basis[2].y * dirInLocal.z,
+      camera->basis[0].z * dirInLocal.x + camera->basis[1].z * dirInLocal.y +
+          camera->basis[2].z * dirInLocal.z);
+  Vec3 dir_norm;
+  normalize_vec3(dir, &dir_norm);
+  Color c = lambda_context->lambdaWithRays(ray(camera->position, dir_norm),
+                                           lambda_context->lambda_context);
+  return c;
 }
 
-void *get_array_element(Array *a, u32 index) {
-  if (index >= a->length || index < 0) {
-    return NULL;
-  }
-  char *base = (char *)a->data;
-  u32 offset = index * a->element_size;
-  return base + offset;
-}
+Tela *ray_map_camera(Camera *camera, Tela *tela,
+                     Color (*ray_scene)(Ray, void *), void *context) {
 
-void *pop_array(Array *a) {
-  if (a->length == 0) {
-    return NULL;
-  }
-
-  a->length--;
-  if (a->length > 0 && a->length <= a->capacity / 4) {
-    u32 new_cap = a->capacity / 2;
-    void *new_data = realloc(a->data, new_cap * a->element_size);
-    if (new_data) {
-      a->data = new_data;
-      a->capacity = new_cap;
-    }
-  }
-  return (char *)a->data + (a->length * a->element_size);
-}
-
-void free_array(Array *array) {
-  free(array->data);
-  array->data = NULL;
-  array->length = 0;
-  array->capacity = 0;
+  LambdaRayContext lambda_context = {
+      .camera = camera,
+      .tela = tela,
+      .lambda_context = context,
+      .lambdaWithRays = ray_scene,
+  };
+  return map_tela(tela, lambda_tela_from_ray, &lambda_context);
 }
 
 #endif /* TELA_C */
