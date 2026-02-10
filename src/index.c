@@ -56,6 +56,14 @@ typedef bool bool_t;
 
 //========================================================================================
 /*                                                                                      *
+ *                                        RANDOM *
+ *                                                                                      */
+//========================================================================================
+
+static inline double random_double(void) { return (double)rand() / RAND_MAX; }
+
+//========================================================================================
+/*                                                                                      *
  *                                         VEC2 *
  *                                                                                      */
 //========================================================================================
@@ -134,9 +142,7 @@ static inline f32 fold_vec2(Vec2 v, f32 (*func)(f32, f32), f32 initial) {
   return func(func(initial, v.x), v.y);
 }
 
-static inline bool isnan_vec2(Vec2 v) {
-  return isnan(v.x) || isnan(v.y);
-}
+static inline bool isnan_vec2(Vec2 v) { return isnan(v.x) || isnan(v.y); }
 //========================================================================================
 /*                                                                                      *
  *                                         VEC3 *
@@ -486,7 +492,7 @@ void solve_up_tri_matrix(Vec2 v, f32 a, Vec2 f, Vec2 *out) {
 }
 
 typedef struct {
-  Vec2 points[2];
+  Vec2 points[4];
   u32 length;
 } LineBoxIntersection;
 
@@ -504,8 +510,6 @@ LineBoxIntersection line_box_intersection(Vec2 start, Vec2 end, AABB_2D box) {
   };
   LineBoxIntersection intersection_solutions = {0};
   for (u32 i = 0; i < 4; i++) {
-    if (intersection_solutions.length >= 2)
-      break;
     Vec2 s = boundary[i][0];
     Vec2 d = boundary[i][1];
     if (d.x == 0) {
@@ -605,8 +609,8 @@ static inline Tela *draw_line_tela(Tela *tela, const Line_2D *line,
 
   u32 w = tela->width;
   u32 h = tela->height;
-  Vec2 p1 = line->start;
-  Vec2 p2 = line->end;
+  Vec2 p1 = add_vec2(line->start, (Vec2){0.5f, 0.5f}); // center of pixel
+  Vec2 p2 = add_vec2(line->end, (Vec2){0.5f, 0.5f});   // center of pixel
   Line_2D clipped_line;
   if (!clip_line(p1, p2, tela->box, &clipped_line))
     return tela;
@@ -616,17 +620,18 @@ static inline Tela *draw_line_tela(Tela *tela, const Line_2D *line,
   Vec2 pf = clipped_line.end;
   Vec2 v = sub_vec2(pf, pi);
 
-  u32 n = (u32)(fabsf(v.x) + fabsf(v.y) + 5);
+  f32 nf = fabsf(v.x) + fabsf(v.y) + 5.0f;
+  u32 n = (u32)nf;
+
   for (u32 k = 0; k < n; k++) {
-    const f32 s = (f32)k / (f32)n;
-    const Vec2 lineP = add_vec2(pi, scale_vec2(v, s));
-    const Vec2 floorP = map_vec2(lineP, floorf);
-    const u32 x = (u32)floorP.x;
-    const u32 y = (u32)floorP.y;
-    const u32 j = x;
-    const u32 i = h - 1 - y;
-    const u32 index = COLOR_CHANNELS * (i * w + j);
-    const Color color = func(x, y, &clipped_line, context);
+    f32 s = k / (nf - 1.0f);
+    Vec2 lineP = add_vec2(pi, scale_vec2(v, s));
+    i32 x = (i32)floorf(lineP.x);
+    i32 y = (i32)floorf(lineP.y);
+    i32 j = x;
+    i32 i = (i32)h - 1 - y;
+    u32 index = COLOR_CHANNELS * (i * (i32)w + j);
+    Color color = func((u32)x, (u32)y, &clipped_line, context);
     if (color.alpha == 0.0f)
       continue;
     tela->image[index] = color.red;
@@ -1082,7 +1087,6 @@ bool push_array(Array *a, const void *element) {
 
   return true;
 }
-
 
 Array filter_array(Array *a, bool (*func)(void *element, u32 index)) {
   Array ans = new_array(a->capacity, a->element_size);
