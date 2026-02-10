@@ -1049,7 +1049,7 @@ static inline Window *new_window(i32 width, i32 height, const char *title) {
       SDL_CreateWindow(title, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
                        width, height, SDL_WINDOW_SHOWN);
   SDL_Renderer *renderer = SDL_CreateRenderer(
-      sdl_window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
+      sdl_window, -1, SDL_RENDERER_ACCELERATED);
   SDL_Texture *texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA8888,
                                            SDL_TEXTUREACCESS_STREAMING,
                                            window->width, window->height);

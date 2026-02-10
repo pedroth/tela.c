@@ -1,4 +1,4 @@
-# Tela.js
+# Tela
 
 struct Tela {
     width: u32,
@@ -12,6 +12,18 @@ struct Color {
     b: f32,
     a: f32,
 }
+
+struct Maybe<T> {
+    value: T,
+    has_value: bool,
+}
+
+struct Vec3 {
+    x: f32,
+    y: f32,
+    z: f32,
+}
+
 
 Tela* map(Tela* tela, lambda: (x: u32, y: u32) => Maybe<Color>) {
     u32 channels = 4;
