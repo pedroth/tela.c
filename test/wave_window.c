@@ -1,10 +1,4 @@
-#include "Color/Color.h"
-#include "Tela/Tela.h"
-#include "Tela/Window.h"
-#include "utils/loop.h"
-#include "utils/string.h"
-#include "utils/time.h"
-#include "utils/types.h"
+#include "../src/index.c"
 
 #define WIDTH 1280
 #define HEIGHT 720
@@ -44,7 +38,7 @@ typedef struct {
   f32 max_abs_speed;
 } ShaderContext;
 
-Color *shader(u32 x, u32 y, const void *context) {
+Color shader(u32 x, u32 y, const void *context) {
   ShaderContext *shader_context = (ShaderContext *)context;
   f32 min_wave = shader_context->min_wave;
   f32 max_wave = shader_context->max_wave;
@@ -55,7 +49,7 @@ Color *shader(u32 x, u32 y, const void *context) {
   f32 red_color = (wave[yi][xi] - min_wave) / (max_wave - min_wave);
   f32 blue_color = 1 - (wave[yi][xi] - min_wave) / (max_wave - min_wave);
   f32 green_color = fabsf(wave_speed[yi][xi]) / max_abs_speed;
-  return new_color(red_color, green_color, blue_color);
+  return (Color){red_color, green_color, blue_color, 1.0f};
 }
 
 void anime_lambda(f32 dt, f32 time, void *context) {
@@ -102,7 +96,7 @@ void on_close_lambda(Window *window, void *context) {
   stop_loop(anime_loop);
 }
 
-int is_mouse_down = false;
+bool is_mouse_down = false;
 void mouse_down(Window *window, i32 x, i32 y, u32 button, void *context) {
   is_mouse_down = true;
   printf("Mouse down at (%d, %d, %u)\n", x, y, button);

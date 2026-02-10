@@ -1,19 +1,13 @@
-#include "Color/Color.h"
-#include "Tela/Tela.h"
-#include "Tela/Window.h"
-#include "utils/time.h"
-#include "utils/types.h"
-#include "utils/loop.h"
-#include "utils/string.h"
+#include "../src/index.c"
 
 const u32 WIDTH = 640;
 const u32 HEIGHT = 480;
 
-Color *shader(u32 x, u32 y, const void *context) {
+Color shader(u32 x, u32 y, const void *context) {
   f32 time = *(f32 *)context;
   f32 fx = fmodf(((f32)x * time) / (f32)(WIDTH), 1.0f);
   f32 fy = fmodf(((f32)y * time) / (f32)(HEIGHT), 1.0f);
-  return new_color(fx, fy, 0.0f);
+  return (Color){fx, fy, 0.0f, 1.0f};
 }
 
 typedef struct {

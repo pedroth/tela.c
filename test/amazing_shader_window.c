@@ -1,10 +1,4 @@
-#include "Color/Color.h"
-#include "Tela/Tela.h"
-#include "Tela/Window.h"
-#include "utils/loop.h"
-#include "utils/string.h"
-#include "utils/time.h"
-#include "utils/types.h"
+#include "../src/index.c"
 
 const u32 WIDTH = 640;
 const u32 HEIGHT = 480;
@@ -25,7 +19,7 @@ f32 *palette(f32 t) {
                  a[2] + b[2] * cosf(6.28318f * (c[2] * t + d[2]))};
 }
 
-Color *shader(u32 x, u32 y, const void *context) {
+Color shader(u32 x, u32 y, const void *context) {
   f32 time = *(const f32 *)context;
   f32 u = (2.0f * (f32)x - (f32)WIDTH) / (f32)HEIGHT;
   f32 v = (2.0f * (f32)y - (f32)HEIGHT) / (f32)HEIGHT;
@@ -53,7 +47,7 @@ Color *shader(u32 x, u32 y, const void *context) {
   finalColor[1] = clamp(finalColor[1]);
   finalColor[2] = clamp(finalColor[2]);
 
-  return new_color(finalColor[0], finalColor[1], finalColor[2]);
+  return (Color){finalColor[0], finalColor[1], finalColor[2], 1.0f};
 }
 
 void anime_lambda(f32 dt, f32 time, void *context) {

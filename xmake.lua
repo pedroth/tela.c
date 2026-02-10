@@ -18,94 +18,24 @@ target("vec_benchmark")
 target("image_gen_window")
     set_kind("binary")
     set_rundir("$(projectdir)")
-    add_files(
-        "test/image_gen_window.c",
-        "src/Color/Color.c",
-        "src/Tela/Tela.c",
-        "src/Tela/Window.c",
-        "src/Vector/Vec.c",
-        "src/Vector/Vec2.c",
-        "src/Vector/Vec3.c",
-        "src/Geometry/AABB.c",
-        "src/io/io.c"
-    )
-    add_includedirs("src")
+    add_files("test/image_gen_window.c")
     add_packages("sdl2")
     add_links("SDL2")
 
 target("simple_animation_window")
     set_kind("binary")
-    add_files(
-        "test/simple_animation_window.c",
-        "src/Color/Color.c",
-        "src/Tela/Tela.c",
-        "src/Tela/Window.c",
-        "src/Vector/Vec.c",
-        "src/Vector/Vec2.c",
-        "src/Vector/Vec3.c",
-        "src/Geometry/AABB.c",
-        "src/utils/time.c"
-    )
-    add_includedirs("src")
+    add_files("test/simple_animation_window.c")
     add_packages("sdl2")
     add_links("SDL2")
 
 target("amazing_shader_window")
     set_kind("binary")
-    add_files(
-        "test/amazing_shader_window.c",
-        "src/Color/Color.c",
-        "src/Tela/Tela.c",
-        "src/Tela/Window.c",
-        "src/Vector/Vec.c",
-        "src/Vector/Vec2.c",
-        "src/Vector/Vec3.c",
-        "src/Geometry/AABB.c",
-        "src/io/io.c",
-        "src/utils/time.c"
-    )
-    add_includedirs("src")
+    add_files("test/amazing_shader_window.c")
     add_packages("sdl2")
     add_links("SDL2")
 
 target("wave_window")
     set_kind("binary")
-    add_files(
-        "test/wave_window.c",
-        "src/Color/Color.c",
-        "src/Tela/Tela.c",
-        "src/Tela/Window.c",
-        "src/Vector/Vec.c",
-        "src/Vector/Vec2.c",
-        "src/Vector/Vec3.c",
-        "src/Geometry/AABB.c",
-        "src/utils/time.c"
-    )
-    add_includedirs("src")
-    add_packages("sdl2")
-    add_links("SDL2")
-
-target("mesh_viewer_window")
-    set_kind("binary")
-    add_files(
-        "test/mesh_viewer_window.c",
-        "src/Color/Color.c",
-        "src/Tela/Tela.c",
-        "src/Tela/Window.c",
-        "src/Vector/Vec.c",
-        "src/Vector/Vec2.c",
-        "src/Vector/Vec3.c",
-        "src/Camera/Camera.c",
-        "src/Camera/raster.c",
-        "src/Geometry/Mesh.c",
-        "src/Geometry/Triangle.c",
-        "src/Geometry/AABB.c",
-        "src/Scene/Scene.c",
-        "src/Utils/Array.c",
-        "src/Utils/strings.c",
-        "src/io/io.c",
-        "src/utils/time.c"
-    )
-    add_includedirs("src")
+    add_files("test/wave_window.c")
     add_packages("sdl2")
     add_links("SDL2")
