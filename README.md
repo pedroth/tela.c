@@ -8,7 +8,7 @@ Experimental graphic library from scratch(software-only), with reference impleme
 
 The purpose of this graphic engine is to be able to generate images in a computational way, with minimal dependencies, such that the readable graphical algorithms shine instead of opaque graphical APIs. The engine should also be capable to create videos and interactive demos or games. 
 
-It is a port of [tela.js](https://github.com/pedroth/tela.js).
+It is a port of [tela.js](https://github.com/pedroth/tela.js), made with the help of AI(Claude opus, gemini, gpt) and some minor conceptual improvements from original.
 
 # Table of Contents
 
@@ -24,7 +24,23 @@ It is a port of [tela.js](https://github.com/pedroth/tela.js).
 
 
 ## On the desktop
-Git clone this repository and `cd` into it. Then create a main.c file that uses `tela.c`.
+
+Install sdl2 in your system, download and include `src/index.c` in your file, then compile it using _clang_ or any C compiler, linking the SDL2 library and math library. 
+
+// minor c example to create a window and render something on it using tela.c:
+
+```c
+// my_app.c
+#include "index.c"
+
+
+```
+
+Then compile it using:
+```bash
+clang -o my_app my_app.c -lSDL2 -lm
+```
+
 
 
 ## Generate images and videos
@@ -42,10 +58,10 @@ ffmpeg -version
 
 # Dependencies
 
-- [`clang`][clang]
+- [`clang`][clang] or any C compiler
 - [`ffmpeg`][ffmpeg]
 - [`SDL2`][sdl]
-- [xMake](https://xmake.io/#/)
+- [xMake _not really necessary_](https://xmake.io/#/)
 
 
 # Acknowledgements
@@ -53,6 +69,7 @@ ffmpeg -version
 - [Keenan's 3D Model Repository](https://www.cs.cmu.edu/~kmcrane/Projects/ModelRepository/)
 - [The models resource](https://www.models-resource.com/)
 - [otaviogood fonts](https://github.com/otaviogood/shader_fontgen)
+- [tela.js](https://github.com/pedroth/tela.js)
 
 
 

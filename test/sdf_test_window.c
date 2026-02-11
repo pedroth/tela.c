@@ -13,12 +13,20 @@ typedef struct {
   Camera *camera;
 } AppContext;
 
-/* =============================================================================
- * Global State
- * ========================================================================== */
+//========================================================================================
+/*                                                                                      *
+ *                                      GLOBAL VARS *
+ *                                                                                      */
+//========================================================================================
 
 static bool g_is_mouse_down = false;
 static Vec2 g_mouse = {0.0f, 0.0f};
+
+//========================================================================================
+/*                                                                                      *
+ *                                         MAIN *
+ *                                                                                      */
+//========================================================================================
 
 f32 torus_sdf(Vec3 p, f32 r, f32 R) {
   f32 q = length_vec2(vec2(p.x, p.y)) - r;
@@ -31,15 +39,15 @@ typedef struct {
 } Sphere_Local;
 
 f32 scene_sdf(Vec3 p, f32 time) {
-  // AABB box = build_aabb(vec3(-0.5f, -0.5f, -0.5f), vec3(0.5f, 0.5f, 0.5f));
-  // Sphere_Local sphere = {.pos = vec3(0.0f, 0.0f, 0.0f), .radius = 0.65f};
-  // f32 tau = (sinf(2 * M_PI * 0.25f * (time - 1)) + 1) / 2;
-  // const f32 cube =
-  //     fmaxf(distance_aabb(&box, p),
-  //           -(length_vec3(sub_vec3(sphere.pos, p)) - sphere.radius));
+  AABB box = build_aabb(vec3(-0.5f, -0.5f, -0.5f), vec3(0.5f, 0.5f, 0.5f));
+  Sphere_Local sphere = {.pos = vec3(0.0f, 0.0f, 0.0f), .radius = 0.65f};
+  f32 tau = (sinf(2 * M_PI * 0.25f * (time - 1)) + 1) / 2;
+  const f32 cube =
+      fmaxf(distance_aabb(&box, p),
+            -(length_vec3(sub_vec3(sphere.pos, p)) - sphere.radius));
   const f32 torus = torus_sdf(p, 0.5f, 0.25f);
-  return torus;
-  // return tau * torus + (1 - tau) * cube;
+  // return torus;
+  return tau * torus + (1 - tau) * cube;
 }
 
 Vec3 normal_scene_sdf(Vec3 p, f32 time) {
@@ -136,7 +144,6 @@ void on_mouse_up(Window *window, i32 x, i32 y, u32 button, void *context) {
 /**
  * Called when mouse moves - updates preview line end position
  */
-
 void on_mouse_move(Window *window, i32 x, i32 y, void *context) {
   const Vec2 new_mouse = vec2((f32)x, (f32)y);
   if (!g_is_mouse_down || equals_vec2(new_mouse, g_mouse)) {
