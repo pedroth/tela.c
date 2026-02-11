@@ -1,207 +1,264 @@
+/**
+ * SDF Test Window
+ *
+ * A raymarching demo that renders a morphing torus-cube using signed distance
+ * functions. Features interactive orbit camera controls via mouse.
+ */
+
 #include "../src/index.c"
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
 #endif
 
-const u32 WIDTH = 640;
-const u32 HEIGHT = 480;
+/* =============================================================================
+ * Constants
+ * ========================================================================== */
+
+static const u32 WIDTH = 640;
+static const u32 HEIGHT = 480;
+
+static const u32 MAX_RAYMARCH_ITERATIONS = 100;
+static const f32 MAX_RAYMARCH_DISTANCE = 10.0f;
+static const f32 RAYMARCH_EPSILON = 1e-3f;
+static const f32 NORMAL_EPSILON = 1e-3f;
+
+/* =============================================================================
+ * Types
+ * ========================================================================== */
 
 typedef struct {
   Tela *tela;
   Window *window;
   Camera *camera;
-} AppContext;
+} App;
 
-//========================================================================================
-/*                                                                                      *
- *                                      GLOBAL VARS *
- *                                                                                      */
-//========================================================================================
+typedef struct {
+  f32 time;
+  Vec3 light_pos;
+} SceneContext;
 
-static bool g_is_mouse_down = false;
-static Vec2 g_mouse = {0.0f, 0.0f};
+/* =============================================================================
+ * Global State (for input handling)
+ * ========================================================================== */
 
-//========================================================================================
-/*                                                                                      *
- *                                         MAIN *
- *                                                                                      */
-//========================================================================================
+static bool g_mouse_down = false;
+static Vec2 g_mouse_pos = {0};
 
-f32 torus_sdf(Vec3 p, f32 r, f32 R) {
+/* =============================================================================
+ * Signed Distance Functions
+ * ========================================================================== */
+
+/**
+ * SDF for a torus centered at origin, lying in the XY plane.
+ * @param p     Point to evaluate
+ * @param r     Major radius (distance from center to tube center)
+ * @param R     Minor radius (tube thickness)
+ */
+static f32 sdf_torus(Vec3 p, f32 r, f32 R) {
   f32 q = length_vec2(vec2(p.x, p.y)) - r;
   return length_vec2(vec2(q, p.z)) - R;
 }
 
-typedef struct {
-  Vec3 pos;
-  f32 radius;
-} Sphere_Local;
+/**
+ * SDF for a rounded cube (cube with spherical carving).
+ * @param p         Point to evaluate
+ * @param box       Axis-aligned bounding box
+ * @param sphere    Sphere to subtract from the box
+ */
+static f32 sdf_rounded_cube(Vec3 p, const AABB *box, Vec3 sphere_pos,
+                            f32 sphere_radius) {
+  f32 box_dist = distance_aabb(box, p);
+  f32 sphere_dist = length_vec3(sub_vec3(sphere_pos, p)) - sphere_radius;
+  return fmaxf(box_dist, -sphere_dist);
+}
 
-f32 scene_sdf(Vec3 p, f32 time) {
+/**
+ * Composite scene SDF - morphs between torus and rounded cube over time.
+ */
+static f32 sdf_scene(Vec3 p, f32 time) {
+  // Torus parameters
+  const f32 torus_major = 0.5f;
+  const f32 torus_minor = 0.25f;
+
+  // Rounded cube parameters
   AABB box = build_aabb(vec3(-0.5f, -0.5f, -0.5f), vec3(0.5f, 0.5f, 0.5f));
-  Sphere_Local sphere = {.pos = vec3(0.0f, 0.0f, 0.0f), .radius = 0.65f};
-  f32 tau = (sinf(2 * M_PI * 0.25f * (time - 1)) + 1) / 2;
-  const f32 cube =
-      fmaxf(distance_aabb(&box, p),
-            -(length_vec3(sub_vec3(sphere.pos, p)) - sphere.radius));
-  const f32 torus = torus_sdf(p, 0.5f, 0.25f);
-  // return torus;
-  return tau * torus + (1 - tau) * cube;
+  Vec3 sphere_pos = vec3(0.0f, 0.0f, 0.0f);
+  f32 sphere_radius = 0.65f;
+
+  // Morph factor: oscillates between 0 and 1
+  f32 morph = (sinf(2.0f * M_PI * 0.25f * (time - 1.0f)) + 1.0f) * 0.5f;
+
+  f32 torus_dist = sdf_torus(p, torus_major, torus_minor);
+  f32 cube_dist = sdf_rounded_cube(p, &box, sphere_pos, sphere_radius);
+
+  return morph * torus_dist + (1.0f - morph) * cube_dist;
 }
 
-Vec3 normal_scene_sdf(Vec3 p, f32 time) {
-  const f32 epsilon = 1e-3f;
-  const f32 f = scene_sdf(p, time);
-  const Vec3 n = vec3(scene_sdf(add_vec3(p, vec3(epsilon, 0, 0)), time) - f,
-                      scene_sdf(add_vec3(p, vec3(0, epsilon, 0)), time) - f,
-                      scene_sdf(add_vec3(p, vec3(0, 0, epsilon)), time) - f);
-  Vec3 result = {0};
-  normalize_vec3(n, &result);
-  return result;
+/**
+ * Compute surface normal using central differences.
+ */
+static Vec3 sdf_normal(Vec3 p, f32 time) {
+  const f32 eps = NORMAL_EPSILON;
+  f32 center = sdf_scene(p, time);
+
+  Vec3 gradient = vec3(sdf_scene(add_vec3(p, vec3(eps, 0, 0)), time) - center,
+                       sdf_scene(add_vec3(p, vec3(0, eps, 0)), time) - center,
+                       sdf_scene(add_vec3(p, vec3(0, 0, eps)), time) - center);
+
+  Vec3 normal = {0};
+  normalize_vec3(gradient, &normal);
+  return normal;
 }
 
-typedef struct {
-  f32 time;
-  Vec3 lightPos;
-} RaySceneContext;
+/* =============================================================================
+ * Ray Marching
+ * ========================================================================== */
 
-f32 to_color(f32 x) { return (x + 1.0f) / 2.0f; }
+/**
+ * Ray march the scene and compute lighting.
+ */
+static Color ray_march(Ray ray, f32 time, Vec3 light_pos) {
+  Vec3 p = ray.init;
+  f32 t = sdf_scene(p, time);
 
-Color simple_ray_scene(Ray ray) {
-  Vec3 color = map_vec3(ray.dir, to_color);
-  return (Color){color.x, color.y, color.z, 1.0f};
-}
-
-Color sdf_torus_box_anime(Ray ray, f32 time, Vec3 lightPos) {
-  const u32 max_ite = 100;
-  const f32 max_dist = 10;
-  const f32 epsilon = 1e-3;
-  const Vec3 init = ray.init;
-  Vec3 p = init;
-  f32 t = scene_sdf(p, time);
-  for (u32 i = 0; i < max_ite; i++) {
+  for (u32 i = 0; i < MAX_RAYMARCH_ITERATIONS; i++) {
     p = trace_ray(ray, t);
-    const f32 d = scene_sdf(p, time);
-    t += d;
-    if (d < epsilon) {
-      Vec3 light_dir = sub_vec3(lightPos, p);
-      Vec3 light_dir_norm;
-      normalize_vec3(light_dir, &light_dir_norm);
-      const f32 shade =
-          fmaxf(0, dot_vec3(normal_scene_sdf(p, time), light_dir_norm));
-      return (Color){shade, 0, 0, 1.0f};
+    f32 dist = sdf_scene(p, time);
+    t += dist;
+
+    // Hit surface
+    if (dist < RAYMARCH_EPSILON) {
+      Vec3 normal = sdf_normal(p, time);
+      Vec3 to_light = sub_vec3(light_pos, p);
+      Vec3 light_dir = {0};
+      normalize_vec3(to_light, &light_dir);
+
+      f32 diffuse = fmaxf(0.0f, dot_vec3(normal, light_dir));
+      return (Color){diffuse, 0.0f, 0.0f, 1.0f};
     }
-    if (d > max_dist) {
-      f32 c = 2.0f * (f32)i / max_ite;
+
+    // Escaped to infinity
+    if (dist > MAX_RAYMARCH_DISTANCE) {
+      f32 c = 2.0f * (f32)i / MAX_RAYMARCH_ITERATIONS;
       return (Color){c, c, c, 1.0f};
     }
   }
-  return (Color){0, 0, 0, 1.0f};
-};
 
-Color ray_scene(Ray ray, void *context) {
-  RaySceneContext *ray_scene_context = (RaySceneContext *)context;
-  // return simple_ray_scene(ray);
-  return sdf_torus_box_anime(ray, ray_scene_context->time,
-                             ray_scene_context->lightPos);
-}
-
-void anime_lambda(f32 dt, f32 time, void *context) {
-  AppContext *app_context = (AppContext *)context;
-  Camera *camera = app_context->camera;
-  Tela *tela = app_context->tela;
-
-  Vec3 lightPos = scale_vec3(vec3(cosf(time), sinf(time), 1.0f), 2.0f);
-  RaySceneContext ray_scene_context = {time, lightPos};
-
-  ray_map_camera(camera, tela, ray_scene, &ray_scene_context);
-  set_window_title(app_context->window, format_string("FPS: %.2f", 1.0f / dt));
-  paint_window(app_context->window, tela);
-}
-
-void on_close_lambda(Window *window, void *context) {
-  Loop *anime_loop = (Loop *)context;
-  stop_loop(anime_loop);
+  return (Color){0.0f, 0.0f, 0.0f, 1.0f};
 }
 
 /**
- * Called when mouse button is pressed - starts a new line
+ * Ray scene callback for camera ray mapping.
  */
-void on_mouse_down(Window *window, i32 x, i32 y, u32 button, void *context) {
-  g_is_mouse_down = true;
-  g_mouse = vec2((f32)x, (f32)y);
+static Color ray_callback(Ray ray, void *ctx) {
+  SceneContext *scene = (SceneContext *)ctx;
+  return ray_march(ray, scene->time, scene->light_pos);
 }
 
-/**
- * Called when mouse button is released - finalizes the line
- */
-void on_mouse_up(Window *window, i32 x, i32 y, u32 button, void *context) {
-  g_is_mouse_down = false;
-  g_mouse = vec2(0.0f, 0.0f);
+/* =============================================================================
+ * Animation Loop
+ * ========================================================================== */
+
+static void on_frame(f32 dt, f32 time, void *ctx) {
+  App *app = (App *)ctx;
+
+  // Rotating light source
+  Vec3 light_pos = scale_vec3(vec3(cosf(time), sinf(time), 1.0f), 2.0f);
+  SceneContext scene = {.time = time, .light_pos = light_pos};
+
+  // Render
+  ray_map_camera(app->camera, app->tela, ray_callback, &scene);
+
+  // Display
+  set_window_title(app->window,
+                   format_string("SDF Demo | FPS: %.1f", 1.0f / dt));
+  paint_window(app->window, app->tela);
 }
 
-/**
- * Called when mouse moves - updates preview line end position
- */
-void on_mouse_move(Window *window, i32 x, i32 y, void *context) {
-  const Vec2 new_mouse = vec2((f32)x, (f32)y);
-  if (!g_is_mouse_down || equals_vec2(new_mouse, g_mouse)) {
+static void on_close(Window *window, void *ctx) {
+  Loop *animation = (Loop *)ctx;
+  stop_loop(animation);
+}
+
+/* =============================================================================
+ * Input Handlers
+ * ========================================================================== */
+
+static void on_mouse_down(Window *window, i32 x, i32 y, u32 button, void *ctx) {
+  g_mouse_down = true;
+  g_mouse_pos = vec2((f32)x, (f32)y);
+}
+
+static void on_mouse_up(Window *window, i32 x, i32 y, u32 button, void *ctx) {
+  g_mouse_down = false;
+}
+
+static void on_mouse_move(Window *window, i32 x, i32 y, void *ctx) {
+  if (!g_mouse_down)
     return;
-  }
-  AppContext *app_context = (AppContext *)context;
-  Camera *camera = app_context->camera;
 
-  const Vec2 delta = sub_vec2(new_mouse, g_mouse);
-  Vec3 orbit_coords = get_camera_orbit(camera);
-  Vec3 delta_orbit =
-      vec3(0, -2 * M_PI * (delta.x / WIDTH), -2 * M_PI * (delta.y / HEIGHT));
+  Vec2 new_pos = vec2((f32)x, (f32)y);
+  if (equals_vec2(new_pos, g_mouse_pos))
+    return;
 
-  Vec3 new_orbit = add_vec3(orbit_coords, delta_orbit);
+  App *app = (App *)ctx;
+  Vec2 delta = sub_vec2(new_pos, g_mouse_pos);
 
-  set_orbit_camera(camera, new_orbit.x, new_orbit.y, new_orbit.z);
-  g_mouse = new_mouse;
-};
+  Vec3 orbit = get_camera_orbit(app->camera);
+  f32 theta_delta = -2.0f * M_PI * (delta.x / WIDTH);
+  f32 phi_delta = -2.0f * M_PI * (delta.y / HEIGHT);
 
-void on_mouse_scroll(Window *window, i32 deltaY, void *context) {
-  AppContext *app_context = (AppContext *)context;
-  Camera *camera = app_context->camera;
+  set_orbit_camera(app->camera, orbit.x, orbit.y + theta_delta,
+                   orbit.z + phi_delta);
 
-  Vec3 orbit = get_camera_orbit(camera);
-  Vec3 new_orbit = add_vec3(orbit, vec3(deltaY * 0.001f, 0, 0));
+  g_mouse_pos = new_pos;
+}
 
-  set_orbit_camera(camera, new_orbit.x, new_orbit.y, new_orbit.z);
-};
+static void on_mouse_scroll(Window *window, i32 delta_y, void *ctx) {
+  App *app = (App *)ctx;
 
-/**
- * Registers all mouse event handlers
- */
-void register_event_handlers(Window *window, AppContext *app) {
+  Vec3 orbit = get_camera_orbit(app->camera);
+  f32 new_radius = orbit.x + delta_y * 0.001f;
+
+  set_orbit_camera(app->camera, new_radius, orbit.y, orbit.z);
+}
+
+static void register_input_handlers(Window *window, App *app) {
   on_mouse_down_window(window, on_mouse_down, app);
   on_mouse_up_window(window, on_mouse_up, app);
   on_mouse_move_window(window, on_mouse_move, app);
   on_mouse_scroll_window(window, on_mouse_scroll, app);
 }
 
-int main() {
-  // Initialize graphics
+/* =============================================================================
+ * Main
+ * ========================================================================== */
+
+int main(void) {
+  // Create window and canvas
   Tela *tela = new_tela(WIDTH, HEIGHT);
   Window *window = new_window(WIDTH, HEIGHT, "SDF Test");
-  Camera camera = create_camera(vec3(3, 0, 0), vec3(0, 0, 0), 1.0f);
-  set_orbit_camera(&camera, 3.0f, 0, 0);
 
-  // Initialize application state
-  AppContext app = {tela, window, &camera};
+  // Setup camera
+  Camera camera = create_camera(vec3(3.0f, 0.0f, 0.0f), vec3(0, 0, 0), 1.0f);
 
-  // Setup animation loop
-  Loop *animation_loop = loop(anime_lambda, &app);
-  on_close_window(window, on_close_lambda, animation_loop);
+  // Application state
+  App app = {
+      .tela = tela,
+      .window = window,
+      .camera = &camera,
+  };
 
-  // Register input handlers
-  register_event_handlers(window, &app);
+  // Animation loop
+  Loop *animation = loop(on_frame, &app);
 
-  // Start the application (must be last)
-  play_loop(animation_loop);
+  // Event handlers
+  on_close_window(window, on_close, animation);
+  register_input_handlers(window, &app);
+
+  // Run
+  play_loop(animation);
 
   return 0;
 }
