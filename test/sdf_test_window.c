@@ -1,12 +1,16 @@
 #include "../src/index.c"
 
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
+
 const u32 WIDTH = 640;
 const u32 HEIGHT = 480;
 
 typedef struct {
   Tela *tela;
   Window *window;
-  Camera camera;
+  Camera *camera;
 } AppContext;
 
 /* =============================================================================
@@ -16,9 +20,9 @@ typedef struct {
 static bool g_is_mouse_down = false;
 static Vec2 g_mouse = {0.0f, 0.0f};
 
-f32 torusSdf(Vec3 p, f32 r, f32 R) {
-  const Vec2 q = vec2(length_vec2(vec2(p.x, p.y)) - r, p.z);
-  return length_vec2(q) - R;
+f32 torus_sdf(Vec3 p, f32 r, f32 R) {
+  f32 q = length_vec2(vec2(p.x, p.y)) - r;
+  return length_vec2(vec2(q, p.z)) - R;
 }
 
 typedef struct {
@@ -26,78 +30,84 @@ typedef struct {
   f32 radius;
 } Sphere_Local;
 
-f32 distanceFunction(Vec3 p, f32 time) {
-  AABB box = build_aabb(vec3(-0.5f, -0.5f, -0.5f), vec3(0.5f, 0.5f, 0.5f));
-  Sphere_Local sphere = {pos : vec3(0.0f, 0.0f, 0.0f), radius : 0.65f};
-  f32 tau = (sinf(2 * M_PI * 0.25f * (time - 1)) + 1) / 2;
-  const cube = fmaxf(distance_AABB(box, p),
-                     -(length_vec3(sub_vec3(sphere.pos, p)) - sphere.radius));
-  const torus = torusSdf(p, 0.5f, 0.25f);
-  return tau * torus + (1 - tau) * cube;
+f32 scene_sdf(Vec3 p, f32 time) {
+  // AABB box = build_aabb(vec3(-0.5f, -0.5f, -0.5f), vec3(0.5f, 0.5f, 0.5f));
+  // Sphere_Local sphere = {.pos = vec3(0.0f, 0.0f, 0.0f), .radius = 0.65f};
+  // f32 tau = (sinf(2 * M_PI * 0.25f * (time - 1)) + 1) / 2;
+  // const f32 cube =
+  //     fmaxf(distance_aabb(&box, p),
+  //           -(length_vec3(sub_vec3(sphere.pos, p)) - sphere.radius));
+  const f32 torus = torus_sdf(p, 0.5f, 0.25f);
+  return torus;
+  // return tau * torus + (1 - tau) * cube;
 }
 
-Vec3 normalFunction(Vec3 p, f32 time) {
+Vec3 normal_scene_sdf(Vec3 p, f32 time) {
   const f32 epsilon = 1e-3f;
-  const f32 f = distanceFunction(p, time);
-  const Vec3 n =
-      vec3(distanceFunction(add_vec3(p, vec3(epsilon, 0, 0)), time) - f,
-           distanceFunction(add_vec3(p, vec3(0, epsilon, 0)), time) - f,
-           distanceFunction(add_vec3(p, vec3(0, 0, epsilon)), time) - f);
+  const f32 f = scene_sdf(p, time);
+  const Vec3 n = vec3(scene_sdf(add_vec3(p, vec3(epsilon, 0, 0)), time) - f,
+                      scene_sdf(add_vec3(p, vec3(0, epsilon, 0)), time) - f,
+                      scene_sdf(add_vec3(p, vec3(0, 0, epsilon)), time) - f);
   Vec3 result = {0};
   normalize_vec3(n, &result);
   return result;
 }
 
-const rayScene = (ray, {time, lightPosSerial}) => {
-  const maxIte = 100;
-  const maxDist = 10;
-  const epsilon = 1e-3;
-  const lightPos = Vec.fromArray(lightPosSerial);
-  const {init} = ray;
-  let p = init;
-  let t = distanceFunction(p, time);
-  for (let i = 0; i < maxIte; i++) {
-    p = ray.trace(t);
-    const d = distanceFunction(p, time);
-    t += d;
-    if (d < epsilon) {
-      const shade =
-          Math.max(0, normalFunction(p, time).dot(lightPos.sub(p).normalize()));
-      return Color.ofRGB(shade, 0, 0);
-    }
-    if (d > maxDist)
-      return Color.ofRGB(0, 0, i / maxIte);
-  }
-  return Color.BLACK;
-};
-
-loop(async({dt, time}) = > {
-  const lightPos = Vec3(Math.cos(time), Math.sin(time), 1).scale(2);
-  // camera.rayMap(ray => rayScene(ray, {time, lightPosSerial:
-  // lightPos.toArray()})).to(canvas).paint()
-  (await camera
-       .rayMapParallel(rayScene, [ torusSdf, distanceFunction, normalFunction ])
-       .to(canvas, {time, lightPosSerial : lightPos.toArray()}))
-      .paint();
-  logger.print(`FPS : $ { (1 / dt).toFixed(2) }`);
-}).play();
-
 typedef struct {
   f32 time;
+  Vec3 lightPos;
 } RaySceneContext;
+
+f32 to_color(f32 x) { return (x + 1.0f) / 2.0f; }
+
+Color simple_ray_scene(Ray ray) {
+  Vec3 color = map_vec3(ray.dir, to_color);
+  return (Color){color.x, color.y, color.z, 1.0f};
+}
+
+Color sdf_torus_box_anime(Ray ray, f32 time, Vec3 lightPos) {
+  const u32 max_ite = 100;
+  const f32 max_dist = 10;
+  const f32 epsilon = 1e-3;
+  const Vec3 init = ray.init;
+  Vec3 p = init;
+  f32 t = scene_sdf(p, time);
+  for (u32 i = 0; i < max_ite; i++) {
+    p = trace_ray(ray, t);
+    const f32 d = scene_sdf(p, time);
+    t += d;
+    if (d < epsilon) {
+      Vec3 light_dir = sub_vec3(lightPos, p);
+      Vec3 light_dir_norm;
+      normalize_vec3(light_dir, &light_dir_norm);
+      const f32 shade =
+          fmaxf(0, dot_vec3(normal_scene_sdf(p, time), light_dir_norm));
+      return (Color){shade, 0, 0, 1.0f};
+    }
+    if (d > max_dist) {
+      f32 c = 2.0f * (f32)i / max_ite;
+      return (Color){c, c, c, 1.0f};
+    }
+  }
+  return (Color){0, 0, 0, 1.0f};
+};
 
 Color ray_scene(Ray ray, void *context) {
   RaySceneContext *ray_scene_context = (RaySceneContext *)context;
-  return rayScene(ray, ray_scene_context);
+  // return simple_ray_scene(ray);
+  return sdf_torus_box_anime(ray, ray_scene_context->time,
+                             ray_scene_context->lightPos);
 }
 
 void anime_lambda(f32 dt, f32 time, void *context) {
   AppContext *app_context = (AppContext *)context;
-  Camera camera = app_context->camera;
+  Camera *camera = app_context->camera;
   Tela *tela = app_context->tela;
-  RaySceneContext ray_scene_context = {time};
 
-  ray_map_camera(&camera, tela, ray_scene, &ray_scene_context);
+  Vec3 lightPos = scale_vec3(vec3(cosf(time), sinf(time), 1.0f), 2.0f);
+  RaySceneContext ray_scene_context = {time, lightPos};
+
+  ray_map_camera(camera, tela, ray_scene, &ray_scene_context);
   set_window_title(app_context->window, format_string("FPS: %.2f", 1.0f / dt));
   paint_window(app_context->window, tela);
 }
@@ -133,20 +143,28 @@ void on_mouse_move(Window *window, i32 x, i32 y, void *context) {
     return;
   }
   AppContext *app_context = (AppContext *)context;
-  Camera camera = app_context->camera;
+  Camera *camera = app_context->camera;
+
   const Vec2 delta = sub_vec2(new_mouse, g_mouse);
-  Vec3 orbit_coords = get_camera_orbit(&camera);
-  orbit_coords = add_vec3(orbit_coords, vec3(0, -2 * M_PI * (delta.x / WIDTH),
-                                             -2 * M_PI * (delta.y / HEIGHT)));
-  set_orbit_camera(&camera, orbit_coords.x, orbit_coords.y,
-                   orbit_coords.z); // reset camera to default position
+  Vec3 orbit_coords = get_camera_orbit(camera);
+  Vec3 delta_orbit =
+      vec3(0, -2 * M_PI * (delta.x / WIDTH), -2 * M_PI * (delta.y / HEIGHT));
+
+  Vec3 new_orbit = add_vec3(orbit_coords, delta_orbit);
+
+  set_orbit_camera(camera, new_orbit.x, new_orbit.y, new_orbit.z);
   g_mouse = new_mouse;
 };
 
-void on_mouse_scroll_window(Window *window, i32 deltaY, void *context) {
-  get_camera_orbit(&camera);
-  camera.orbit((coords) = > coords.add(Vec3(deltaY * 0.001, 0, 0)));
-});
+void on_mouse_scroll(Window *window, i32 deltaY, void *context) {
+  AppContext *app_context = (AppContext *)context;
+  Camera *camera = app_context->camera;
+
+  Vec3 orbit = get_camera_orbit(camera);
+  Vec3 new_orbit = add_vec3(orbit, vec3(deltaY * 0.001f, 0, 0));
+
+  set_orbit_camera(camera, new_orbit.x, new_orbit.y, new_orbit.z);
+};
 
 /**
  * Registers all mouse event handlers
@@ -155,17 +173,18 @@ void register_event_handlers(Window *window, AppContext *app) {
   on_mouse_down_window(window, on_mouse_down, app);
   on_mouse_up_window(window, on_mouse_up, app);
   on_mouse_move_window(window, on_mouse_move, app);
+  on_mouse_scroll_window(window, on_mouse_scroll, app);
 }
 
 int main() {
   // Initialize graphics
   Tela *tela = new_tela(WIDTH, HEIGHT);
   Window *window = new_window(WIDTH, HEIGHT, "SDF Test");
-  Camera camera = {0};
+  Camera camera = create_camera(vec3(3, 0, 0), vec3(0, 0, 0), 1.0f);
   set_orbit_camera(&camera, 3.0f, 0, 0);
 
   // Initialize application state
-  AppContext app = {tela, window, camera};
+  AppContext app = {tela, window, &camera};
 
   // Setup animation loop
   Loop *animation_loop = loop(anime_lambda, &app);

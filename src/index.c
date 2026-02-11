@@ -1048,8 +1048,8 @@ static inline Window *new_window(i32 width, i32 height, const char *title) {
   SDL_Window *sdl_window =
       SDL_CreateWindow(title, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
                        width, height, SDL_WINDOW_SHOWN);
-  SDL_Renderer *renderer = SDL_CreateRenderer(
-      sdl_window, -1, SDL_RENDERER_ACCELERATED);
+  SDL_Renderer *renderer =
+      SDL_CreateRenderer(sdl_window, -1, SDL_RENDERER_ACCELERATED);
   SDL_Texture *texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA8888,
                                            SDL_TEXTUREACCESS_STREAMING,
                                            window->width, window->height);
@@ -1229,12 +1229,12 @@ typedef struct {
   Vec3 look_at;
   f32 distance_to_plane;
   Vec3 orbit_coords; // radius, theta, phi
-  Vec2 orientation;  // theta, phi
+  Vec2 orient_coords;  // theta, phi
   Vec3 basis[3];     // matrix transforming camera space to world space
 } Camera;
 
 Camera set_orient_camera(Camera *camera, f32 theta, f32 phi) {
-  camera->orientation = vec2(theta, phi);
+  camera->orient_coords = vec2(theta, phi);
 
   f32 cosT = cosf(theta);
   f32 sinT = sinf(theta);
@@ -1251,7 +1251,32 @@ Camera set_orient_camera(Camera *camera, f32 theta, f32 phi) {
   return *camera;
 }
 
+Camera create_camera(Vec3 position, Vec3 look_at, f32 distance_to_plane) {
+  Camera camera = {0};
+  camera.position = position;
+  camera.look_at = look_at;
+  camera.distance_to_plane = distance_to_plane;
+
+  // Compute orbit coords from position relative to look_at
+  Vec3 relative_pos = sub_vec3(position, look_at);
+  f32 radius = length_vec3(relative_pos);
+  f32 theta = 0.0f;
+  f32 phi = 0.0f;
+  if (radius > 0.0f) {
+    // theta = atan2(y, x), phi = asin(z / radius)
+    theta = atan2f(relative_pos.y, relative_pos.x);
+    phi = asinf(relative_pos.z / radius);
+  }
+  camera.orbit_coords = vec3(radius, theta, phi);
+
+  // Initialize basis via orient
+  set_orient_camera(&camera, theta, phi);
+
+  return camera;
+}
+
 Camera set_orbit_camera(Camera *camera, f32 radius, f32 theta, f32 phi) {
+  camera->orbit_coords = vec3(radius, theta, phi);
   set_orient_camera(camera, theta, phi);
 
   f32 cosT = cosf(theta);
@@ -1262,7 +1287,6 @@ Camera set_orbit_camera(Camera *camera, f32 radius, f32 theta, f32 phi) {
   Vec3 sphere_coords =
       vec3(radius * cosP * cosT, radius * cosP * sinT, radius * sinP);
 
-  camera->orbit_coords = sphere_coords;
   camera->position = add_vec3(sphere_coords, camera->look_at);
   return *camera;
 }
@@ -1280,10 +1304,10 @@ Color lambda_tela_from_ray(u32 x, u32 y, void const *context) {
   const LambdaRayContext *lambda_context = (const LambdaRayContext *)context;
   Camera *camera = lambda_context->camera;
   Tela *tela = lambda_context->tela;
-  u32 w = tela->width;
-  f32 invW = 1 / w;
-  f32 h = tela->height;
-  f32 invH = 1 / h;
+  f32 w = (f32)tela->width;
+  f32 invW = 1.0f / w;
+  f32 h = (f32)tela->height;
+  f32 invH = 1.0f / h;
   Vec3 dirInLocal = {(x * invW - 0.5), (y * invH - 0.5),
                      camera->distance_to_plane};
   Vec3 dir = vec3(
