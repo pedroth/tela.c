@@ -8,40 +8,34 @@ else
 end
 set_toolchains("clang")
 
-target("vec_benchmark")
+
+target("simple_animation")
     set_kind("binary")
-    add_files("src/Vector/Vec.c", "src/utils/time.c")
-    add_includedirs("src")
+    add_files("test/simple_animation.c")
     add_packages("sdl2")
     add_links("SDL2")
 
-target("simple_animation_window")
+target("amazing_shader")
     set_kind("binary")
-    add_files("test/simple_animation_window.c")
+    add_files("test/amazing_shader.c")
     add_packages("sdl2")
     add_links("SDL2")
 
-target("amazing_shader_window")
+target("wave")
     set_kind("binary")
-    add_files("test/amazing_shader_window.c")
+    add_files("test/wave.c")
     add_packages("sdl2")
     add_links("SDL2")
 
-target("wave_window")
+target("line_test")
     set_kind("binary")
-    add_files("test/wave_window.c")
+    add_files("test/line_test.c")
     add_packages("sdl2")
     add_links("SDL2")
 
-target("line_test_window")
+target("sdf_test")
     set_kind("binary")
-    add_files("test/line_test_window.c")
-    add_packages("sdl2")
-    add_links("SDL2")
-
-target("sdf_test_window")
-    set_kind("binary")
-    add_files("test/sdf_test_window.c")
+    add_files("test/sdf_test.c")
     add_packages("sdl2")
     add_links("SDL2")
 
