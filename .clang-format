@@ -1,0 +1,34 @@
+# Prettier-like behavior for C
+BasedOnStyle: Google
+IndentWidth: 2
+TabWidth: 2
+UseTab: Never
+ColumnLimit: 80
+
+# This forces { ... } lists to be treated more like blocks (vertical layout)
+# rather than packed into one line like C++11 initializer lists.
+Cpp11BracedListStyle: false
+
+# Do not pack arguments/parameters onto the same line.
+# If they don't fit on one line, each one goes on its own line.
+BinPackArguments: false
+BinPackParameters: false
+
+# Alignment of function arguments
+# BlockIndent (if supported) aligns arguments with the block indentation
+# and puts the closing parenthesis on a new line.
+AlignAfterOpenBracket: BlockIndent
+
+# Braces
+BreakBeforeBraces: Attach
+AllowShortBlocksOnASingleLine: Never
+AllowShortFunctionsOnASingleLine: Empty
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+
+# Spacing
+SpaceBeforeParens: ControlStatements
+SpaceInEmptyParentheses: false
+SpacesInParentheses: false
+SpacesInSquareBrackets: false
+SpaceAfterCStyleCast: false

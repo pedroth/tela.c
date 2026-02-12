@@ -54,7 +54,7 @@ static Vec2 g_line_end = {0.0f, 0.0f};
  * Returns the color stored in the line's context
  */
 Color line_shader(u32 x, u32 y, Line_2D *line, void *context) {
-  LineContext *line_ctx = (LineContext *)line->context;
+  LineContext *line_ctx = (LineContext *)line->props;
   return line_ctx->color;
 }
 
@@ -81,7 +81,7 @@ void render_frame(f32 dt, f32 time, void *context) {
   // Draw preview line while dragging
   if (g_is_mouse_down) {
     LineContext preview_ctx = {WHITE_COLOR};
-    Line_2D preview_line = {g_line_start, g_line_end, &preview_ctx};
+    Line_2D preview_line = {.positions = {g_line_start, g_line_end}, .props = &preview_ctx};
     draw_line_tela(app->tela, &preview_line, line_shader, NULL);
   }
 
@@ -126,7 +126,7 @@ void on_mouse_up(Window *window, i32 x, i32 y, u32 button, void *context) {
   line_ctx->color = random_color();
 
   // Add the new line to the collection
-  Line_2D new_line = {g_line_start, line_end, line_ctx};
+  Line_2D new_line = {.positions = {g_line_start, line_end}, .props = line_ctx};
   push_array(&app->lines, &new_line);
 }
 

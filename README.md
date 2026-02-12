@@ -41,6 +41,11 @@ Then compile it using:
 clang -o my_app my_app.c -lSDL2 -lm
 ```
 
+For optimized compilation:
+```bash
+clang -O3 -o my_app my_app.c -lSDL2 -lm
+```
+
 
 
 ## Generate images and videos
