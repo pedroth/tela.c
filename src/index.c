@@ -584,6 +584,9 @@ typedef struct {
 } NaiveScene;
 
 NaiveScene add_triangle_nscene(NaiveScene* scene, Triangle triangle) {
+  if (scene->triangles.element_size == 0) {
+    scene->triangles = new_array(4, sizeof(Triangle));
+  }
   push_array(&scene->triangles, &triangle);
   return *scene;
 }
@@ -1605,10 +1608,10 @@ void raster_triangle(RasterTriangleInput* input) {
   u32 outFrustumCount = 0;
   for (u32 i = 0; i < 3; i++) {
     if (points_in_cam_coords[i].z < distanceToPlane) {
-      inFrustum[inFrustumCount++] = i;
+      outFrustum[outFrustumCount++] = i;
     }
     else {
-      outFrustum[outFrustumCount++] = i;
+      inFrustum[inFrustumCount++] = i;
     }
   }
   if (params->clip_camera_plane && outFrustumCount >= 1) return;

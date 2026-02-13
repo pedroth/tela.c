@@ -54,6 +54,9 @@ static void on_frame(f32 dt, f32 time, void* ctx) {
     App* app = (App*)ctx;
 
     NaiveScene* scene = app->scene;
+
+    printf("Camera position: (%.2f, %.2f, %.2f)\n", app->camera->position.x,
+        app->camera->position.y, app->camera->position.z);
     // Render
     Tela* tela = raster_scene(
         scene,
@@ -67,6 +70,12 @@ static void on_frame(f32 dt, f32 time, void* ctx) {
             .background_color = (Color){ 0.1f, 0.1f, 0.1f, 1.0f },
             .perspective_correct = true
     });
+
+    // Update window title with FPS
+    set_window_title(app->window, format_string("FPS: %.2f", 1.0f / dt));
+
+    // Present the frame
+    paint_window(app->window, app->tela);
 }
 
 static void on_close(Window* window, void* ctx) {
@@ -129,10 +138,6 @@ static void register_input_handlers(Window* window, App* app) {
  * Main
  * ========================================================================== */
 
-typedef struct {
-    Color colors[3];
-} TriangleProps;
-
 int main(void) {
     // Create window and canvas
     Tela* tela = new_tela(WIDTH, HEIGHT);
@@ -141,15 +146,19 @@ int main(void) {
     // Setup camera
     Camera camera = create_camera(vec3(3.0f, 0.0f, 0.0f), vec3(0, 0, 0), 1.0f);
 
+    static RasterTriangleProps tri_props = {
+        .colors = { { 1, 0, 0, 1 }, { 0, 1, 0, 1 }, { 0, 0, 1, 1 } },
+        .tex_coords = { { 0, 0 }, { 1, 0 }, { 0, 1 } },
+        .texture = NULL
+    };
+
     NaiveScene scene = { 0 };
     add_triangle_nscene(
         &scene,
         (Triangle) {
         .positions = { vec3(1, 0, 0), vec3(0, 1, 0), vec3(0, 0, 1) },
-            .props = &(TriangleProps) {
-            .colors = { { 1, 0, 0, 1 }, { 0, 1, 0, 1 }, { 0, 0, 1, 1 } }
+            .props = &tri_props
         }
-    }
     );
 
     // Application state
