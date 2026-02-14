@@ -55,8 +55,6 @@ static void on_frame(f32 dt, f32 time, void* ctx) {
 
     NaiveScene* scene = app->scene;
 
-    printf("Camera position: (%.2f, %.2f, %.2f)\n", app->camera->position.x,
-        app->camera->position.y, app->camera->position.z);
     // Render
     Tela* tela = raster_scene(
         scene,

@@ -67,6 +67,42 @@ static inline double random_double(void) { return (double)rand() / RAND_MAX; }
 
 //========================================================================================
 /*                                                                                      *
+ *                                         MATH                                         *
+ *                                                                                      */
+ //========================================================================================
+
+inline u32 mod_u32(u32 n, u32 m) {
+  return ((n % m) + m) % m;
+}
+
+inline f32 clamp(f32 x, f32 min, f32 max) {
+  if (x < min) return min;
+  if (x > max) return max;
+  return x;
+}
+
+inline f32 lerp_f32(f32 a, f32 b, f32 t) {
+  return a + (b - a) * t;
+}
+
+inline f32 q_bezier_f32(f32 p1, f32 p2, f32 p3, f32 t) {
+  f32 q1 = lerp_f32(p1, p2, t);
+  f32 q2 = lerp_f32(p2, p3, t);
+  return lerp_f32(q1, q2, t);
+}
+
+inline f32 c_bezier_f32(f32 p1, f32 p2, f32 p3, f32 p4, f32 t) {
+  f32 b1 = lerp_f32(p1, p2, t);
+  f32 b2 = lerp_f32(p2, p3, t);
+  f32 b3 = lerp_f32(p3, p4, t);
+
+  f32 c1 = lerp_f32(b1, b2, t);
+  f32 c2 = lerp_f32(b2, b3, t);
+  return lerp_f32(c1, c2, t);
+}
+
+//========================================================================================
+/*                                                                                      *
  *                                         ARRAY *
  *                                                                                      */
  //========================================================================================
@@ -187,6 +223,20 @@ static inline Vec2 sub_vec2(const Vec2 a, const Vec2 b) {
   Vec2 result;
   result.x = a.x - b.x;
   result.y = a.y - b.y;
+  return result;
+}
+
+static inline Vec2 mul_vec2(const Vec2 a, const Vec2 b) {
+  Vec2 result;
+  result.x = a.x * b.x;
+  result.y = a.y * b.y;
+  return result;
+}
+
+static inline Vec2 div_vec2(const Vec2 a, const Vec2 b) {
+  Vec2 result;
+  result.x = a.x / b.x;
+  result.y = a.y / b.y;
   return result;
 }
 
@@ -356,6 +406,15 @@ static inline Color random_color() {
   c.blue = (f32)rand() / (f32)RAND_MAX;
   c.alpha = 1.0f;
   return c;
+}
+
+static inline Color lerp_color(Color a, Color b, f32 t) {
+  Color result;
+  result.red = lerp_f32(a.red, b.red, t);
+  result.green = lerp_f32(a.green, b.green, t);
+  result.blue = lerp_f32(a.blue, b.blue, t);
+  result.alpha = lerp_f32(a.alpha, b.alpha, t);
+  return result;
 }
 
 //========================================================================================
@@ -666,11 +725,23 @@ static inline Tela* fill_tela(Tela* tela, Color color) {
   return tela;
 }
 
-static inline Vec2 canvas2grid(Tela* tela, u32 x, u32 y) {
+static inline Vec2 to_grid_tela(const Tela* tela, u32 x, u32 y) {
   const u32 h = tela->height;
   const u32 j = x;
   const u32 i = h - 1 - y;
-  return vec2((f32)j, (f32)i);
+  return vec2((f32)i, (f32)j);
+}
+
+static inline Color get_pxl_tela(const Tela* tela, u32 x, u32 y) {
+  const u32 w = tela->width;
+  const u32 h = tela->height;
+  Vec2 grid = to_grid_tela(tela, x, y);
+  u32 i = (u32)grid.y;
+  u32 j = (u32)grid.x;
+  i = mod_u32(i, h);
+  j = mod_u32(j, w);
+  u32 index = COLOR_CHANNELS * (w * i + j);
+  return (Color) { tela->image[index], tela->image[index + 1], tela->image[index + 2], tela->image[index + 3] };
 }
 
 /**
@@ -1520,55 +1591,119 @@ typedef struct {
   Camera* camera;
   Tela* tela;
   RasterParams* params;
-  const f32* zBuffer; // size will be tela->width * tela->height
+  f32* zBuffer; // size will be tela->width * tela->height
 } RasterTriangleInput;
 
-Color raster_triangle_shader(u32 x, u32 y, const Triangle_2D* triangle, void* context) {
-  //   let W = 1;
-  // let wReciprocal = 1;
-  // const p = Vec2(x, y).sub(intPoints[0]);
-  // let alpha = -(v.x * p.y - v.y * p.x) * invDet;
-  // let beta = (u.x * p.y - u.y * p.x) * invDet;
-  // let gamma = 1 - alpha - beta;
-  // const zs = pointsInCamCoord.map(p = > p.z);
-  // if (params.perspectiveCorrect) {
-  //   // wReciprocal is the weight for perspective correction of z coordinate
-  //   W = (1 / zs[0]) * gamma + (1 / zs[1]) * alpha + (1 / zs[2]) * beta;
-  //   wReciprocal = 1 / W;
-  //   alpha = (alpha / zs[1]) * wReciprocal;
-  //   beta = (beta / zs[2]) * wReciprocal;
-  //   gamma = (gamma / zs[0]) * wReciprocal;
-  // }
-  // else {
-  //   wReciprocal = zs[0] * gamma + zs[1] * alpha + zs[2] * beta;
-  // }
-  // // compute color
-  // let c = Color.ofRGB(
-  //   c1[0] * gamma + c2[0] * alpha + c3[0] * beta,
-  //   c1[1] * gamma + c2[1] * alpha + c3[1] * beta,
-  //   c1[2] * gamma + c2[2] * alpha + c3[2] * beta,
-  //   c1[3] * gamma + c2[3] * alpha + c3[3] * beta,
-  //   );
-  // if (haveTextures) {
-  //   const texUV = texCoords[0].scale(gamma)
-  //     .add(texCoords[1].scale(alpha))
-  //     .add(texCoords[2].scale(beta))
-  //     const texColor = texture ?
-  //     params.bilinearTexture ?
-  //     getBiLinearTexColor(texUV, texture) :
-  //     getTexColor(texUV, texture) :
-  //     c ? c : getDefaultTexColor(texUV); // TODO: review this
-  //   c = texColor;
-  // }
-  // const [i, j] = canvas.canvas2grid(x, y);
-  // const zBufferIndex = Math.floor(w * i + j);
-  // if (wReciprocal < zBuffer[zBufferIndex]) {
-  //   const matrixValue = ditheringMatrix4x4[(i % 4) * 4 + (j % 4)];
-  //   const color = matrixValue < c.alpha ? c : undefined;
-  //   if (color) zBuffer[zBufferIndex] = wReciprocal; // if color is undefined, don't update zBuffer
-  //   return color;
-  // }
-  return (Color) { 1.0f, 0.0f, 0.0f, 1.0f };
+const f32 dithering_matrix_4x4[16] = {
+  0.0f / 16.0f, 8.0f / 16.0f, 2.0f / 16.0f, 10.0f / 16.0f, 12.0f / 16.0f,
+  4.0f / 16.0f, 14.0f / 16.0f, 6.0f / 16.0f, 3.0f / 16.0f, 11.0f / 16.0f,
+  1.0f / 16.0f, 9.0f / 16.0f, 15.0f / 16.0f, 7.0f / 16.0f, 13.0f / 16.0f,
+};
+
+Color get_bilinear_tex_color(Tela* texture, Vec2 uv) {
+  Vec2 size = vec2((f32)texture->width, (f32)texture->height);
+  Vec2 texInt = mul_vec2(uv, size);
+
+  Vec2 texInt0 = map_vec2(texInt, floorf);
+  Vec2 texInt1 = add_vec2(texInt0, vec2(1, 0));
+  Vec2 texInt2 = add_vec2(texInt0, vec2(0, 1));
+  Vec2 texInt3 = add_vec2(texInt0, vec2(1, 1));
+
+  Color color0 = get_pxl_tela(texture, texInt0.x, texInt0.y);
+  Color color1 = get_pxl_tela(texture, texInt1.x, texInt1.y);
+  Color color2 = get_pxl_tela(texture, texInt2.x, texInt2.y);
+  Color color3 = get_pxl_tela(texture, texInt3.x, texInt3.y);
+
+  Vec2 x = sub_vec2(texInt, texInt0);
+  Color bottomX = lerp_color(color0, color1, x.x);
+  Color topX = lerp_color(color2, color3, x.x);
+  return lerp_color(bottomX, topX, x.y);
+}
+
+Color get_tex_color(const Tela* texture, Vec2 uv) {
+  return get_pxl_tela(texture, uv.x * texture->width, uv.y * texture->height);
+}
+
+typedef struct {
+  Vec2 int_points[3];
+  f32 inv_det;
+  Vec3 points_in_cam_coords[3];
+  Color c1, c2, c3;
+  Vec2 tex_coords[3];
+  Tela* texture;
+  bool have_textures;
+  f32* zBuffer; // size will be tela->width * tela->height
+  u32 width;
+  u32 height;
+  Vec2 u;
+  Vec2 v;
+  RasterParams* params;
+  Tela* tela;
+} RasterTriangleShaderContext;
+
+Color raster_triangle_shader(u32 x, u32 y, const Triangle_2D* triangle, void* ctx) {
+  RasterTriangleShaderContext* context = (RasterTriangleShaderContext*)ctx;
+  Vec2* int_points = context->int_points;
+  f32 inv_det = context->inv_det;
+  Vec3* points_in_cam_coords = context->points_in_cam_coords;
+  Vec2 u = context->u;
+  Vec2 v = context->v;
+  Color c1 = context->c1;
+  Color c2 = context->c2;
+  Color c3 = context->c3;
+  Vec2* tex_coords = context->tex_coords;
+  Tela* texture = context->texture;
+  bool have_textures = context->have_textures;
+  f32* zBuffer = context->zBuffer;
+  u32 w = context->width;
+  u32 h = context->height;
+  RasterParams* params = context->params;
+  Tela* tela = context->tela;
+
+  f32 W = 1;
+  f32 wReciprocal = 1;
+
+  Vec2 p = sub_vec2(vec2(x, y), int_points[0]);
+  f32 alpha = -(v.x * p.y - v.y * p.x) * inv_det;
+  f32 beta = (u.x * p.y - u.y * p.x) * inv_det;
+  f32 gamma = 1 - alpha - beta;
+  const f32 zs[3] = { points_in_cam_coords[0].z, points_in_cam_coords[1].z, points_in_cam_coords[2].z };
+  if (params->perspective_correct) {
+    // wReciprocal is the weight for perspective correction of z coordinate
+    W = (1 / zs[0]) * gamma + (1 / zs[1]) * alpha + (1 / zs[2]) * beta;
+    wReciprocal = 1 / W;
+    alpha = (alpha / zs[1]) * wReciprocal;
+    beta = (beta / zs[2]) * wReciprocal;
+    gamma = (gamma / zs[0]) * wReciprocal;
+  }
+  else {
+    wReciprocal = zs[0] * gamma + zs[1] * alpha + zs[2] * beta;
+  }
+  // compute color
+  Color c = {
+    c1.red * gamma + c2.red * alpha + c3.red * beta,
+    c1.green * gamma + c2.green * alpha + c3.green * beta,
+    c1.blue * gamma + c2.blue * alpha + c3.blue * beta,
+    c1.alpha * gamma + c2.alpha * alpha + c3.alpha * beta,
+  };
+  if (have_textures) {
+    Vec2 tex_uv = add_vec2(scale_vec2(tex_coords[0], gamma),
+      add_vec2(scale_vec2(tex_coords[1], alpha),
+        scale_vec2(tex_coords[2], beta)));
+    Color tex_color = params->bilinear_texture ?
+      get_bilinear_tex_color(texture, tex_uv) :
+      get_tex_color(texture, tex_uv);
+    c = tex_color;
+  }
+  const Vec2 ij = to_grid_tela(tela, x, y);
+  const u32 zBufferIndex = (u32)floorf(w * ij.x + ij.y);
+  if (wReciprocal < zBuffer[zBufferIndex]) {
+    const f32 matrix_value = dithering_matrix_4x4[((int)ij.x % 4) * 4 + ((int)ij.y % 4)];
+    const Color color = matrix_value < c.alpha ? c : (Color) { 0, 0, 0, 0 };
+    if (color.alpha > 0) zBuffer[zBufferIndex] = wReciprocal; // if color.alpha is 0, don't update zBuffer
+    return color;
+  }
+  return (Color) { 0, 0, 0, 0 };
 }
 
 void raster_triangle(RasterTriangleInput* input) {
@@ -1576,17 +1711,17 @@ void raster_triangle(RasterTriangleInput* input) {
   Camera* camera = input->camera;
   Tela* tela = input->tela;
   RasterParams* params = input->params;
-  const f32* zBuffer = input->zBuffer;
+  f32* zBuffer = input->zBuffer;
 
-  const u32 w = tela->width;
-  const u32 h = tela->height;
-  const f32 distanceToPlane = camera->distance_to_plane;
-  const Vec3* positions = triangle->positions;
+  u32 w = tela->width;
+  u32 h = tela->height;
+  f32 distanceToPlane = camera->distance_to_plane;
+  Vec3* positions = triangle->positions;
 
   RasterTriangleProps* props = (RasterTriangleProps*)triangle->props;
-  const Color* colors = props->colors;
-  const Vec2* tex_coords = props->tex_coords;
-  const Tela* texture = props->texture;
+  Color* colors = props->colors;
+  Vec2* tex_coords = props->tex_coords;
+  Tela* texture = props->texture;
   // camera coords
   Vec3 points_in_cam_coords[3];
   for (u32 i = 0; i < 3; i++) {
@@ -1595,8 +1730,8 @@ void raster_triangle(RasterTriangleInput* input) {
   }
   // back face culling
   if (params->cull_backfaces) {
-    const Vec3 du = sub_vec3(points_in_cam_coords[1], points_in_cam_coords[0]);
-    const Vec3 dv = sub_vec3(points_in_cam_coords[2], points_in_cam_coords[0]);
+    Vec3 du = sub_vec3(points_in_cam_coords[1], points_in_cam_coords[0]);
+    Vec3 dv = sub_vec3(points_in_cam_coords[2], points_in_cam_coords[0]);
     Vec3 n = cross_vec3(du, dv);
     normalize_vec3(n, &n);
     if (dot_vec3(n, points_in_cam_coords[0]) <= 0) return;
@@ -1632,30 +1767,49 @@ void raster_triangle(RasterTriangleInput* input) {
     );
   }
   // shader
-  const Vec2 u = sub_vec2(intPoints[1], intPoints[0]);
-  const Vec2 v = sub_vec2(intPoints[2], intPoints[0]);
-  const f32 det = wedge_vec2(u, v); // wedge product
+  Vec2 u = sub_vec2(intPoints[1], intPoints[0]);
+  Vec2 v = sub_vec2(intPoints[2], intPoints[0]);
+  f32 det = wedge_vec2(u, v); // wedge product
   if (det == 0) return;
-  const f32 invDet = 1 / det;
-  const Color c1 = colors[0];
-  const Color c2 = colors[1];
-  const Color c3 = colors[2];
-  const bool haveTextures = texture != NULL && tex_coords != NULL;
+  f32 invDet = 1 / det;
+  Color c1 = colors[0];
+  Color c2 = colors[1];
+  Color c3 = colors[2];
+  bool haveTextures = texture != NULL && tex_coords != NULL;
 
   RasterTriangleProps* new_triangle_props = &(RasterTriangleProps) {
     .colors = { c1, c2, c3 },
       .tex_coords = { tex_coords[0], tex_coords[1], tex_coords[2] },
       .texture = (Tela*)texture
   };
-  const Triangle_2D* triangle_2d = &(Triangle_2D) {
+  Triangle_2D* triangle_2d = &(Triangle_2D) {
     .positions = { intPoints[0], intPoints[1], intPoints[2] },
       .props = new_triangle_props
+  };
+
+  RasterTriangleShaderContext raster_triangle_shader_context = (RasterTriangleShaderContext){
+    .int_points = { intPoints[0], intPoints[1], intPoints[2] },
+      .inv_det = invDet,
+      .points_in_cam_coords = { points_in_cam_coords[0], points_in_cam_coords[1], points_in_cam_coords[2] },
+      .u = u,
+      .v = v,
+      .c1 = c1,
+      .c2 = c2,
+      .c3 = c3,
+      .tex_coords = { tex_coords[0], tex_coords[1], tex_coords[2] },
+      .texture = (Tela*)texture,
+      .have_textures = haveTextures,
+      .zBuffer = zBuffer,
+      .width = w,
+      .height = h,
+      .params = params,
+      .tela = tela
   };
   draw_triangle_tela(
     tela,
     triangle_2d,
     raster_triangle_shader,
-    NULL
+    &raster_triangle_shader_context
   );
 }
 
