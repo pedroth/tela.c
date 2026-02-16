@@ -951,7 +951,16 @@ static inline Tela* draw_line_tela(Tela* tela, const Line_2D* line,
   return tela;
 }
 
-static inline bool is_inside_convex(const Vec2* vertices, u32 vertex_count, Vec2 point) {
+typedef struct {
+  u32 vertex_count;
+  Vec2* vertices;
+  Vec2* edge_vectors;
+  Vec2* edge_normals;
+  i32 orientation;
+} PreComputeInsidePolyContext;
+
+static inline PreComputeInsidePolyContext precompute_inside_poly(const Vec2* vertices, u32 vertex_count) {
+  PreComputeInsidePolyContext context;
   const u32 m = vertex_count;
   Vec2 v[m];
   Vec2 n[m];
@@ -961,10 +970,24 @@ static inline bool is_inside_convex(const Vec2* vertices, u32 vertex_count, Vec2
     v[i] = sub_vec2(p1, p0);
     n[i] = (Vec2){ -v[i].y, v[i].x };
   }
-  const int orientation = wedge_vec2(v[0], v[1]) >= 0 ? 1 : -1;
+  const i32 orientation = wedge_vec2(v[0], v[1]) >= 0 ? 1 : -1;
+  context.vertex_count = vertex_count;
+  context.vertices =  (Vec2*)malloc(vertex_count * sizeof(Vec2));
+  context.edge_vectors = (Vec2*)malloc(vertex_count * sizeof(Vec2));
+  context.edge_normals = (Vec2*)malloc(vertex_count * sizeof(Vec2));
+  context.orientation = orientation;
   for (u32 i = 0; i < m; i++) {
-    const Vec2 r = sub_vec2(point, vertices[i]);
-    const f32 myDot = dot_vec2(r, n[i]) * orientation;
+    context.vertices[i] = vertices[i];
+    context.edge_vectors[i] = v[i];
+    context.edge_normals[i] = n[i]; 
+  }
+  return context;
+}
+
+static inline bool is_inside_convex(const PreComputeInsidePolyContext* context, Vec2 point) {
+  for (u32 i = 0; i < context->vertex_count; i++) {
+    const Vec2 r = sub_vec2(point, context->vertices[i]);
+    const f32 myDot = dot_vec2(r, context->edge_normals[i]) * context->orientation;
     if (myDot < 0) return false;
   }
   return true;
@@ -990,9 +1013,12 @@ static inline Tela* draw_triangle_tela(
   const Vec2 xmin = finalBox.min;
   const Vec2 xmax = finalBox.max;
 
+
+  
+  PreComputeInsidePolyContext is_inside_pre_compute_context = precompute_inside_poly(triangle->positions, 3);
   for (u32 x = xmin.x; x < xmax.x; x++) {
     for (u32 y = xmin.y; y < xmax.y; y++) {
-      if (is_inside_convex(triangle->positions, 3, (Vec2) { x, y })) {
+      if (is_inside_convex(&is_inside_pre_compute_context, (Vec2) { x, y })) {
         const u32 j = x;
         const u32 i = height - 1 - y;
         const Color color = shader(x, y, triangle, context);
@@ -1005,6 +1031,9 @@ static inline Tela* draw_triangle_tela(
       }
     }
   }
+  free(is_inside_pre_compute_context.vertices);
+  free(is_inside_pre_compute_context.edge_vectors);
+  free(is_inside_pre_compute_context.edge_normals);
   return tela;
 }
 
