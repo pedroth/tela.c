@@ -71,6 +71,10 @@ static inline double random_double(void) { return (double)rand() / RAND_MAX; }
  *                                                                                      */
  //========================================================================================
 
+inline f32 mod_f32(f32 n, f32 m) {
+  return fmodf(fmodf(n, m) + m, m);
+}
+
 inline u32 mod_u32(u32 n, u32 m) {
   return ((n % m) + m) % m;
 }
@@ -632,6 +636,16 @@ typedef struct {
   void* props;
 } Triangle;
 
+AABB get_bounding_box_triangle(Triangle* triangle) {
+  AABB box;
+  AABB b1 = build_aabb(triangle->positions[0], triangle->positions[0]);
+  AABB b2 = build_aabb(triangle->positions[1], triangle->positions[1]);
+  AABB b3 = build_aabb(triangle->positions[2], triangle->positions[2]);
+  box = union_aabb(&b1, &b2);
+  box = union_aabb(&box, &b3);
+  return box;
+}
+
 //========================================================================================
 /*                                                                                      *
  *                                      NAIVE_SCENE                                     *
@@ -649,6 +663,15 @@ NaiveScene add_triangle_nscene(NaiveScene* scene, Triangle triangle) {
   push_array(&scene->triangles, &triangle);
   return *scene;
 }
+
+NaiveScene add_triangles_nscene(NaiveScene* scene, Array triangles) {
+  for (u32 i = 0; i < triangles.length; i++) {
+    Triangle* tri = (Triangle*)get_array_element(&triangles, i);
+    add_triangle_nscene(scene, *tri);
+  }
+  return *scene;
+}
+
 
 NaiveScene clear_triangles_nscene(NaiveScene* scene) {
   clear_array(&scene->triangles);
@@ -736,8 +759,8 @@ static inline Color get_pxl_tela(const Tela* tela, u32 x, u32 y) {
   const u32 w = tela->width;
   const u32 h = tela->height;
   Vec2 grid = to_grid_tela(tela, x, y);
-  u32 i = (u32)grid.y;
-  u32 j = (u32)grid.x;
+  u32 i = (u32)grid.x;
+  u32 j = (u32)grid.y;
   i = mod_u32(i, h);
   j = mod_u32(j, w);
   u32 index = COLOR_CHANNELS * (w * i + j);
@@ -1032,10 +1055,15 @@ static inline void tela_to_image(Tela* tela, const char* filename) {
   }
 }
 
-static inline char* io_read_file(const char* filename) {
+typedef struct {
+  char* data;
+  u32 length;
+} String;
+
+static inline String io_read_file(const char* filename) {
   FILE* file = fopen(filename, "rb");
   if (!file) {
-    return NULL;
+    return (String) { NULL, 0 };
   }
 
   fseek(file, 0, SEEK_END);
@@ -1045,14 +1073,82 @@ static inline char* io_read_file(const char* filename) {
   char* buffer = (char*)malloc(length + 1);
   if (!buffer) {
     fclose(file);
-    return NULL;
+    return (String) { NULL, 0 };
   }
 
-  fread(buffer, 1, length, file);
-  buffer[length] = '\0';
+  size_t bytes_read = fread(buffer, 1, length, file);
+  buffer[bytes_read] = '\0';
 
   fclose(file);
-  return buffer;
+  return (String) { buffer, (u32)length };
+}
+
+Tela* io_parse_ppm(String ppm_data) {
+  if (!ppm_data.data || ppm_data.length == 0) return NULL;
+
+  const u8* data = (const u8*)ppm_data.data;
+  u32 length = ppm_data.length;
+  u32 index = 0;
+
+  // Skip 3 header lines (format, dimensions, max color)
+  u32 header_lines = 3;
+  while (header_lines > 0 && index < length) {
+    if (data[index] == '\n') header_lines--;
+    index++;
+  }
+
+  // Parse width, height, maxColor from the header
+  u32 width = 0, height = 0, max_color = 0;
+  sscanf((const char*)data, "%*s %u %u %u", &width, &height, &max_color);
+  if (width == 0 || height == 0 || max_color == 0) return NULL;
+
+  Tela* tela = new_tela(width, height);
+  if (!tela) return NULL;
+
+  f32 inv_max = 1.0f / (f32)max_color;
+
+  // Read pixel data (raw bytes after header)
+  // Buffer stores pixels in file order (top-to-bottom, row 0 = top of image).
+  // The Y-flip happens in get_pxl_tela/to_grid_tela when reading, matching JS.
+  for (u32 k = 0; k < width * height && index + 2 < length; k++) {
+    u32 img_idx = k * COLOR_CHANNELS;
+    tela->image[img_idx + 0] = (f32)data[index] * inv_max;
+    tela->image[img_idx + 1] = (f32)data[index + 1] * inv_max;
+    tela->image[img_idx + 2] = (f32)data[index + 2] * inv_max;
+    tela->image[img_idx + 3] = 1.0f;
+    index += 3;
+  }
+
+  return tela;
+}
+
+Tela* io_read_image(const char* filename) {
+  // Check if file has .ppm extension
+  const char* dot = strrchr(filename, '.');
+  if (dot && (strcmp(dot, ".ppm") == 0 || strcmp(dot, ".PPM") == 0)) {
+    String file_data = io_read_file(filename);
+    if (!file_data.data) return NULL;
+    Tela* tela = io_parse_ppm(file_data);
+    free(file_data.data);
+    return tela;
+  }
+
+  // Convert other formats to PPM using ffmpeg, then parse
+  char temp_ppm[512];
+  snprintf(temp_ppm, sizeof(temp_ppm), "temp_read_%d.ppm", (int)(rand() % 1000000));
+
+  char command[1024];
+  snprintf(command, sizeof(command), "ffmpeg -y -i %s %s", filename, temp_ppm);
+  int ret = system(command);
+  if (ret != 0) return NULL;
+
+  String file_data = io_read_file(temp_ppm);
+  remove(temp_ppm);
+  if (!file_data.data) return NULL;
+
+  Tela* tela = io_parse_ppm(file_data);
+  free(file_data.data);
+  return tela;
 }
 
 //========================================================================================
@@ -1079,6 +1175,15 @@ static inline u32 get_time_ms(void) {
  *                                     STRING UTILS *
  *                                                                                      */
  //========================================================================================
+
+static inline String create_string(const char* data) {
+  u32 length = (u32)strlen(data);
+  return (String) { .data = (char*)data, .length = length };
+}
+
+static inline char* to_cstring(String str) {
+  return str.data;
+}
 
 static inline char* format_string(const char* fmt, ...) {
   va_list args;
@@ -1838,6 +1943,239 @@ Tela* raster_scene(NaiveScene* scene, RasterParams params) {
 }
 
 
+//========================================================================================
+/*                                                                                      *
+ *                                         MESH                                         *
+ *                                                                                      */
+ //========================================================================================
+typedef struct {
+  u32 vertex_indices[3];
+  u32 tex_coord_indices[3];
+  u32 normal_indices[3];
+} Face;
+
+typedef enum {
+  MATERIAL_NONE,
+  MATERIAL_DIFFUSE,
+  MATERIAL_SPECULAR,
+  MATERIAL_EMISSIVE,
+} MaterialType;
+typedef struct {
+  MaterialType type;
+  void* data;
+} Material;
+
+typedef struct {
+  Array vertices;  // Vec3
+  Array tex_coords; // Vec2
+  Array normals; // Vec3
+  Array colors; // Color
+  Array faces; // Face
+  Array materials; // Material
+  Tela* texture;
+  String name;
+} Mesh;
+
+Mesh read_obj_mesh(String obj_file, char* mesh_name) {
+  Mesh mesh = { 0 };
+  mesh.name = create_string(mesh_name);
+  mesh.vertices = new_array(64, sizeof(Vec3));
+  mesh.tex_coords = new_array(64, sizeof(Vec2));
+  mesh.normals = new_array(64, sizeof(Vec3));
+  mesh.faces = new_array(64, sizeof(Face));
+
+  char* data = obj_file.data;
+  u32 len = obj_file.length;
+  u32 pos = 0;
+
+  while (pos < len) {
+    // Find line start and end
+    u32 line_start = pos;
+    while (pos < len && data[pos] != '\n' && data[pos] != '\r') pos++;
+    u32 line_end = pos;
+    // Skip newline characters
+    while (pos < len && (data[pos] == '\n' || data[pos] == '\r')) pos++;
+
+    // Skip empty lines
+    if (line_end == line_start) continue;
+
+    // Skip leading whitespace
+    u32 i = line_start;
+    while (i < line_end && (data[i] == ' ' || data[i] == '\t')) i++;
+    if (i >= line_end) continue;
+
+    // Parse line type
+    if (data[i] == '#') {
+      // Comment, skip
+      continue;
+    }
+
+    if (data[i] == 'v' && i + 1 < line_end && data[i + 1] == 'n' &&
+        (i + 2 >= line_end || data[i + 2] == ' ' || data[i + 2] == '\t')) {
+      // vn - vertex normal (3 floats)
+      i += 2;
+      f32 nx = 0, ny = 0, nz = 0;
+      sscanf(data + i, "%f %f %f", &nx, &ny, &nz);
+      Vec3 n = vec3(nx, ny, nz);
+      push_array(&mesh.normals, &n);
+      continue;
+    }
+
+    if (data[i] == 'v' && i + 1 < line_end && data[i + 1] == 't' &&
+        (i + 2 >= line_end || data[i + 2] == ' ' || data[i + 2] == '\t')) {
+      // vt - texture coordinate (2 floats)
+      i += 2;
+      f32 u = 0, v = 0;
+      sscanf(data + i, "%f %f", &u, &v);
+      Vec2 tc = vec2(u, v);
+      push_array(&mesh.tex_coords, &tc);
+      continue;
+    }
+
+    if (data[i] == 'v' && (i + 1 >= line_end || data[i + 1] == ' ' || data[i + 1] == '\t')) {
+      // v - vertex position (3 floats)
+      i += 1;
+      f32 vx = 0, vy = 0, vz = 0;
+      sscanf(data + i, "%f %f %f", &vx, &vy, &vz);
+      Vec3 v = vec3(vx, vy, vz);
+      push_array(&mesh.vertices, &v);
+      continue;
+    }
+
+    if (data[i] == 'f' && (i + 1 >= line_end || data[i + 1] == ' ' || data[i + 1] == '\t')) {
+      // f - face: collect vertex tokens
+      i += 1;
+
+      // Parse face tokens (e.g. "1/2/3", "1//3", "1/2", "1")
+      // Max polygon vertices we support for triangulation: 16
+      u32 vert_idx[16], tex_idx[16], norm_idx[16];
+      u32 face_vert_count = 0;
+
+      while (i < line_end && face_vert_count < 16) {
+        // Skip whitespace
+        while (i < line_end && (data[i] == ' ' || data[i] == '\t')) i++;
+        if (i >= line_end) break;
+
+        // Parse vertex_index[/tex_index[/normal_index]]
+        u32 vi = 0, ti = 0, ni = 0;
+
+        // Parse vertex index
+        while (i < line_end && data[i] >= '0' && data[i] <= '9') {
+          vi = vi * 10 + (data[i] - '0');
+          i++;
+        }
+        if (vi == 0) break; // invalid
+
+        if (i < line_end && data[i] == '/') {
+          i++; // skip '/'
+          if (i < line_end && data[i] != '/' && data[i] >= '0' && data[i] <= '9') {
+            while (i < line_end && data[i] >= '0' && data[i] <= '9') {
+              ti = ti * 10 + (data[i] - '0');
+              i++;
+            }
+          }
+          if (i < line_end && data[i] == '/') {
+            i++; // skip '/'
+            if (i < line_end && data[i] >= '0' && data[i] <= '9') {
+              while (i < line_end && data[i] >= '0' && data[i] <= '9') {
+                ni = ni * 10 + (data[i] - '0');
+                i++;
+              }
+            }
+          }
+        }
+
+        vert_idx[face_vert_count] = vi - 1;  // OBJ is 1-indexed
+        tex_idx[face_vert_count] = ti > 0 ? ti - 1 : 0;
+        norm_idx[face_vert_count] = ni > 0 ? ni - 1 : 0;
+        face_vert_count++;
+      }
+
+      // Triangulate: fan triangulation from vertex 0
+      // triangle: (0,1,2), quad: (0,1,2),(0,2,3), n-gon: (0,k,k+1)
+      for (u32 k = 1; k + 1 < face_vert_count; k++) {
+        Face face;
+        face.vertex_indices[0] = vert_idx[0];
+        face.vertex_indices[1] = vert_idx[k];
+        face.vertex_indices[2] = vert_idx[k + 1];
+        face.tex_coord_indices[0] = tex_idx[0];
+        face.tex_coord_indices[1] = tex_idx[k];
+        face.tex_coord_indices[2] = tex_idx[k + 1];
+        face.normal_indices[0] = norm_idx[0];
+        face.normal_indices[1] = norm_idx[k];
+        face.normal_indices[2] = norm_idx[k + 1];
+        push_array(&mesh.faces, &face);
+      }
+      continue;
+    }
+  }
+  return mesh;
+}
+
+AABB get_bounding_box_mesh(Mesh* mesh) {
+  AABB box = { 0 };
+  Array vertices = mesh->vertices;
+  for (u32 i = 0; i < vertices.length; i++) {
+    Vec3 vertex = *(Vec3*)get_array_element(&vertices, i);
+    AABB vertex_box = build_aabb(vertex, vertex);
+    box = union_aabb(&box, &vertex_box);
+  }
+  return box;
+}
+
+Mesh map_vertices_mesh(Mesh* mesh, Vec3(*mapper)(Vec3, void*), void* context) {
+  for (u32 i = 0; i < mesh->vertices.length; i++) {
+    Vec3* v = (Vec3*)get_array_element(&mesh->vertices, i);
+    *v = mapper(*v, context);
+  }
+  return *mesh;
+}
+
+Mesh add_texture_mesh(Mesh* mesh, Tela* texture) {
+  mesh->texture = texture;
+  return *mesh;
+}
+
+Array get_triangles_mesh(Mesh* mesh) {
+  Array triangles = new_array(mesh->faces.length, sizeof(Triangle));
+  Color default_color = { 1.0f, 1.0f, 1.0f, 1.0f };
+
+  for (u32 i = 0; i < mesh->faces.length; i++) {
+    Face* face = (Face*)get_array_element(&mesh->faces, i);
+
+    Triangle tri;
+    // positions from vertex indices
+    for (u32 j = 0; j < 3; j++) {
+      Vec3* v = (Vec3*)get_array_element(&mesh->vertices, face->vertex_indices[j]);
+      tri.positions[j] = v ? *v : vec3(0, 0, 0);
+    }
+
+    // Build props (colors, tex_coords, texture)
+    RasterTriangleProps* props = (RasterTriangleProps*)malloc(sizeof(RasterTriangleProps));
+    props->texture = mesh->texture;
+
+    for (u32 j = 0; j < 3; j++) {
+      // colors
+      if (mesh->colors.length > 0) {
+        Color* c = (Color*)get_array_element(&mesh->colors, face->vertex_indices[j]);
+        props->colors[j] = c ? *c : default_color;
+      } else {
+        props->colors[j] = default_color;
+      }
+      // texture coordinates
+      if (mesh->tex_coords.length > 0) {
+        Vec2* tc = (Vec2*)get_array_element(&mesh->tex_coords, face->tex_coord_indices[j]);
+        props->tex_coords[j] = tc ? *tc : vec2(0, 0);
+      } else {
+        props->tex_coords[j] = vec2(0, 0);
+      }
+    }
+
+    tri.props = props;
+    push_array(&triangles, &tri);
+  }
+  return triangles;
+}
 
 
 #endif /* TELA_C */
