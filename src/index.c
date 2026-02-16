@@ -952,42 +952,20 @@ static inline Tela* draw_line_tela(Tela* tela, const Line_2D* line,
 }
 
 typedef struct {
+  Vec2 normals[3];
+  Vec2 vertices[3];
   u32 vertex_count;
-  Vec2* vertices;
-  Vec2* edge_vectors;
-  Vec2* edge_normals;
-  i32 orientation;
-} PreComputeInsidePolyContext;
+  f32 orientation;
+} ConvexPrecomputed;
 
-static inline PreComputeInsidePolyContext precompute_inside_poly(const Vec2* vertices, u32 vertex_count) {
-  PreComputeInsidePolyContext context;
-  const u32 m = vertex_count;
-  Vec2 v[m];
-  Vec2 n[m];
+static inline bool is_inside_convex(const ConvexPrecomputed* precomputed, Vec2 point) {
+  const u32 m = precomputed->vertex_count;
+  const Vec2* vertices = precomputed->vertices;
+  const Vec2* normals = precomputed->normals;
+  const f32 orientation = precomputed->orientation;
   for (u32 i = 0; i < m; i++) {
-    const Vec2 p1 = vertices[(i + 1) % m];
-    const Vec2 p0 = vertices[i];
-    v[i] = sub_vec2(p1, p0);
-    n[i] = (Vec2){ -v[i].y, v[i].x };
-  }
-  const i32 orientation = wedge_vec2(v[0], v[1]) >= 0 ? 1 : -1;
-  context.vertex_count = vertex_count;
-  context.vertices =  (Vec2*)malloc(vertex_count * sizeof(Vec2));
-  context.edge_vectors = (Vec2*)malloc(vertex_count * sizeof(Vec2));
-  context.edge_normals = (Vec2*)malloc(vertex_count * sizeof(Vec2));
-  context.orientation = orientation;
-  for (u32 i = 0; i < m; i++) {
-    context.vertices[i] = vertices[i];
-    context.edge_vectors[i] = v[i];
-    context.edge_normals[i] = n[i]; 
-  }
-  return context;
-}
-
-static inline bool is_inside_convex(const PreComputeInsidePolyContext* context, Vec2 point) {
-  for (u32 i = 0; i < context->vertex_count; i++) {
-    const Vec2 r = sub_vec2(point, context->vertices[i]);
-    const f32 myDot = dot_vec2(r, context->edge_normals[i]) * context->orientation;
+    const Vec2 r = sub_vec2(point, vertices[i]);
+    const f32 myDot = dot_vec2(r, normals[i]) * orientation;
     if (myDot < 0) return false;
   }
   return true;
@@ -1003,7 +981,7 @@ static inline Tela* draw_triangle_tela(
   const u32 width = tela->width;
   const u32 height = tela->height;
   const AABB_2D canvasBox = tela->box;
-  AABB_2D boundingBox = { 0 };
+  AABB_2D boundingBox = EMPTY_AABB_2D;
   for (u32 i = 0; i < 3; i++) {
     AABB_2D pointBox = build_aabb_from_vec2(triangle->positions[i]);
     boundingBox = union_aabb_2d(&boundingBox, &pointBox);
@@ -1013,12 +991,24 @@ static inline Tela* draw_triangle_tela(
   const Vec2 xmin = finalBox.min;
   const Vec2 xmax = finalBox.max;
 
-
-  
-  PreComputeInsidePolyContext is_inside_pre_compute_context = precompute_inside_poly(triangle->positions, 3);
+  // Precompute edge normals and orientation on the stack (no malloc)
+  const Vec2* positions = triangle->positions;
+  const Vec2 e0 = sub_vec2(positions[1], positions[0]);
+  const Vec2 e1 = sub_vec2(positions[2], positions[1]);
+  const Vec2 e2 = sub_vec2(positions[0], positions[2]);
+  const ConvexPrecomputed precomputed = {
+    .normals = {
+      (Vec2){ -e0.y, e0.x },
+      (Vec2){ -e1.y, e1.x },
+      (Vec2){ -e2.y, e2.x },
+    },
+    .vertices = { positions[0], positions[1], positions[2] },
+    .vertex_count = 3,
+    .orientation = wedge_vec2(e0, e1) >= 0 ? 1.0f : -1.0f,
+  };
   for (u32 x = xmin.x; x < xmax.x; x++) {
     for (u32 y = xmin.y; y < xmax.y; y++) {
-      if (is_inside_convex(&is_inside_pre_compute_context, (Vec2) { x, y })) {
+      if (is_inside_convex(&precomputed, (Vec2) { (f32)x, (f32)y })) {
         const u32 j = x;
         const u32 i = height - 1 - y;
         const Color color = shader(x, y, triangle, context);
@@ -1031,9 +1021,6 @@ static inline Tela* draw_triangle_tela(
       }
     }
   }
-  free(is_inside_pre_compute_context.vertices);
-  free(is_inside_pre_compute_context.edge_vectors);
-  free(is_inside_pre_compute_context.edge_normals);
   return tela;
 }
 
@@ -2040,7 +2027,7 @@ Mesh read_obj_mesh(String obj_file, char* mesh_name) {
     }
 
     if (data[i] == 'v' && i + 1 < line_end && data[i + 1] == 'n' &&
-        (i + 2 >= line_end || data[i + 2] == ' ' || data[i + 2] == '\t')) {
+      (i + 2 >= line_end || data[i + 2] == ' ' || data[i + 2] == '\t')) {
       // vn - vertex normal (3 floats)
       i += 2;
       f32 nx = 0, ny = 0, nz = 0;
@@ -2051,7 +2038,7 @@ Mesh read_obj_mesh(String obj_file, char* mesh_name) {
     }
 
     if (data[i] == 'v' && i + 1 < line_end && data[i + 1] == 't' &&
-        (i + 2 >= line_end || data[i + 2] == ' ' || data[i + 2] == '\t')) {
+      (i + 2 >= line_end || data[i + 2] == ' ' || data[i + 2] == '\t')) {
       // vt - texture coordinate (2 floats)
       i += 2;
       f32 u = 0, v = 0;
@@ -2105,8 +2092,8 @@ Mesh read_obj_mesh(String obj_file, char* mesh_name) {
           }
           if (i < line_end && data[i] == '/') {
             i++; // skip '/'
-            if (i < line_end && data[i] >= '0' && data[i] <= '9') {
-              while (i < line_end && data[i] >= '0' && data[i] <= '9') {
+            if (i < line_end&& data[i] >= '0' && data[i] <= '9') {
+              while (i < line_end&& data[i] >= '0' && data[i] <= '9') {
                 ni = ni * 10 + (data[i] - '0');
                 i++;
               }
@@ -2188,14 +2175,16 @@ Array get_triangles_mesh(Mesh* mesh) {
       if (mesh->colors.length > 0) {
         Color* c = (Color*)get_array_element(&mesh->colors, face->vertex_indices[j]);
         props->colors[j] = c ? *c : default_color;
-      } else {
+      }
+      else {
         props->colors[j] = default_color;
       }
       // texture coordinates
       if (mesh->tex_coords.length > 0) {
         Vec2* tc = (Vec2*)get_array_element(&mesh->tex_coords, face->tex_coord_indices[j]);
         props->tex_coords[j] = tc ? *tc : vec2(0, 0);
-      } else {
+      }
+      else {
         props->tex_coords[j] = vec2(0, 0);
       }
     }
