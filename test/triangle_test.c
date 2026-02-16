@@ -1,8 +1,7 @@
 /**
- * SDF Test Window
+ * Triangle Test Window
  *
- * A raymarching demo that renders a morphing torus-cube using signed distance
- * functions. Features interactive orbit camera controls via mouse.
+ * A simple triangle rasterization demo with interactive orbit camera controls.
  */
 
 #include "../src/index.c"
@@ -18,11 +17,6 @@
 static const u32 WIDTH = 640;
 static const u32 HEIGHT = 480;
 
-static const u32 MAX_RAYMARCH_ITERATIONS = 100;
-static const f32 MAX_RAYMARCH_DISTANCE = 10.0f;
-static const f32 RAYMARCH_EPSILON = 1e-3f;
-static const f32 NORMAL_EPSILON = 1e-3f;
-
 /* =============================================================================
  * Types
  * ========================================================================== */
@@ -33,11 +27,6 @@ typedef struct {
     Camera* camera;
     NaiveScene* scene;
 } App;
-
-typedef struct {
-    f32 time;
-    Vec3 light_pos;
-} SceneContext;
 
 /* =============================================================================
  * Global State (for input handling)
@@ -56,12 +45,12 @@ static void on_frame(f32 dt, f32 time, void* ctx) {
     NaiveScene* scene = app->scene;
 
     // Render
-    Tela* tela = raster_scene(
+    raster_scene(
         scene,
         (RasterParams) {
         .camera = app->camera,
             .tela = app->tela,
-            .cull_backfaces = true,
+            .cull_backfaces = false,
             .bilinear_texture = false,
             .clip_camera_plane = true,
             .clear_screen = true,
