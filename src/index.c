@@ -71,31 +71,31 @@ static inline double random_double(void) { return (double)rand() / RAND_MAX; }
  *                                                                                      */
  //========================================================================================
 
-inline f32 mod_f32(f32 n, f32 m) {
+static inline f32 mod_f32(f32 n, f32 m) {
   return fmodf(fmodf(n, m) + m, m);
 }
 
-inline u32 mod_u32(u32 n, u32 m) {
+static inline u32 mod_u32(u32 n, u32 m) {
   return ((n % m) + m) % m;
 }
 
-inline f32 clamp(f32 x, f32 min, f32 max) {
+static inline f32 clamp(f32 x, f32 min, f32 max) {
   if (x < min) return min;
   if (x > max) return max;
   return x;
 }
 
-inline f32 lerp_f32(f32 a, f32 b, f32 t) {
+static inline f32 lerp_f32(f32 a, f32 b, f32 t) {
   return a + (b - a) * t;
 }
 
-inline f32 q_bezier_f32(f32 p1, f32 p2, f32 p3, f32 t) {
+static inline f32 q_bezier_f32(f32 p1, f32 p2, f32 p3, f32 t) {
   f32 q1 = lerp_f32(p1, p2, t);
   f32 q2 = lerp_f32(p2, p3, t);
   return lerp_f32(q1, q2, t);
 }
 
-inline f32 c_bezier_f32(f32 p1, f32 p2, f32 p3, f32 p4, f32 t) {
+static inline f32 c_bezier_f32(f32 p1, f32 p2, f32 p3, f32 p4, f32 t) {
   f32 b1 = lerp_f32(p1, p2, t);
   f32 b2 = lerp_f32(p2, p3, t);
   f32 b3 = lerp_f32(p3, p4, t);
@@ -1053,7 +1053,7 @@ static inline void tela_to_p3(Tela* tela, const char* filename) {
     u8 r = (u8)(fminf(fmaxf(pixel_data[k + 0], 0.0f), 1.0f) * 255.0f);
     u8 g = (u8)(fminf(fmaxf(pixel_data[k + 1], 0.0f), 1.0f) * 255.0f);
     u8 b = (u8)(fminf(fmaxf(pixel_data[k + 2], 0.0f), 1.0f) * 255.0f);
-    fprintf(file, "%u %u %u ", r, g, b);
+    fprintf(file, "%u %u %u\n", r, g, b);
   }
 
   fclose(file);
@@ -1099,6 +1099,7 @@ static inline String io_read_file(const char* filename) {
   return (String) { buffer, (u32)length };
 }
 
+// parse P6 type of PPM image file
 Tela* io_parse_ppm(String ppm_data) {
   if (!ppm_data.data || ppm_data.length == 0) return NULL;
 
@@ -1124,8 +1125,6 @@ Tela* io_parse_ppm(String ppm_data) {
   f32 inv_max = 1.0f / (f32)max_color;
 
   // Read pixel data (raw bytes after header)
-  // Buffer stores pixels in file order (top-to-bottom, row 0 = top of image).
-  // The Y-flip happens in get_pxl_tela/to_grid_tela when reading, matching JS.
   for (u32 k = 0; k < width * height && index + 2 < length; k++) {
     u32 img_idx = k * COLOR_CHANNELS;
     tela->image[img_idx + 0] = (f32)data[index] * inv_max;
@@ -1138,8 +1137,65 @@ Tela* io_parse_ppm(String ppm_data) {
   return tela;
 }
 
+// parse P7 PAM (Portable Arbitrary Map) image file
+Tela* io_parse_pam(String pam_data) {
+  if (!pam_data.data || pam_data.length == 0) return NULL;
+
+  const char* data = pam_data.data;
+  u32 length = pam_data.length;
+  u32 index = 0;
+
+  // Verify P7 magic number
+  if (length < 3 || data[0] != 'P' || data[1] != '7') return NULL;
+
+  u32 width = 0, height = 0, depth = 0, max_val = 0;
+
+  // Parse PAM header lines until ENDHDR
+  while (index < length) {
+    // Find line start and end
+    u32 line_start = index;
+    while (index < length && data[index] != '\n') index++;
+    if (index < length) index++; // skip '\n'
+
+    if (strncmp(data + line_start, "WIDTH ", 6) == 0) {
+      sscanf(data + line_start + 6, "%u", &width);
+    } else if (strncmp(data + line_start, "HEIGHT ", 7) == 0) {
+      sscanf(data + line_start + 7, "%u", &height);
+    } else if (strncmp(data + line_start, "DEPTH ", 6) == 0) {
+      sscanf(data + line_start + 6, "%u", &depth);
+    } else if (strncmp(data + line_start, "MAXVAL ", 7) == 0) {
+      sscanf(data + line_start + 7, "%u", &max_val);
+    } else if (strncmp(data + line_start, "ENDHDR", 6) == 0) {
+      break;
+    }
+  }
+
+  if (width == 0 || height == 0 || max_val == 0 || depth == 0) return NULL;
+
+  Tela* tela = new_tela(width, height);
+  if (!tela) return NULL;
+
+  f32 inv_max = 1.0f / (f32)max_val;
+  const u8* pixel_data = (const u8*)(data + index);
+  u32 remaining = length - index;
+
+  // Read pixel data (raw bytes after header)
+  // Buffer stores pixels in file order (top-to-bottom, row 0 = top of image).
+  // The Y-flip happens in get_pxl_tela/to_grid_tela when reading, matching JS.
+  for (u32 k = 0; k < width * height && (k * depth + depth - 1) < remaining; k++) {
+    u32 img_idx = k * COLOR_CHANNELS;
+    u32 src_idx = k * depth;
+    tela->image[img_idx + 0] = (f32)pixel_data[src_idx + 0] * inv_max;
+    tela->image[img_idx + 1] = (depth > 1) ? (f32)pixel_data[src_idx + 1] * inv_max : (f32)pixel_data[src_idx + 0] * inv_max;
+    tela->image[img_idx + 2] = (depth > 2) ? (f32)pixel_data[src_idx + 2] * inv_max : (f32)pixel_data[src_idx + 0] * inv_max;
+    tela->image[img_idx + 3] = (depth > 3) ? (f32)pixel_data[src_idx + 3] * inv_max : 1.0f;
+  }
+
+  return tela;
+}
+
 Tela* io_read_image(const char* filename) {
-  // Check if file has .ppm extension
+  // Check if file has .ppm extension — read directly as PPM
   const char* dot = strrchr(filename, '.');
   if (dot && (strcmp(dot, ".ppm") == 0 || strcmp(dot, ".PPM") == 0)) {
     String file_data = io_read_file(filename);
@@ -1149,20 +1205,20 @@ Tela* io_read_image(const char* filename) {
     return tela;
   }
 
-  // Convert other formats to PPM using ffmpeg, then parse
-  char temp_ppm[512];
-  snprintf(temp_ppm, sizeof(temp_ppm), "temp_read_%d.ppm", (int)(rand() % 1000000));
+  // Convert other formats to PAM using ffmpeg (with alpha), then parse
+  char temp_pam[512];
+  snprintf(temp_pam, sizeof(temp_pam), "temp_read_%d.pam", (int)(rand() % 1000000));
 
   char command[1024];
-  snprintf(command, sizeof(command), "ffmpeg -y -i %s %s", filename, temp_ppm);
+  snprintf(command, sizeof(command), "ffmpeg -y -i %s -pix_fmt rgba -update 1 %s", filename, temp_pam);
   int ret = system(command);
   if (ret != 0) return NULL;
 
-  String file_data = io_read_file(temp_ppm);
-  remove(temp_ppm);
+  String file_data = io_read_file(temp_pam);
+  remove(temp_pam);
   if (!file_data.data) return NULL;
 
-  Tela* tela = io_parse_ppm(file_data);
+  Tela* tela = io_parse_pam(file_data);
   free(file_data.data);
   return tela;
 }
@@ -1819,7 +1875,7 @@ Color raster_triangle_shader(u32 x, u32 y, const Triangle_2D* triangle, void* ct
   const Vec2 ij = to_grid_tela(tela, x, y);
   const u32 zBufferIndex = (u32)floorf(w * ij.x + ij.y);
   if (wReciprocal < zBuffer[zBufferIndex]) {
-    const f32 matrix_value = dithering_matrix_4x4[((int)ij.x % 4) * 4 + ((int)ij.y % 4)];
+    const f32 matrix_value = dithering_matrix_4x4[((u32)ij.x % 4) * 4 + ((u32)ij.y % 4)];
     const Color color = matrix_value < c.alpha ? c : (Color) { 0, 0, 0, 0 };
     if (color.alpha > 0) zBuffer[zBufferIndex] = wReciprocal; // if color.alpha is 0, don't update zBuffer
     return color;

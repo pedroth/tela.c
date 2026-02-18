@@ -153,14 +153,32 @@ int main(void) {
     // Setup camera
     Camera camera = create_camera(vec3(3.0f, 0.0f, 0.0f), vec3(0, 0, 0), 1.0f);
 
-    String obj = io_read_file("./assets/megaman.obj");
+    char* obj_files[] = {
+        "./assets/megaman.obj",
+        "./assets/statue.obj",
+        "./assets/JesusMary.obj",
+        "./assets/spot.obj",
+        "./assets/riku.obj",
+        "./assets/burger.obj"
+    };
+    char* texture_files[] = {
+        "./assets/megaman.png",
+        "./assets/statue.jpg",
+        "./assets/JesusMary.jpg",
+        "./assets/spot.png",
+        "./assets/riku.png",
+        "./assets/burger.jpg"
+    };
+
+    u32 mesh_index = 5;
+    String obj = io_read_file(obj_files[mesh_index]);
     Mesh mesh = read_obj_mesh(obj, "mesh");
     AABB box = get_bounding_box_mesh(&mesh);
     f32 scale_inv = 2.0f / max_comp_vec3(box.diagonal);
     map_vertices_mesh(&mesh, first_transform, &(FirstTransformContext){ .center = box.center, .scale_inv = scale_inv });
     map_vertices_mesh(&mesh, second_transform, NULL);
     map_vertices_mesh(&mesh, third_transform, NULL);
-    add_texture_mesh(&mesh, io_read_image("./assets/megaman.png"));
+    add_texture_mesh(&mesh, io_read_image(texture_files[mesh_index]));
     
     NaiveScene scene = { 0 };
     add_triangles_nscene(&scene, get_triangles_mesh(&mesh));
