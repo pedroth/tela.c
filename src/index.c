@@ -2294,6 +2294,118 @@ typedef struct {
   String name;
 } Mesh;
 
+// ---- OBJ Parsing Helpers ----
+
+typedef struct {
+  u32 start;
+  u32 end;
+} ObjLine;
+
+typedef struct {
+  u32 vertex;
+  u32 tex_coord;
+  u32 normal;
+} ObjFaceToken;
+
+static inline u32 obj_next_line(String str, u32 pos, ObjLine* line) {
+  line->start = pos;
+  while (pos < str.length && str.data[pos] != '\n' && str.data[pos] != '\r') pos++;
+  line->end = pos;
+  while (pos < str.length && (str.data[pos] == '\n' || str.data[pos] == '\r')) pos++;
+  return pos;
+}
+
+static inline u32 obj_skip_whitespace(const char* data, u32 pos, u32 end) {
+  while (pos < end && (data[pos] == ' ' || data[pos] == '\t')) pos++;
+  return pos;
+}
+
+static inline bool obj_match_prefix(const char* data, u32 pos, u32 end, const char* prefix) {
+  u32 len = (u32)strlen(prefix);
+  for (u32 i = 0; i < len; i++) {
+    if (pos + i >= end || data[pos + i] != prefix[i]) return false;
+  }
+  u32 after = pos + len;
+  return after >= end || data[after] == ' ' || data[after] == '\t';
+}
+
+static inline u32 obj_parse_u32(const char* data, u32 pos, u32 end, u32* out) {
+  u32 val = 0;
+  while (pos < end && data[pos] >= '0' && data[pos] <= '9') {
+    val = val * 10 + (data[pos] - '0');
+    pos++;
+  }
+  *out = val;
+  return pos;
+}
+
+static inline u32 obj_parse_face_token(const char* data, u32 pos, u32 end, ObjFaceToken* token) {
+  *token = (ObjFaceToken){ 0 };
+  pos = obj_parse_u32(data, pos, end, &token->vertex);
+  if (token->vertex == 0) return pos;
+  if (pos < end && data[pos] == '/') {
+    pos++;
+    if (pos < end && data[pos] >= '0' && data[pos] <= '9') {
+      pos = obj_parse_u32(data, pos, end, &token->tex_coord);
+    }
+    if (pos < end && data[pos] == '/') {
+      pos++;
+      if (pos < end && data[pos] >= '0' && data[pos] <= '9') {
+        pos = obj_parse_u32(data, pos, end, &token->normal);
+      }
+    }
+  }
+  return pos;
+}
+
+static inline void obj_parse_vertex(const char* data, u32 pos, Array* vertices) {
+  f32 x = 0, y = 0, z = 0;
+  sscanf(data + pos, "%f %f %f", &x, &y, &z);
+  Vec3 v = vec3(x, y, z);
+  push_array(vertices, &v);
+}
+
+static inline void obj_parse_normal(const char* data, u32 pos, Array* normals) {
+  f32 nx = 0, ny = 0, nz = 0;
+  sscanf(data + pos, "%f %f %f", &nx, &ny, &nz);
+  Vec3 n = vec3(nx, ny, nz);
+  push_array(normals, &n);
+}
+
+static inline void obj_parse_tex_coord(const char* data, u32 pos, Array* tex_coords) {
+  f32 u = 0, v = 0;
+  sscanf(data + pos, "%f %f", &u, &v);
+  Vec2 tc = vec2(u, v);
+  push_array(tex_coords, &tc);
+}
+
+static inline void obj_triangulate_face(ObjFaceToken* tokens, u32 count, Array* faces) {
+  for (u32 k = 1; k + 1 < count; k++) {
+    u32 tri[3] = { 0, k, k + 1 };
+    Face face;
+    for (u32 j = 0; j < 3; j++) {
+      face.vertex_indices[j] = tokens[tri[j]].vertex - 1;
+      face.tex_coord_indices[j] = tokens[tri[j]].tex_coord > 0 ? tokens[tri[j]].tex_coord - 1 : 0;
+      face.normal_indices[j] = tokens[tri[j]].normal > 0 ? tokens[tri[j]].normal - 1 : 0;
+    }
+    push_array(faces, &face);
+  }
+}
+
+static inline void obj_parse_face(const char* data, u32 pos, u32 end, Array* faces) {
+  ObjFaceToken tokens[16];
+  u32 count = 0;
+  while (pos < end && count < 16) {
+    pos = obj_skip_whitespace(data, pos, end);
+    if (pos >= end) break;
+    ObjFaceToken token;
+    pos = obj_parse_face_token(data, pos, end, &token);
+    if (token.vertex == 0) break;
+    tokens[count++] = token;
+  }
+  obj_triangulate_face(tokens, count, faces);
+}
+
 Mesh read_obj_mesh(String obj_file, char* mesh_name) {
   Mesh mesh = { 0 };
   mesh.name = create_string(mesh_name);
@@ -2302,129 +2414,24 @@ Mesh read_obj_mesh(String obj_file, char* mesh_name) {
   mesh.normals = new_array(64, sizeof(Vec3));
   mesh.faces = new_array(64, sizeof(Face));
 
-  char* data = obj_file.data;
-  u32 len = obj_file.length;
   u32 pos = 0;
 
-  while (pos < len) {
-    // Find line start and end
-    u32 line_start = pos;
-    while (pos < len && data[pos] != '\n' && data[pos] != '\r') pos++;
-    u32 line_end = pos;
-    // Skip newline characters
-    while (pos < len && (data[pos] == '\n' || data[pos] == '\r')) pos++;
+  while (pos < obj_file.length) {
+    ObjLine line;
+    pos = obj_next_line(obj_file, pos, &line);
+    if (line.end == line.start) continue;
 
-    // Skip empty lines
-    if (line_end == line_start) continue;
+    u32 i = obj_skip_whitespace(obj_file.data, line.start, line.end);
+    if (i >= line.end || obj_file.data[i] == '#') continue;
 
-    // Skip leading whitespace
-    u32 i = line_start;
-    while (i < line_end && (data[i] == ' ' || data[i] == '\t')) i++;
-    if (i >= line_end) continue;
-
-    // Parse line type
-    if (data[i] == '#') {
-      // Comment, skip
-      continue;
-    }
-
-    if (data[i] == 'v' && i + 1 < line_end && data[i + 1] == 'n' &&
-      (i + 2 >= line_end || data[i + 2] == ' ' || data[i + 2] == '\t')) {
-      // vn - vertex normal (3 floats)
-      i += 2;
-      f32 nx = 0, ny = 0, nz = 0;
-      sscanf(data + i, "%f %f %f", &nx, &ny, &nz);
-      Vec3 n = vec3(nx, ny, nz);
-      push_array(&mesh.normals, &n);
-      continue;
-    }
-
-    if (data[i] == 'v' && i + 1 < line_end && data[i + 1] == 't' &&
-      (i + 2 >= line_end || data[i + 2] == ' ' || data[i + 2] == '\t')) {
-      // vt - texture coordinate (2 floats)
-      i += 2;
-      f32 u = 0, v = 0;
-      sscanf(data + i, "%f %f", &u, &v);
-      Vec2 tc = vec2(u, v);
-      push_array(&mesh.tex_coords, &tc);
-      continue;
-    }
-
-    if (data[i] == 'v' && (i + 1 >= line_end || data[i + 1] == ' ' || data[i + 1] == '\t')) {
-      // v - vertex position (3 floats)
-      i += 1;
-      f32 vx = 0, vy = 0, vz = 0;
-      sscanf(data + i, "%f %f %f", &vx, &vy, &vz);
-      Vec3 v = vec3(vx, vy, vz);
-      push_array(&mesh.vertices, &v);
-      continue;
-    }
-
-    if (data[i] == 'f' && (i + 1 >= line_end || data[i + 1] == ' ' || data[i + 1] == '\t')) {
-      // f - face: collect vertex tokens
-      i += 1;
-
-      // Parse face tokens (e.g. "1/2/3", "1//3", "1/2", "1")
-      // Max polygon vertices we support for triangulation: 16
-      u32 vert_idx[16], tex_idx[16], norm_idx[16];
-      u32 face_vert_count = 0;
-
-      while (i < line_end && face_vert_count < 16) {
-        // Skip whitespace
-        while (i < line_end && (data[i] == ' ' || data[i] == '\t')) i++;
-        if (i >= line_end) break;
-
-        // Parse vertex_index[/tex_index[/normal_index]]
-        u32 vi = 0, ti = 0, ni = 0;
-
-        // Parse vertex index
-        while (i < line_end && data[i] >= '0' && data[i] <= '9') {
-          vi = vi * 10 + (data[i] - '0');
-          i++;
-        }
-        if (vi == 0) break; // invalid
-
-        if (i < line_end && data[i] == '/') {
-          i++; // skip '/'
-          if (i < line_end && data[i] != '/' && data[i] >= '0' && data[i] <= '9') {
-            while (i < line_end && data[i] >= '0' && data[i] <= '9') {
-              ti = ti * 10 + (data[i] - '0');
-              i++;
-            }
-          }
-          if (i < line_end && data[i] == '/') {
-            i++; // skip '/'
-            if (i < line_end&& data[i] >= '0' && data[i] <= '9') {
-              while (i < line_end&& data[i] >= '0' && data[i] <= '9') {
-                ni = ni * 10 + (data[i] - '0');
-                i++;
-              }
-            }
-          }
-        }
-
-        vert_idx[face_vert_count] = vi - 1;  // OBJ is 1-indexed
-        tex_idx[face_vert_count] = ti > 0 ? ti - 1 : 0;
-        norm_idx[face_vert_count] = ni > 0 ? ni - 1 : 0;
-        face_vert_count++;
-      }
-
-      // Triangulate: fan triangulation from vertex 0
-      // triangle: (0,1,2), quad: (0,1,2),(0,2,3), n-gon: (0,k,k+1)
-      for (u32 k = 1; k + 1 < face_vert_count; k++) {
-        Face face;
-        face.vertex_indices[0] = vert_idx[0];
-        face.vertex_indices[1] = vert_idx[k];
-        face.vertex_indices[2] = vert_idx[k + 1];
-        face.tex_coord_indices[0] = tex_idx[0];
-        face.tex_coord_indices[1] = tex_idx[k];
-        face.tex_coord_indices[2] = tex_idx[k + 1];
-        face.normal_indices[0] = norm_idx[0];
-        face.normal_indices[1] = norm_idx[k];
-        face.normal_indices[2] = norm_idx[k + 1];
-        push_array(&mesh.faces, &face);
-      }
-      continue;
+    if (obj_match_prefix(obj_file.data, i, line.end, "vn")) {
+      obj_parse_normal(obj_file.data, i + 2, &mesh.normals);
+    } else if (obj_match_prefix(obj_file.data, i, line.end, "vt")) {
+      obj_parse_tex_coord(obj_file.data, i + 2, &mesh.tex_coords);
+    } else if (obj_match_prefix(obj_file.data, i, line.end, "v")) {
+      obj_parse_vertex(obj_file.data, i + 1, &mesh.vertices);
+    } else if (obj_match_prefix(obj_file.data, i, line.end, "f")) {
+      obj_parse_face(obj_file.data, i + 1, line.end, &mesh.faces);
     }
   }
   return mesh;
@@ -2445,6 +2452,16 @@ Mesh map_vertices_mesh(Mesh* mesh, Vec3(*mapper)(Vec3, void*), void* context) {
   for (u32 i = 0; i < mesh->vertices.length; i++) {
     Vec3* v = (Vec3*)get_array_element(&mesh->vertices, i);
     *v = mapper(*v, context);
+  }
+  return *mesh;
+}
+
+Mesh map_colors_mesh(Mesh* mesh, Color(*mapper)(Vec3, void*), void* context) {
+  mesh->colors = new_array(mesh->vertices.length, sizeof(Color));
+  for (u32 i = 0; i < mesh->vertices.length; i++) {
+    Vec3* v = (Vec3*)get_array_element(&mesh->vertices, i);
+    Color c = mapper(*v, context);
+    push_array(&mesh->colors, &c);
   }
   return *mesh;
 }
@@ -2497,5 +2514,50 @@ Array get_triangles_mesh(Mesh* mesh) {
   return triangles;
 }
 
+
+Array get_spheres_mesh(Mesh* mesh, f32 radius) {
+  Array spheres = new_array(mesh->vertices.length, sizeof(Sphere));
+  Color default_color = { 1.0f, 1.0f, 1.0f, 1.0f };
+
+  // Track which vertices have already been added (deduplication)
+  bool visited[mesh->vertices.length];
+  memset(visited, 0, mesh->vertices.length);
+
+  for (u32 i = 0; i < mesh->faces.length; i++) {
+    Face* face = (Face*)get_array_element(&mesh->faces, i);
+
+    for (u32 j = 0; j < 3; j++) {
+      u32 vi = face->vertex_indices[j];
+      if (visited[vi]) continue;
+      visited[vi] = true;
+
+      Vec3* v = (Vec3*)get_array_element(&mesh->vertices, vi);
+      Sphere sphere = build_sphere(v ? *v : vec3(0, 0, 0), radius);
+
+      // Build props (color, tex_coord, texture)
+      RasterSphereProps* props = (RasterSphereProps*)malloc(sizeof(RasterSphereProps));
+      props->texture = mesh->texture;
+
+      if (mesh->colors.length > 0) {
+        Color* c = (Color*)get_array_element(&mesh->colors, vi);
+        props->color = c ? *c : default_color;
+      } else {
+        props->color = default_color;
+      }
+
+      if (mesh->tex_coords.length > 0) {
+        Vec2* tc = (Vec2*)get_array_element(&mesh->tex_coords, face->tex_coord_indices[j]);
+        props->tex_coord = tc ? *tc : vec2(0, 0);
+      } else {
+        props->tex_coord = vec2(0, 0);
+      }
+
+      sphere.props = props;
+      push_array(&spheres, &sphere);
+    }
+  }
+
+  return spheres;
+}
 
 #endif /* TELA_C */
