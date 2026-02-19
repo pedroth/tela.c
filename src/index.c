@@ -85,6 +85,9 @@ static inline f32 clamp(f32 x, f32 min, f32 max) {
   return x;
 }
 
+static inline i32 max_i32(i32 a, i32 b) { return a > b ? a : b; }
+static inline i32 min_i32(i32 a, i32 b) { return a < b ? a : b; }
+
 static inline f32 lerp_f32(f32 a, f32 b, f32 t) {
   return a + (b - a) * t;
 }
@@ -421,6 +424,14 @@ static inline Color lerp_color(Color a, Color b, f32 t) {
   return result;
 }
 
+static inline Color add_color(Color a, Color b) {
+  return (Color){ a.red + b.red, a.green + b.green, a.blue + b.blue, a.alpha + b.alpha };
+}
+
+static inline Color scale_color(Color c, f32 s) {
+  return (Color){ c.red * s, c.green * s, c.blue * s, c.alpha * s };
+}
+
 //========================================================================================
 /*                                                                                      *
  *                                        AABB_2D *
@@ -636,6 +647,14 @@ typedef struct {
   void* props;
 } Triangle;
 
+Triangle build_triangle(Vec3 p1, Vec3 p2, Vec3 p3) {
+  Triangle triangle;
+  triangle.positions[0] = p1;
+  triangle.positions[1] = p2;
+  triangle.positions[2] = p3;
+  return triangle;
+}
+
 AABB get_bounding_box_triangle(Triangle* triangle) {
   AABB box;
   AABB b1 = build_aabb(triangle->positions[0], triangle->positions[0]);
@@ -643,6 +662,33 @@ AABB get_bounding_box_triangle(Triangle* triangle) {
   AABB b3 = build_aabb(triangle->positions[2], triangle->positions[2]);
   box = union_aabb(&b1, &b2);
   box = union_aabb(&box, &b3);
+  return box;
+}
+
+
+//========================================================================================
+/*                                                                                      *
+ *                                        SPHERE                                        *
+ *                                                                                      */
+ //========================================================================================
+
+typedef struct {
+  Vec3 position;
+  f32 radius;
+  void* props;
+} Sphere;
+
+Sphere build_sphere(Vec3 position, f32 radius) {
+  Sphere sphere;
+  sphere.position = position;
+  sphere.radius = radius;
+  return sphere;
+}
+
+AABB get_bounding_box_sphere(Sphere* sphere) {
+  Vec3 r_vec = vec3(sphere->radius, sphere->radius, sphere->radius);
+  AABB box;
+  box = build_aabb(sub_vec3(sphere->position, r_vec), add_vec3(sphere->position, r_vec));
   return box;
 }
 
@@ -654,6 +700,7 @@ AABB get_bounding_box_triangle(Triangle* triangle) {
 
 typedef struct {
   Array triangles;
+  Array spheres;
 } NaiveScene;
 
 NaiveScene add_triangle_nscene(NaiveScene* scene, Triangle triangle) {
@@ -664,11 +711,32 @@ NaiveScene add_triangle_nscene(NaiveScene* scene, Triangle triangle) {
   return *scene;
 }
 
+NaiveScene add_sphere_nscene(NaiveScene* scene, Sphere sphere) {
+  if (scene->spheres.element_size == 0) {
+    scene->spheres = new_array(4, sizeof(Sphere));
+  }
+  push_array(&scene->spheres, &sphere);
+  return *scene;
+}
+
+NaiveScene add_spheres_nscene(NaiveScene* scene, Array spheres) {
+  for (u32 i = 0; i < spheres.length; i++) {
+    Sphere* sph = (Sphere*)get_array_element(&spheres, i);
+    add_sphere_nscene(scene, *sph);
+  }
+  return *scene;
+}
+
 NaiveScene add_triangles_nscene(NaiveScene* scene, Array triangles) {
   for (u32 i = 0; i < triangles.length; i++) {
     Triangle* tri = (Triangle*)get_array_element(&triangles, i);
     add_triangle_nscene(scene, *tri);
   }
+  return *scene;
+}
+
+NaiveScene clear_spheres_nscene(NaiveScene* scene) {
+  clear_array(&scene->spheres);
   return *scene;
 }
 
@@ -765,6 +833,22 @@ static inline Color get_pxl_tela(const Tela* tela, u32 x, u32 y) {
   j = mod_u32(j, w);
   u32 index = COLOR_CHANNELS * (w * i + j);
   return (Color) { tela->image[index], tela->image[index + 1], tela->image[index + 2], tela->image[index + 3] };
+}
+
+static inline Tela* set_pxl_tela(Tela* tela, u32 x, u32 y, Color color) {
+  const u32 w = tela->width;
+  const u32 h = tela->height;
+  Vec2 grid = to_grid_tela(tela, x, y);
+  u32 i = (u32)grid.x;
+  u32 j = (u32)grid.y;
+  i = mod_u32(i, h);
+  j = mod_u32(j, w);
+  u32 index = COLOR_CHANNELS * (w * i + j);
+  tela->image[index] = color.red;
+  tela->image[index + 1] = color.green;
+  tela->image[index + 2] = color.blue;
+  tela->image[index + 3] = color.alpha;
+  return tela;
 }
 
 /**
@@ -998,13 +1082,19 @@ static inline Tela* draw_triangle_tela(
   const Vec2 e2 = sub_vec2(positions[0], positions[2]);
   const ConvexPrecomputed precomputed = {
     .normals = {
-      (Vec2){ -e0.y, e0.x },
-      (Vec2){ -e1.y, e1.x },
-      (Vec2){ -e2.y, e2.x },
-    },
-    .vertices = { positions[0], positions[1], positions[2] },
-    .vertex_count = 3,
-    .orientation = wedge_vec2(e0, e1) >= 0 ? 1.0f : -1.0f,
+      (Vec2) {
+ -e0.y, e0.x
+},
+(Vec2) {
+-e1.y, e1.x
+},
+(Vec2) {
+-e2.y, e2.x
+},
+},
+.vertices = { positions[0], positions[1], positions[2] },
+.vertex_count = 3,
+.orientation = wedge_vec2(e0, e1) >= 0 ? 1.0f : -1.0f,
   };
   for (u32 x = xmin.x; x < xmax.x; x++) {
     for (u32 y = xmin.y; y < xmax.y; y++) {
@@ -1159,13 +1249,17 @@ Tela* io_parse_pam(String pam_data) {
 
     if (strncmp(data + line_start, "WIDTH ", 6) == 0) {
       sscanf(data + line_start + 6, "%u", &width);
-    } else if (strncmp(data + line_start, "HEIGHT ", 7) == 0) {
+    }
+    else if (strncmp(data + line_start, "HEIGHT ", 7) == 0) {
       sscanf(data + line_start + 7, "%u", &height);
-    } else if (strncmp(data + line_start, "DEPTH ", 6) == 0) {
+    }
+    else if (strncmp(data + line_start, "DEPTH ", 6) == 0) {
       sscanf(data + line_start + 6, "%u", &depth);
-    } else if (strncmp(data + line_start, "MAXVAL ", 7) == 0) {
+    }
+    else if (strncmp(data + line_start, "MAXVAL ", 7) == 0) {
       sscanf(data + line_start + 7, "%u", &max_val);
-    } else if (strncmp(data + line_start, "ENDHDR", 6) == 0) {
+    }
+    else if (strncmp(data + line_start, "ENDHDR", 6) == 0) {
       break;
     }
   }
@@ -2051,6 +2145,87 @@ void raster_triangle(RasterTriangleInput* input) {
   );
 }
 
+typedef struct {
+  Color color;
+  Vec2 tex_coord;
+  Tela* texture;
+} RasterSphereProps;
+
+typedef struct {
+  Sphere* sphere;
+  Camera* camera;
+  Tela* tela;
+  RasterParams* params;
+  f32* zBuffer; // size will be tela->width * tela->height
+} RasterSphereInput;
+
+void raster_sphere(RasterSphereInput* input) {
+  Sphere* sphere = input->sphere;
+  Camera* camera = input->camera;
+  Tela* tela = input->tela;
+  f32* zBuffer = input->zBuffer;
+
+  const u32 w = tela->width;
+  const u32 h = tela->height;
+  const f32 distance_to_plane = camera->distance_to_plane;
+
+  RasterSphereProps* props = (RasterSphereProps*)sphere->props;
+  Color color = props ? props->color : (Color){ 1.0f, 1.0f, 1.0f, 1.0f };
+  Vec2 tex_coord = props ? props->tex_coord : vec2(0, 0);
+  Tela* texture = props ? props->texture : NULL;
+
+  // camera coords
+  Vec3 point_in_cam = to_local_coords_camera(camera, sphere->position);
+
+  // frustum culling
+  f32 z = point_in_cam.z;
+  if (z < distance_to_plane) return;
+
+  // project
+  f32 proj_scale = distance_to_plane / z;
+  Vec3 projected = scale_vec3(point_in_cam, proj_scale);
+
+  // screen coords
+  i32 x = (i32)floorf((f32)w / 2.0f + projected.x * (f32)w);
+  i32 y = (i32)floorf((f32)h / 2.0f + projected.y * (f32)h);
+
+  if (x < 0 || x >= (i32)w || y < 0 || y >= (i32)h) return;
+
+  // projected radius in pixels
+  i32 int_radius = (i32)ceilf(sphere->radius * proj_scale * (f32)w);
+  i32 int_radius_sq = int_radius * int_radius;
+
+  // final color (blend with texture if available)
+  Color final_color = color;
+  if (texture && (tex_coord.x != 0 || tex_coord.y != 0)) {
+    Color tex_color = get_tex_color(texture, tex_coord);
+    final_color = scale_color(add_color(final_color, tex_color), 0.5f);
+  }
+
+  // rasterize the projected disc
+  for (i32 l = -int_radius; l < int_radius; l++) {
+    for (i32 k = -int_radius; k < int_radius; k++) {
+      i32 sq_len = k * k + l * l;
+      if (sq_len > int_radius_sq) continue;
+
+      i32 xl = max_i32(0, min_i32((i32)w - 1, x + k));
+      i32 yl = (i32)floorf((f32)(y + l));
+      if (yl < 0 || yl >= (i32)h) continue;
+
+      Vec2 grid = to_grid_tela(tela, (u32)xl, (u32)yl);
+      u32 gi = (u32)grid.x;
+      u32 gj = (u32)grid.y;
+      u32 z_index = w * gi + gj;
+
+      if (z < zBuffer[z_index]) {
+        zBuffer[z_index] = z;
+        set_pxl_tela(tela, (u32)xl, (u32)yl, final_color);
+      }
+    }
+  }
+}
+
+
 Tela* raster_scene(NaiveScene* scene, RasterParams params) {
   Tela* tela = params.tela;
   Camera* camera = params.camera;
@@ -2066,6 +2241,16 @@ Tela* raster_scene(NaiveScene* scene, RasterParams params) {
     Triangle* triangle = (Triangle*)get_array_element(&scene->triangles, i);
     raster_triangle(&(RasterTriangleInput) {
       .triangle = triangle,
+        .camera = camera,
+        .tela = tela,
+        .params = &params,
+        .zBuffer = z_buffer
+    });
+  }
+  for (u32 i = 0; i < scene->spheres.length; i++) {
+    Sphere* sphere = (Sphere*)get_array_element(&scene->spheres, i);
+    raster_sphere(&(RasterSphereInput) {
+      .sphere = sphere,
         .camera = camera,
         .tela = tela,
         .params = &params,

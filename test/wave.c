@@ -1,145 +1,197 @@
+/**
+ * Wave Simulation
+ *
+ * A 2D wave equation simulation with interactive mouse drawing.
+ * Uses symplectic integration to solve the wave PDE on a toroidal grid.
+ * Color encodes height (red-blue) and speed (green).
+ */
+
 #include "../src/index.c"
 
-#define WIDTH 1280
-#define HEIGHT 720
+/* =============================================================================
+ * Constants
+ * ========================================================================== */
 
-#define N_SIM 100
-#define AMP 10.0f
+static const u32 WIDTH = 640;
+static const u32 HEIGHT = 480;
+
+#define GRID_SIZE 100
+#define AMPLITUDE 10.0f
 #define FRICTION 0.1f
-#define WAVE_SCALAR_SPEED 10.0f
+#define WAVE_SPEED 10.0f
 #define SPREAD 100.0f
 
-u32 mod(u32 n, u32 m) { return (n % m + m) % m; }
+/* =============================================================================
+ * Utilities
+ * ========================================================================== */
 
-f32 wave[N_SIM][N_SIM];
-f32 wave_speed[N_SIM][N_SIM];
+static u32 wrap(u32 n, u32 m) { return (n % m + m) % m; }
 
-void initialize_wave() {
-  for (u32 i = 0; i < N_SIM; i++) {
-    for (u32 j = 0; j < N_SIM; j++) {
-      f32 x = (j - (N_SIM / 2.0f)) / (f32)N_SIM;
-      f32 y = (i - (N_SIM / 2.0f)) / (f32)N_SIM;
-      wave[i][j] = (AMP * exp(-SPREAD * ((x - 0.25f) * (x - 0.25f) + y * y)) +
-                    AMP * exp(-SPREAD * ((x + 0.25f) * (x + 0.25f) + y * y)) +
-                    AMP * exp(-SPREAD * (x * x + (y - 0.25f) * (y - 0.25f))));
-      wave_speed[i][j] = 0.0f;
+/* =============================================================================
+ * Wave State
+ * ========================================================================== */
+
+static f32 g_height[GRID_SIZE][GRID_SIZE];
+static f32 g_velocity[GRID_SIZE][GRID_SIZE];
+
+static void initialize_wave(void) {
+  for (u32 i = 0; i < GRID_SIZE; i++) {
+    for (u32 j = 0; j < GRID_SIZE; j++) {
+      f32 x = (j - GRID_SIZE / 2.0f) / (f32)GRID_SIZE;
+      f32 y = (i - GRID_SIZE / 2.0f) / (f32)GRID_SIZE;
+
+      // Three Gaussian bumps arranged in a triangle
+      f32 bump1 = AMPLITUDE * expf(-SPREAD * ((x - 0.25f) * (x - 0.25f) + y * y));
+      f32 bump2 = AMPLITUDE * expf(-SPREAD * ((x + 0.25f) * (x + 0.25f) + y * y));
+      f32 bump3 = AMPLITUDE * expf(-SPREAD * (x * x + (y - 0.25f) * (y - 0.25f)));
+
+      g_height[i][j] = bump1 + bump2 + bump3;
+      g_velocity[i][j] = 0.0f;
     }
   }
 }
 
-typedef struct {
-  Tela *tela;
-  Window *window;
-} AnimeContext;
+/* =============================================================================
+ * Types
+ * ========================================================================== */
 
 typedef struct {
-  f32 min_wave;
-  f32 max_wave;
-  f32 max_abs_speed;
-} ShaderContext;
+  Tela* tela;
+  Window* window;
+} App;
 
-Color shader(u32 x, u32 y, const void *context) {
-  ShaderContext *shader_context = (ShaderContext *)context;
-  f32 min_wave = shader_context->min_wave;
-  f32 max_wave = shader_context->max_wave;
-  f32 max_abs_speed = shader_context->max_abs_speed;
+typedef struct {
+  f32 min_height;
+  f32 max_height;
+  f32 max_abs_velocity;
+} WaveShaderContext;
 
-  u32 xi = x;
-  u32 yi = y;
-  f32 red_color = (wave[yi][xi] - min_wave) / (max_wave - min_wave);
-  f32 blue_color = 1 - (wave[yi][xi] - min_wave) / (max_wave - min_wave);
-  f32 green_color = fabsf(wave_speed[yi][xi]) / max_abs_speed;
-  return (Color){red_color, green_color, blue_color, 1.0f};
+/* =============================================================================
+ * Shader
+ * ========================================================================== */
+
+static Color wave_shader(u32 x, u32 y, const void* context) {
+  WaveShaderContext* ctx = (WaveShaderContext*)context;
+  f32 range = ctx->max_height - ctx->min_height;
+
+  f32 t = (g_height[y][x] - ctx->min_height) / range;
+  f32 red   = t;
+  f32 blue  = 1.0f - t;
+  f32 green = fabsf(g_velocity[y][x]) / ctx->max_abs_velocity;
+
+  return (Color){ red, green, blue, 1.0f };
 }
 
-void anime_lambda(f32 dt, f32 time, void *context) {
-  AnimeContext *anime_context = (AnimeContext *)context;
+/* =============================================================================
+ * Animation Loop
+ * ========================================================================== */
 
-  f32 max_wave = -__FLT_MAX__;
-  f32 min_wave = __FLT_MAX__;
-  f32 max_abs_speed = -__FLT_MAX__;
-  // update wave
-  for (u32 i = 0; i < N_SIM; i++) {
-    for (u32 j = 0; j < N_SIM; j++) {
-      /**
-       * Sympletic integration
-       */
-      // compute acceleration
-      f32 laplacian = wave[i][mod(j + 1, N_SIM)] + wave[i][mod(j - 1, N_SIM)] +
-                      wave[mod(i + 1, N_SIM)][j] + wave[mod(i - 1, N_SIM)][j] -
-                      4 * wave[i][j];
-      f32 acceleration =
-          WAVE_SCALAR_SPEED * laplacian - FRICTION * wave_speed[i][j];
+static void on_frame(f32 dt, f32 time, void* ctx) {
+  App* app = (App*)ctx;
 
-      // update speed
-      wave_speed[i][j] = wave_speed[i][j] + dt * acceleration;
+  f32 max_h = -__FLT_MAX__;
+  f32 min_h =  __FLT_MAX__;
+  f32 max_v = -__FLT_MAX__;
 
-      // update position
-      wave[i][j] = wave[i][j] + dt * wave_speed[i][j];
+  // Symplectic Euler integration of the 2D wave equation
+  for (u32 i = 0; i < GRID_SIZE; i++) {
+    for (u32 j = 0; j < GRID_SIZE; j++) {
+      // Discrete Laplacian (toroidal boundary)
+      f32 laplacian =
+          g_height[i][wrap(j + 1, GRID_SIZE)] +
+          g_height[i][wrap(j - 1, GRID_SIZE)] +
+          g_height[wrap(i + 1, GRID_SIZE)][j] +
+          g_height[wrap(i - 1, GRID_SIZE)][j] -
+          4.0f * g_height[i][j];
 
-      // get max min values of wave
-      max_wave = max_wave <= wave[i][j] ? wave[i][j] : max_wave;
-      min_wave = min_wave > wave[i][j] ? wave[i][j] : min_wave;
-      f32 abs_speed = fabsf(wave_speed[i][j]);
-      max_abs_speed = max_abs_speed <= abs_speed ? abs_speed : max_abs_speed;
+      f32 acceleration = WAVE_SPEED * laplacian - FRICTION * g_velocity[i][j];
+
+      // Update velocity, then position (symplectic order)
+      g_velocity[i][j] += dt * acceleration;
+      g_height[i][j]   += dt * g_velocity[i][j];
+
+      // Track min/max for shader normalization
+      if (g_height[i][j] > max_h) max_h = g_height[i][j];
+      if (g_height[i][j] < min_h) min_h = g_height[i][j];
+      f32 abs_v = fabsf(g_velocity[i][j]);
+      if (abs_v > max_v) max_v = abs_v;
     }
   }
-  ShaderContext shader_context = {min_wave, max_wave, max_abs_speed};
-  Tela *tela = map_tela(anime_context->tela, shader, &shader_context);
-  set_window_title(anime_context->window,
-                   format_string("FPS: %.2f", 1.0f / dt));
-  paint_window(anime_context->window, tela);
+
+  // Render
+  WaveShaderContext shader_ctx = { min_h, max_h, max_v };
+  map_tela(app->tela, wave_shader, &shader_ctx);
+
+  set_window_title(app->window, format_string("FPS: %.2f", 1.0f / dt));
+  paint_window(app->window, app->tela);
 }
 
-void on_close_lambda(Window *window, void *context) {
-  Loop *anime_loop = (Loop *)context;
-  stop_loop(anime_loop);
+static void on_close(Window* window, void* ctx) {
+  Loop* animation = (Loop*)ctx;
+  stop_loop(animation);
 }
 
-bool is_mouse_down = false;
-void mouse_down(Window *window, i32 x, i32 y, u32 button, void *context) {
-  is_mouse_down = true;
-  printf("Mouse down at (%d, %d, %u)\n", x, y, button);
+/* =============================================================================
+ * Input Handlers
+ * ========================================================================== */
+
+static bool g_mouse_down = false;
+
+static void on_mouse_down(Window* window, i32 x, i32 y, u32 button, void* ctx) {
+  g_mouse_down = true;
 }
-void mouse_up(Window *window, i32 x, i32 y, u32 button, void *context) {
-  is_mouse_down = false;
+
+static void on_mouse_up(Window* window, i32 x, i32 y, u32 button, void* ctx) {
+  g_mouse_down = false;
 }
-void mouse_move(Window *window, i32 x, i32 y, void *context) {
-  if (!is_mouse_down)
-    return;
-  const u32 xi = (u32)((x / (f32)WIDTH) * N_SIM);
-  const u32 yi = (u32)((y / (f32)HEIGHT) * N_SIM);
-  const u32 i = mod(yi - N_SIM + 1, N_SIM);
-  const u32 j = mod(xi, N_SIM);
-  i32 steps[] = {-1, 0, 1};
-  // To use a bigger brush, change the declaration above to:
-  // i32 steps[] = { -2, -1, 0, 1, 2 };
-  // brush
-  const u32 n = sizeof(steps) / sizeof(steps[0]); // equals to steps length in C
-  const u32 nn = n * n;
-  for (u32 k = 0; k < nn; k++) {
-    const u32 u = k / n;
-    const u32 v = k % n;
-    wave[mod(i + steps[u], N_SIM)][mod(j + steps[v], N_SIM)] = AMP;
+
+static void on_mouse_move(Window* window, i32 x, i32 y, void* ctx) {
+  if (!g_mouse_down) return;
+
+  App* app = (App*)ctx;
+
+  // Map window coordinates to tela pixel coordinates which is equal to grid size
+  u32 tx = (u32)((x / (f32)WIDTH) * app->tela->width);
+  u32 ty = (u32)((y / (f32)HEIGHT) * app->tela->height);
+
+  // Convert to grid coordinates (applies Y-flip)
+  u32 gi = wrap((u32)ty - GRID_SIZE + 1, GRID_SIZE);
+  u32 gj = wrap((u32)tx, GRID_SIZE);
+
+  // Paint a 3x3 brush
+  i32 brush[] = { -1, 0, 1 };
+  u32 brush_size = sizeof(brush) / sizeof(brush[0]);
+
+  for (u32 u = 0; u < brush_size; u++) {
+    for (u32 v = 0; v < brush_size; v++) {
+      g_height[wrap(gi + brush[u], GRID_SIZE)][wrap(gj + brush[v], GRID_SIZE)] = AMPLITUDE;
+    }
   }
 }
 
-void handle_window_events(Window *window) {
-  /* register handlers on the window */
-  on_mouse_down_window(window, mouse_down, NULL);
-  on_mouse_up_window(window, mouse_up, NULL);
-  on_mouse_move_window(window, mouse_move, NULL);
+static void register_input_handlers(Window* window, App* app) {
+  on_mouse_down_window(window, on_mouse_down, app);
+  on_mouse_up_window(window, on_mouse_up, app);
+  on_mouse_move_window(window, on_mouse_move, app);
 }
 
-int main() {
+/* =============================================================================
+ * Main
+ * ========================================================================== */
+
+int main(void) {
   initialize_wave();
-  Tela *tela = new_tela(N_SIM, N_SIM);
-  Window *window = new_window(WIDTH, HEIGHT, "Amazing Shader");
-  AnimeContext anime_context = {tela, window};
-  Loop *anime_loop = loop(anime_lambda, &anime_context);
-  on_close_window(window, on_close_lambda, anime_loop);
-  handle_window_events(window);
-  // must be last function to be called in main
-  play_loop(anime_loop);
+
+  Tela* tela = new_tela(GRID_SIZE, GRID_SIZE);
+  Window* window = new_window(WIDTH, HEIGHT, "Wave Simulation");
+
+  App app = { .tela = tela, .window = window };
+
+  Loop* animation = loop(on_frame, &app);
+
+  on_close_window(window, on_close, animation);
+  register_input_handlers(window, &app);
+
+  play_loop(animation);
   return 0;
 }
