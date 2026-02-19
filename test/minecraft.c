@@ -1,8 +1,8 @@
 /**
- * SDF Test Window
+ * Minecraft
  *
- * A raymarching demo that renders a morphing torus-cube using signed distance
- * functions. Features interactive orbit camera controls via mouse.
+ * A rasterized 3D mesh viewer for a Minecraft map.
+ * Features interactive orbit camera controls via mouse and WASD camera movement.
  */
 
 #include "../src/index.c"
@@ -27,6 +27,7 @@ typedef struct {
     Window* window;
     Camera* camera;
     NaiveScene* scene;
+    Vec3 cam_speed;
 } App;
 
 /* =============================================================================
@@ -43,11 +44,14 @@ static Vec2 g_mouse_pos = { 0 };
 static void on_frame(f32 dt, f32 time, void* ctx) {
     App* app = (App*)ctx;
 
-    NaiveScene* scene = app->scene;
+    // Update camera position from WASD movement
+    Vec3 world_speed = to_world_coord_camera(app->camera, app->cam_speed);
+    app->camera->position = add_vec3(app->camera->position, scale_vec3(world_speed, dt));
+    app->camera->look_at = add_vec3(app->camera->look_at, scale_vec3(world_speed, dt));
 
     // Render
     raster_scene(
-        scene,
+        app->scene,
         (RasterParams) {
         .camera = app->camera,
             .tela = app->tela,
@@ -56,7 +60,7 @@ static void on_frame(f32 dt, f32 time, void* ctx) {
             .clip_camera_plane = true,
             .clear_screen = true,
             .background_color = (Color){ 0.0f, 0.0f, 0.0f, 1.0f },
-            .perspective_correct = true
+            .perspective_correct = false
     });
 
     // Update window title with FPS
@@ -95,13 +99,12 @@ static void on_mouse_move(Window* window, i32 x, i32 y, void* ctx) {
     App* app = (App*)ctx;
     Vec2 delta = sub_vec2(new_pos, g_mouse_pos);
 
-    Vec3 orbit = get_camera_orbit(app->camera);
+    Vec2 orient = get_camera_orient(app->camera);
     f32 theta_delta = -2.0f * M_PI * (delta.x / WIDTH);
     f32 phi_delta = -2.0f * M_PI * (delta.y / HEIGHT);
 
-    set_orbit_camera(
-        app->camera, orbit.x, orbit.y + theta_delta, orbit.z + phi_delta
-    );
+    set_orient_camera(
+        app->camera, orient.x + theta_delta, orient.y + phi_delta);
 
     g_mouse_pos = new_pos;
 }
@@ -115,81 +118,73 @@ static void on_mouse_scroll(Window* window, i32 delta_y, void* ctx) {
     set_orbit_camera(app->camera, new_radius, orbit.y, orbit.z);
 }
 
+static void on_key_down(Window* window, u32 keycode, void* ctx) {
+    App* app = (App*)ctx;
+    const f32 magnitude = 10.0f;
+    if (keycode == SDLK_w) app->cam_speed = vec3(0, 0, magnitude);
+    if (keycode == SDLK_s) app->cam_speed = vec3(0, 0, -magnitude);
+}
+
+static void on_key_up(Window* window, u32 keycode, void* ctx) {
+    App* app = (App*)ctx;
+    app->cam_speed = vec3(0, 0, 0);
+}
+
 static void register_input_handlers(Window* window, App* app) {
     on_mouse_down_window(window, on_mouse_down, app);
     on_mouse_up_window(window, on_mouse_up, app);
     on_mouse_move_window(window, on_mouse_move, app);
     on_mouse_scroll_window(window, on_mouse_scroll, app);
+    on_key_down_window(window, on_key_down, app);
+    on_key_up_window(window, on_key_up, app);
 }
 
 /* =============================================================================
  * Main
  * ========================================================================== */
-typedef struct {
-    Vec3 center;
-    f32 scale_inv;
-} FirstTransformContext;
 
-Vec3 first_transform(Vec3 v, void* ctx) {
-    Vec3 center = ((FirstTransformContext*)ctx)->center;
-    f32 scale_inv = ((FirstTransformContext*)ctx)->scale_inv;
-    return scale_vec3(sub_vec3(v, center), scale_inv);
+ // Vertex transform: v => Vec3(v.x, -v.z, v.y)
+Vec3 swizzle_vertex(Vec3 v, void* ctx) {
+    return vec3(v.x, -v.z, v.y);
 }
-
-Vec3 second_transform(Vec3 v, void* ctx) {
-    return vec3(-v.y, v.x, v.z);
-}
-
-Vec3 third_transform(Vec3 v, void* ctx) {
-    return vec3(v.z, v.y, -v.x);
-}
-
 
 int main(void) {
-    // Create window and canvas
+    // Create canvas and window
     Tela* tela = new_tela(WIDTH, HEIGHT);
-    Window* window = new_window(WIDTH, HEIGHT, "Mesh Test");
+    Window* window = new_window(WIDTH, HEIGHT, "Minecraft");
 
-    // Setup camera
-    Camera camera = create_camera(vec3(3.0f, 0.0f, 0.0f), vec3(0, 0, 0), 1.0f);
+    Camera camera = create_camera(vec3(0, 0, 0), vec3(0, 0, 0), 1.0f);
+    set_orbit_camera(&camera, 3.0f, 0.0f, 0.0f);
+    camera.position = vec3(0, 0, 10);
 
-    char* obj_files[] = {
-        "./assets/megaman.obj",
-        "./assets/statue.obj",
-        "./assets/JesusMary.obj",
-        "./assets/spot.obj",
-        "./assets/riku.obj",
-        "./assets/burger.obj",
-        "./assets/little_tokyo.obj",
-    };
-    char* texture_files[] = {
-        "./assets/megaman.png",
-        "./assets/statue.jpg",
-        "./assets/JesusMary.jpg",
-        "./assets/spot.png",
-        "./assets/riku.png",
-        "./assets/burger.jpg",
-        "./assets/little_tokyo.jpg"
-    };
+    // Load mesh
+    String obj = io_read_file("./assets/minecraft.obj");
+    Mesh mesh = read_obj_mesh(obj, "minecraft");
 
-    u32 mesh_index = 6;
-    String obj = io_read_file(obj_files[mesh_index]);
-    Mesh mesh = read_obj_mesh(obj, "mesh");
-    AABB box = get_bounding_box_mesh(&mesh);
-    f32 scale_inv = 2.0f / max_comp_vec3(box.diagonal);
-    map_vertices_mesh(&mesh, first_transform, &(FirstTransformContext){ .center = box.center, .scale_inv = scale_inv });
-    map_vertices_mesh(&mesh, second_transform, NULL);
-    map_vertices_mesh(&mesh, third_transform, NULL);
-    add_texture_mesh(&mesh, io_read_image(texture_files[mesh_index]));
-    
+    // Map all vertex colors to dark gray (0.25, 0.25, 0.25)
+    mesh.colors = new_array(mesh.vertices.length, sizeof(Color));
+    for (u32 i = 0; i < mesh.vertices.length; i++) {
+        Color c = { 0.25f, 0.25f, 0.25f, 1.0f };
+        push_array(&mesh.colors, &c);
+    }
+
+    // Swizzle vertices: (x, y, z) -> (x, -z, y)
+    map_vertices_mesh(&mesh, swizzle_vertex, NULL);
+
+    // Add texture
+    add_texture_mesh(&mesh, io_read_image("./assets/minecraft.png"));
+
+    // Build scene
     NaiveScene scene = { 0 };
     add_triangles_nscene(&scene, get_triangles_mesh(&mesh));
+
     // Application state
     App app = {
-      .tela = tela,
-      .window = window,
-      .camera = &camera,
-      .scene = &scene
+        .tela = tela,
+        .window = window,
+        .camera = &camera,
+        .scene = &scene,
+        .cam_speed = vec3(0, 0, 0)
     };
 
     // Animation loop

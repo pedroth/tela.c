@@ -1341,6 +1341,12 @@ struct Window {
 
   void (*on_mouse_scroll_callback)(Window* window, i32 scroll_y, void* context);
   void* on_mouse_scroll_context;
+
+  void (*on_key_down_callback)(Window* window, u32 keycode, void* context);
+  void* on_key_down_context;
+
+  void (*on_key_up_callback)(Window* window, u32 keycode, void* context);
+  void* on_key_up_context;
 };
 
 static inline void transform_mouse_coordinates(Window* window, i32 x, i32 y,
@@ -1423,6 +1429,24 @@ static inline void process_window_events(Window* window) {
         );
       }
     }
+    else if (event.type == SDL_KEYDOWN) {
+      if (window->on_key_down_callback) {
+        window->on_key_down_callback(
+          window,
+          event.key.keysym.sym,
+          window->on_key_down_context
+        );
+      }
+    }
+    else if (event.type == SDL_KEYUP) {
+      if (window->on_key_up_callback) {
+        window->on_key_up_callback(
+          window,
+          event.key.keysym.sym,
+          window->on_key_up_context
+        );
+      }
+    }
   }
 }
 
@@ -1445,6 +1469,10 @@ static inline Window* new_window(i32 width, i32 height, const char* title) {
   window->on_mouse_move_context = NULL;
   window->on_mouse_scroll_callback = NULL;
   window->on_mouse_scroll_context = NULL;
+  window->on_key_down_callback = NULL;
+  window->on_key_down_context = NULL;
+  window->on_key_up_callback = NULL;
+  window->on_key_up_context = NULL;
 
   if (SDL_Init(SDL_INIT_VIDEO) < 0) {
     fprintf(stderr, "SDL initialization failed: %s\n", SDL_GetError());
@@ -1579,6 +1607,28 @@ on_mouse_scroll_window(Window* window, void (*callback)(Window*, i32, void*),
   return window;
 }
 
+static inline Window*
+on_key_down_window(Window* window, void (*callback)(Window*, u32, void*),
+  void* context) {
+  if (!window) {
+    return window;
+  }
+  window->on_key_down_callback = callback;
+  window->on_key_down_context = context;
+  return window;
+}
+
+static inline Window*
+on_key_up_window(Window* window, void (*callback)(Window*, u32, void*),
+  void* context) {
+  if (!window) {
+    return window;
+  }
+  window->on_key_up_callback = callback;
+  window->on_key_up_context = context;
+  return window;
+}
+
 static inline void free_window(Window* window) {
   if (!window) {
     return;
@@ -1688,6 +1738,17 @@ Camera set_orbit_camera(Camera* camera, f32 radius, f32 theta, f32 phi) {
 }
 
 Vec3 get_camera_orbit(const Camera* camera) { return camera->orbit_coords; }
+
+Vec2 get_camera_orient(const Camera* camera) { return camera->orient_coords; }
+
+static inline Vec3 to_world_coord_camera(const Camera* camera, Vec3 cam_vec) {
+  Vec3 x = vec3(0, 0, 0);
+  f32 components[] = { cam_vec.x, cam_vec.y, cam_vec.z };
+  for (i32 i = 0; i < 3; i++) {
+    x = add_vec3(x, scale_vec3(camera->basis[i], components[i]));
+  }
+  return x;
+}
 
 typedef struct {
   Camera* camera;
