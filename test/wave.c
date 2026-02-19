@@ -8,24 +8,24 @@
 
 #include "../src/index.c"
 
-/* =============================================================================
- * Constants
- * ========================================================================== */
+ /* =============================================================================
+  * Constants
+  * ========================================================================== */
 
 static const u32 WIDTH = 640;
 static const u32 HEIGHT = 480;
 
-#define GRID_SIZE 100
+#define GRID_SIZE 200
 #define AMPLITUDE 10.0f
 #define FRICTION 0.1f
 #define WAVE_SPEED 10.0f
-#define SPREAD 100.0f
+#define SPREAD 200.0f
 
 /* =============================================================================
  * Utilities
  * ========================================================================== */
 
-static u32 wrap(u32 n, u32 m) { return (n % m + m) % m; }
+static u32 wrap(i32 n, i32 m) { return (u32)(((n % m) + m) % m); }
 
 /* =============================================================================
  * Wave State
@@ -74,12 +74,14 @@ static Color wave_shader(u32 x, u32 y, const void* context) {
   WaveShaderContext* ctx = (WaveShaderContext*)context;
   f32 range = ctx->max_height - ctx->min_height;
 
-  f32 t = (g_height[y][x] - ctx->min_height) / range;
-  f32 red   = t;
-  f32 blue  = 1.0f - t;
-  f32 green = fabsf(g_velocity[y][x]) / ctx->max_abs_velocity;
+  u32 xi = (u32)((x / (f32)WIDTH) * GRID_SIZE);
+  u32 yi = (u32)((y / (f32)HEIGHT) * GRID_SIZE);
+  f32 t = (g_height[yi][xi] - ctx->min_height) / range;
+  f32 red = t;
+  f32 blue = 1.0f - t;
+  f32 green = fabsf(g_velocity[yi][xi]) / ctx->max_abs_velocity;
 
-  return (Color){ red, green, blue, 1.0f };
+  return (Color) { red, green, blue, 1.0f };
 }
 
 /* =============================================================================
@@ -90,7 +92,7 @@ static void on_frame(f32 dt, f32 time, void* ctx) {
   App* app = (App*)ctx;
 
   f32 max_h = -__FLT_MAX__;
-  f32 min_h =  __FLT_MAX__;
+  f32 min_h = __FLT_MAX__;
   f32 max_v = -__FLT_MAX__;
 
   // Symplectic Euler integration of the 2D wave equation
@@ -98,17 +100,17 @@ static void on_frame(f32 dt, f32 time, void* ctx) {
     for (u32 j = 0; j < GRID_SIZE; j++) {
       // Discrete Laplacian (toroidal boundary)
       f32 laplacian =
-          g_height[i][wrap(j + 1, GRID_SIZE)] +
-          g_height[i][wrap(j - 1, GRID_SIZE)] +
-          g_height[wrap(i + 1, GRID_SIZE)][j] +
-          g_height[wrap(i - 1, GRID_SIZE)][j] -
-          4.0f * g_height[i][j];
+        g_height[i][wrap((i32)j + 1, GRID_SIZE)] +
+        g_height[i][wrap((i32)j - 1, GRID_SIZE)] +
+        g_height[wrap((i32)i + 1, GRID_SIZE)][j] +
+        g_height[wrap((i32)i - 1, GRID_SIZE)][j] -
+        4.0f * g_height[i][j];
 
       f32 acceleration = WAVE_SPEED * laplacian - FRICTION * g_velocity[i][j];
 
       // Update velocity, then position (symplectic order)
       g_velocity[i][j] += dt * acceleration;
-      g_height[i][j]   += dt * g_velocity[i][j];
+      g_height[i][j] += dt * g_velocity[i][j];
 
       // Track min/max for shader normalization
       if (g_height[i][j] > max_h) max_h = g_height[i][j];
@@ -150,22 +152,22 @@ static void on_mouse_move(Window* window, i32 x, i32 y, void* ctx) {
 
   App* app = (App*)ctx;
 
-  // Map window coordinates to tela pixel coordinates which is equal to grid size
-  u32 tx = (u32)((x / (f32)WIDTH) * app->tela->width);
-  u32 ty = (u32)((y / (f32)HEIGHT) * app->tela->height);
-
-  // Convert to grid coordinates (applies Y-flip)
-  u32 gi = wrap((u32)ty - GRID_SIZE + 1, GRID_SIZE);
-  u32 gj = wrap((u32)tx, GRID_SIZE);
+  // Map window coordinates directly to grid coordinates
+  i32 xi = (i32)((x / (f32)WIDTH) * GRID_SIZE);
+  i32 yi = (i32)((y / (f32)HEIGHT) * GRID_SIZE);
+  u32 i = wrap(yi - (i32)GRID_SIZE + 1, (i32)GRID_SIZE);
+  u32 j = wrap(xi, (i32)GRID_SIZE);
 
   // Paint a 3x3 brush
   i32 brush[] = { -1, 0, 1 };
+  // i32 brush[] = {-2, -1, 0, 1, 2 }; // Uncomment for larger brush
   u32 brush_size = sizeof(brush) / sizeof(brush[0]);
+  u32 nn = brush_size * brush_size;
 
-  for (u32 u = 0; u < brush_size; u++) {
-    for (u32 v = 0; v < brush_size; v++) {
-      g_height[wrap(gi + brush[u], GRID_SIZE)][wrap(gj + brush[v], GRID_SIZE)] = AMPLITUDE;
-    }
+  for (u32 k = 0; k < nn; k++) {
+    u32 u = k / brush_size;
+    u32 v = k % brush_size;
+    g_height[wrap((i32)i + brush[u], GRID_SIZE)][wrap((i32)j + brush[v], GRID_SIZE)] = AMPLITUDE;
   }
 }
 
@@ -182,7 +184,7 @@ static void register_input_handlers(Window* window, App* app) {
 int main(void) {
   initialize_wave();
 
-  Tela* tela = new_tela(GRID_SIZE, GRID_SIZE);
+  Tela* tela = new_tela(WIDTH, HEIGHT);
   Window* window = new_window(WIDTH, HEIGHT, "Wave Simulation");
 
   App app = { .tela = tela, .window = window };
