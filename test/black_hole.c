@@ -19,9 +19,14 @@
 static const u32 WIDTH = 640;
 static const u32 HEIGHT = 480;
 
-static const u32 SIMULATION_STEPS = 50;
-static const f32 SPEED_OF_LIGHT = 3.0f;
-static const f32 EVENT_HORIZON_FACTOR = 0.1f;
+static const u32 SIMULATION_STEPS = 100;
+static const f32 SPEED_OF_LIGHT = 2.3f;
+static const f32 SIMULATION_DT = 0.01f;
+
+static const f32 TORUS_MAJOR_RADIUS = 0.5f;
+static const f32 TORUS_MINOR_RADIUS = 0.05f;
+static const f32 TORUS_HIT_EPSILON = 1e-6f;
+static const f32 EVENT_HORIZON_EPSILON = 1e-3f;
 
 /* =============================================================================
  * Types
@@ -33,6 +38,7 @@ typedef struct {
   Camera *camera;
   Tela *background;
   Sphere black_hole;
+  f32 time;
 } App;
 
 /* =============================================================================
@@ -41,6 +47,18 @@ typedef struct {
 
 static bool g_mouse_down = false;
 static Vec2 g_mouse_pos = {0};
+
+/* =============================================================================
+ * Signed Distance Functions
+ * ========================================================================== */
+
+/**
+ * SDF for a torus centered at origin, lying in the XY plane.
+ */
+static f32 sdf_torus(Vec3 p, f32 r, f32 R) {
+  f32 q = length_vec2(vec2(p.x, p.y)) - r;
+  return length_vec2(vec2(q, p.z)) - R;
+}
 
 /* =============================================================================
  * Background Rendering
@@ -69,14 +87,14 @@ static Color sample_background(const Tela *bg, Vec3 dir) {
  * Simulate gravitational lensing around the black hole.
  *
  * Traces a photon through the gravitational field using Euler integration.
- * If the photon crosses the event horizon, returns black. Otherwise, samples
- * the background in the photon's final direction.
+ * If the photon hits the accretion disk torus, returns a fiery color modulated
+ * by angular position and time. If it crosses the event horizon, returns black.
+ * Otherwise, blends a distance-based torus glow with the background.
  */
 static Color ray_scene(Ray r, void *ctx) {
   App *app = (App *)ctx;
   Sphere bh = app->black_hole;
-  f32 event_horizon = bh.radius * EVENT_HORIZON_FACTOR;
-  f32 dt = 1.0f / SIMULATION_STEPS;
+  f32 time = app->time;
 
   Vec3 velocity = scale_vec3(r.dir, SPEED_OF_LIGHT);
   Vec3 position = r.init;
@@ -88,20 +106,36 @@ static Color ray_scene(Ray r, void *ctx) {
     Vec3 acceleration = scale_vec3(r_vec, 1.0f / r_sq);
 
     // Euler integration
-    velocity = add_vec3(velocity, scale_vec3(acceleration, dt));
-    position = add_vec3(position, scale_vec3(velocity, dt));
+    velocity = add_vec3(velocity, scale_vec3(acceleration, SIMULATION_DT));
+    position = add_vec3(position, scale_vec3(velocity, SIMULATION_DT));
 
-    // Check if photon crossed event horizon
-    Vec3 to_center = sub_vec3(bh.position, position);
-    if (length_vec3(to_center) < event_horizon) {
+    // Check torus hit (accretion disk)
+    f32 torus_dist = sdf_torus(position, TORUS_MAJOR_RADIUS, TORUS_MINOR_RADIUS);
+    if (torus_dist < TORUS_HIT_EPSILON) {
+      f32 theta = fmodf(atan2f(position.y, position.x) - 2.0f * time, M_PI);
+      f32 angle = expf(-0.25f * theta * theta);
+      return (Color){0.9f, 0.7f * angle, 0.25f * angle, 1.0f};
+    }
+
+    // Check if photon crossed event horizon (distance to surface)
+    f32 dist_to_surface = fmaxf(0.0f, length_vec3(r_vec) - bh.radius);
+    if (dist_to_surface < EVENT_HORIZON_EPSILON) {
       return (Color){0.0f, 0.0f, 0.0f, 1.0f};
     }
   }
 
+  // Distance-based torus glow
+  f32 torus_dist = sdf_torus(position, TORUS_MAJOR_RADIUS, TORUS_MINOR_RADIUS);
+  f32 glow = clamp(0.04f / (torus_dist * torus_dist), 0.0f, 1.0f);
+  Color torus_color = {glow, 0.5f * glow, 0.3f * glow, 1.0f};
+
   // Sample background using deflected ray direction
   Vec3 final_dir = {0};
   normalize_vec3(velocity, &final_dir);
-  return sample_background(app->background, final_dir);
+  Color bg_color = sample_background(app->background, final_dir);
+
+  // Blend torus glow with background
+  return scale_color(add_color(torus_color, bg_color), 0.5f);
 }
 
 /* =============================================================================
@@ -110,6 +144,7 @@ static Color ray_scene(Ray r, void *ctx) {
 
 static void on_frame(f32 dt, f32 time, void *ctx) {
   App *app = (App *)ctx;
+  app->time = time;
 
   // Render
   ray_map_camera(app->camera, app->tela, ray_scene, app);
@@ -189,10 +224,10 @@ int main(void) {
   Tela *background = io_read_image("./assets/universe.jpg");
 
   // Setup camera
-  Camera camera = create_camera(vec3(3.0f, 0.0f, 0.0f), vec3(0, 0, 0), 1.0f);
+  Camera camera = create_camera(vec3(2.0f, 0.0f, 0.0f), vec3(0, 0, 0), 1.0f);
 
   // Black hole at origin
-  Sphere black_hole = build_sphere(vec3(0.0f, 0.0f, 0.0f), 1.0f);
+  Sphere black_hole = build_sphere(vec3(0.0f, 0.0f, 0.0f), 0.1f);
 
   // Application state
   App app = {
