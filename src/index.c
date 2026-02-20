@@ -1518,7 +1518,7 @@ static inline void process_window_events(Window* window) {
       if (window->on_mouse_scroll_callback) {
         window->on_mouse_scroll_callback(
           window,
-          event.wheel.y,
+          -event.wheel.y,
           window->on_mouse_scroll_context
         );
       }

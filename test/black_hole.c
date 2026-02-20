@@ -1,0 +1,217 @@
+/**
+ * Black Hole Simulation
+ *
+ * A gravitational lensing demo that simulates light bending around a black hole
+ * using ray marching with Euler integration. Features an equirectangular
+ * background texture and interactive orbit camera controls via mouse.
+ */
+
+#include "../src/index.c"
+
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
+
+/* =============================================================================
+ * Constants
+ * ========================================================================== */
+
+static const u32 WIDTH = 640;
+static const u32 HEIGHT = 480;
+
+static const u32 SIMULATION_STEPS = 50;
+static const f32 SPEED_OF_LIGHT = 3.0f;
+static const f32 EVENT_HORIZON_FACTOR = 0.1f;
+
+/* =============================================================================
+ * Types
+ * ========================================================================== */
+
+typedef struct {
+  Tela *tela;
+  Window *window;
+  Camera *camera;
+  Tela *background;
+  Sphere black_hole;
+} App;
+
+/* =============================================================================
+ * Global State (for input handling)
+ * ========================================================================== */
+
+static bool g_mouse_down = false;
+static Vec2 g_mouse_pos = {0};
+
+/* =============================================================================
+ * Background Rendering
+ * ========================================================================== */
+
+/**
+ * Sample a color from the equirectangular background image using a ray
+ * direction.
+ */
+static Color sample_background(const Tela *bg, Vec3 dir) {
+  // atan2 returns [-pi, pi], map to [0, 1]
+  f32 theta = atan2f(dir.y, dir.x) / (2.0f * M_PI) + 0.5f;
+  // acos returns [0, pi], map to [0, 1]
+  f32 alpha = acosf(clamp(-dir.z, -1.0f, 1.0f)) / M_PI;
+
+  u32 u = (u32)(theta * bg->width);
+  u32 v = (u32)(alpha * bg->height);
+  return get_pxl_tela(bg, u, v);
+}
+
+/* =============================================================================
+ * Ray Scene
+ * ========================================================================== */
+
+/**
+ * Simulate gravitational lensing around the black hole.
+ *
+ * Traces a photon through the gravitational field using Euler integration.
+ * If the photon crosses the event horizon, returns black. Otherwise, samples
+ * the background in the photon's final direction.
+ */
+static Color ray_scene(Ray r, void *ctx) {
+  App *app = (App *)ctx;
+  Sphere bh = app->black_hole;
+  f32 event_horizon = bh.radius * EVENT_HORIZON_FACTOR;
+  f32 dt = 1.0f / SIMULATION_STEPS;
+
+  Vec3 velocity = scale_vec3(r.dir, SPEED_OF_LIGHT);
+  Vec3 position = r.init;
+
+  for (u32 i = 0; i < SIMULATION_STEPS; i++) {
+    // Gravitational acceleration: a = r / |r|^2
+    Vec3 r_vec = sub_vec3(bh.position, position);
+    f32 r_sq = dot_vec3(r_vec, r_vec);
+    Vec3 acceleration = scale_vec3(r_vec, 1.0f / r_sq);
+
+    // Euler integration
+    velocity = add_vec3(velocity, scale_vec3(acceleration, dt));
+    position = add_vec3(position, scale_vec3(velocity, dt));
+
+    // Check if photon crossed event horizon
+    Vec3 to_center = sub_vec3(bh.position, position);
+    if (length_vec3(to_center) < event_horizon) {
+      return (Color){0.0f, 0.0f, 0.0f, 1.0f};
+    }
+  }
+
+  // Sample background using deflected ray direction
+  Vec3 final_dir = {0};
+  normalize_vec3(velocity, &final_dir);
+  return sample_background(app->background, final_dir);
+}
+
+/* =============================================================================
+ * Animation Loop
+ * ========================================================================== */
+
+static void on_frame(f32 dt, f32 time, void *ctx) {
+  App *app = (App *)ctx;
+
+  // Render
+  ray_map_camera(app->camera, app->tela, ray_scene, app);
+
+  // Display
+  set_window_title(app->window,
+                   format_string("Black Hole | FPS: %.1f", 1.0f / dt));
+  paint_window(app->window, app->tela);
+}
+
+static void on_close(Window *window, void *ctx) {
+  Loop *animation = (Loop *)ctx;
+  stop_loop(animation);
+}
+
+/* =============================================================================
+ * Input Handlers
+ * ========================================================================== */
+
+static void on_mouse_down(Window *window, i32 x, i32 y, u32 button,
+                          void *ctx) {
+  g_mouse_down = true;
+  g_mouse_pos = vec2((f32)x, (f32)y);
+}
+
+static void on_mouse_up(Window *window, i32 x, i32 y, u32 button, void *ctx) {
+  g_mouse_down = false;
+}
+
+static void on_mouse_move(Window *window, i32 x, i32 y, void *ctx) {
+  if (!g_mouse_down)
+    return;
+
+  Vec2 new_pos = vec2((f32)x, (f32)y);
+  if (equals_vec2(new_pos, g_mouse_pos))
+    return;
+
+  App *app = (App *)ctx;
+  Vec2 delta = sub_vec2(new_pos, g_mouse_pos);
+
+  Vec3 orbit = get_camera_orbit(app->camera);
+  f32 theta_delta = -2.0f * M_PI * (delta.x / WIDTH);
+  f32 phi_delta = -2.0f * M_PI * (delta.y / HEIGHT);
+
+  set_orbit_camera(app->camera, orbit.x, orbit.y + theta_delta,
+                   orbit.z + phi_delta);
+
+  g_mouse_pos = new_pos;
+}
+
+static void on_mouse_scroll(Window *window, i32 delta_y, void *ctx) {
+  App *app = (App *)ctx;
+
+  Vec3 orbit = get_camera_orbit(app->camera);
+  f32 new_radius = orbit.x + delta_y * 0.1f;
+
+  set_orbit_camera(app->camera, new_radius, orbit.y, orbit.z);
+}
+
+static void register_input_handlers(Window *window, App *app) {
+  on_mouse_down_window(window, on_mouse_down, app);
+  on_mouse_up_window(window, on_mouse_up, app);
+  on_mouse_move_window(window, on_mouse_move, app);
+  on_mouse_scroll_window(window, on_mouse_scroll, app);
+}
+
+/* =============================================================================
+ * Main
+ * ========================================================================== */
+
+int main(void) {
+  // Create window and canvas
+  Tela *tela = new_tela(WIDTH / 3, HEIGHT / 3);
+  Window *window = new_window(WIDTH, HEIGHT, "Black Hole");
+
+  // Load background texture
+  Tela *background = io_read_image("./assets/universe.jpg");
+
+  // Setup camera
+  Camera camera = create_camera(vec3(3.0f, 0.0f, 0.0f), vec3(0, 0, 0), 1.0f);
+
+  // Black hole at origin
+  Sphere black_hole = build_sphere(vec3(0.0f, 0.0f, 0.0f), 1.0f);
+
+  // Application state
+  App app = {
+      .tela = tela,
+      .window = window,
+      .camera = &camera,
+      .background = background,
+      .black_hole = black_hole,
+  };
+
+  // Animation loop
+  Loop *animation = loop(on_frame, &app);
+
+  // Event handlers
+  on_close_window(window, on_close, animation);
+  register_input_handlers(window, &app);
+
+  // Run
+  play_loop(animation);
+
+  return 0;
+}

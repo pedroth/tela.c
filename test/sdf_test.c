@@ -219,7 +219,7 @@ static void on_mouse_scroll(Window *window, i32 delta_y, void *ctx) {
   App *app = (App *)ctx;
 
   Vec3 orbit = get_camera_orbit(app->camera);
-  f32 new_radius = orbit.x + delta_y * 0.001f;
+  f32 new_radius = orbit.x + delta_y * 0.1f;
 
   set_orbit_camera(app->camera, new_radius, orbit.y, orbit.z);
 }
