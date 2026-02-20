@@ -45,7 +45,10 @@ For optimized compilation:
 ```bash
 clang -O3 -o my_app my_app.c -lSDL2 -lm
 ```
-
+or 
+```bash
+clang -O3 -march=native -ffast-math -o my_app my_app.c -lSDL2 -lm
+```
 
 
 ## Generate images and videos
