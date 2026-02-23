@@ -52,7 +52,7 @@ static void on_frame(f32 dt, f32 time, void* ctx) {
 
   RaytraceParams params = {
     .samples_per_pixel = 5,
-    .bounces = 5,
+    .bounces = 7,
     .variance = 0.001f,
     .gamma = 0.5f,
     .bilinear_texture = false,
