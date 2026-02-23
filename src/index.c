@@ -17,9 +17,9 @@
 #ifndef TELA_C
 #define TELA_C
 
- /* POSIX features for clock_gettime - must be before includes */
+ /* POSIX features for clock_gettime and rand_r - must be before includes */
 #ifndef _POSIX_C_SOURCE
-#define _POSIX_C_SOURCE 199309L
+#define _POSIX_C_SOURCE 200112L
 #endif
 
 /* ============================================================
@@ -33,6 +33,10 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+
+#ifdef _OPENMP
+#include <omp.h>
+#endif
 
  /* SDL2 for windowing */
 #include <SDL2/SDL.h>
@@ -63,7 +67,20 @@ typedef bool bool_t;
  *                                                                                      */
  //========================================================================================
 
-static inline double random_double(void) { return (double)rand() / RAND_MAX; }
+static __thread unsigned int _tela_rand_seed = 0;
+static inline void _tela_seed_thread(void) {
+  if (_tela_rand_seed == 0) {
+#ifdef _OPENMP
+    _tela_rand_seed = (unsigned int)time(NULL) ^ ((unsigned int)omp_get_thread_num() * 2654435761u);
+#else
+    _tela_rand_seed = (unsigned int)time(NULL);
+#endif
+  }
+}
+static inline double random_double(void) {
+  _tela_seed_thread();
+  return (double)rand_r(&_tela_rand_seed) / RAND_MAX;
+}
 
 //========================================================================================
 /*                                                                                      *
@@ -1444,6 +1461,32 @@ Tela* map_exposed_tela(Tela* exposed, Color(*lambda)(u32, u32, void const*), voi
   return exposed;
 }
 
+Tela* map_exposed_tela_parallel(Tela* exposed, Color(*lambda)(u32, u32, void const*), void const* context) {
+  const u32 w = exposed->width;
+  const u32 h = exposed->height;
+  const u32 total_pixels = w * h;
+  f32* img = exposed->image;
+  u32 it = exposed->iterations;
+
+#pragma omp parallel for schedule(dynamic, 64)
+  for (u32 p = 0; p < total_pixels; p++) {
+    const u32 i = p / w;
+    const u32 j = p % w;
+    const u32 x = j;
+    const u32 y = h - 1 - i;
+    const Color color = lambda(x, y, context);
+    if (color.alpha == 0.0f) continue;
+    if (isnan(color.red) || isnan(color.green) || isnan(color.blue)) continue;
+    const u32 k = p * 4;
+    img[k]     = img[k]     + (color.red   - img[k])     / it;
+    img[k + 1] = img[k + 1] + (color.green - img[k + 1]) / it;
+    img[k + 2] = img[k + 2] + (color.blue  - img[k + 2]) / it;
+    img[k + 3] = img[k + 3] + (color.alpha - img[k + 3]) / it;
+  }
+  if (exposed->iterations < UINT32_MAX) exposed->iterations++;
+  return exposed;
+}
+
 Tela* set_pxl_exposed_tela(Tela* exposed, u32 x, u32 y, Color color) {
   const u32 w = exposed->width;
   f32* img = exposed->image;
@@ -2808,10 +2851,9 @@ Material get_material_from_hit(SceneHit hit) {
   return (Material){ 0 };
 }
 
-Color trace_ray_scene(Ray ray, RayTraceLambdaInput* input) {
+Color trace_ray_scene(Ray ray, RayTraceLambdaInput* input, u32 bounces) {
   NaiveScene* scene = input->scene;
   RaytraceParams* params = input->params;
-  u32 bounces = params->bounces;
   Color(*render_background)(Ray, void*) = params->render_background;
   void* render_background_context = params->render_background_context;
   bool bilinear_texture = params->bilinear_texture;
@@ -2835,9 +2877,7 @@ Color trace_ray_scene(Ray ray, RayTraceLambdaInput* input) {
   }
 
   Ray scatter_ray = material.scatter(ray, intersection);
-  input->params->bounces = bounces - 1;
-  Color scattered_color = trace_ray_scene(scatter_ray, input);
-  input->params->bounces = bounces;
+  Color scattered_color = trace_ray_scene(scatter_ray, input, bounces - 1);
   Vec3 normal = { 0, 0, 0 };
   if (hit_geometry_type == TRIANGLE) {
     normal = normal_to_point_triangle(intersection.triangle, intersection.position);
@@ -2871,7 +2911,7 @@ Color ray_trace_lambda(Ray ray, void* context) {
     Vec3 new_dir = add_vec3(ray.dir, epsilon_ortho);
     normalize_vec3(new_dir, &new_dir);
     Ray jittered_ray = build_ray(ray.init, new_dir);
-    accumulated_color = add_color(accumulated_color, trace_ray_scene(jittered_ray, params));
+    accumulated_color = add_color(accumulated_color, trace_ray_scene(jittered_ray, params, bounces));
   }
   return gamma_color(scale_color(accumulated_color, inv_samples), gamma);
 }
@@ -2888,12 +2928,32 @@ Tela* ray_map_camera_exposed(Camera* camera, Tela* tela,
   return map_exposed_tela(tela, lambda_tela_from_ray, &lambda_context);
 }
 
+Tela* ray_map_camera_exposed_parallel(Camera* camera, Tela* tela,
+  Color(*ray_scene)(Ray, void*), void* context) {
+
+  LambdaRayContext lambda_context = {
+      .camera = camera,
+      .tela = tela,
+      .lambda_context = context,
+      .lambdaWithRays = ray_scene,
+  };
+  return map_exposed_tela_parallel(tela, lambda_tela_from_ray, &lambda_context);
+}
+
 Tela* ray_trace_scene(NaiveScene* scene, RaytraceParams* params) {
   RayTraceLambdaInput lambda_input = {
     .scene = scene,
     .params = params
   };
   return ray_map_camera_exposed(params->camera, params->exposed_tela, ray_trace_lambda, &lambda_input);
+}
+
+Tela* ray_trace_scene_parallel(NaiveScene* scene, RaytraceParams* params) {
+  RayTraceLambdaInput lambda_input = {
+    .scene = scene,
+    .params = params
+  };
+  return ray_map_camera_exposed_parallel(params->camera, params->exposed_tela, ray_trace_lambda, &lambda_input);
 }
 
 
