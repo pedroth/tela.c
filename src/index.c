@@ -71,6 +71,10 @@ static inline double random_double(void) { return (double)rand() / RAND_MAX; }
  *                                                                                      */
  //========================================================================================
 
+#ifndef PI
+#define PI 3.14159265358979323846
+#endif
+
 static inline f32 mod_f32(f32 n, f32 m) {
   return fmodf(fmodf(n, m) + m, m);
 }
@@ -388,6 +392,23 @@ static inline Vec3 op_vec3(Vec3 a, Vec3 b, f32(*func)(f32, f32)) {
   return result;
 }
 
+static inline Vec3 random_vec3() {
+  return vec3(random_double(), random_double(), random_double());
+}
+static inline Vec3 random_point_in_sphere() {
+  Vec3 random_in_sphere;
+  while (true) {
+    Vec3 random = vec3(
+      2.0 * random_double() - 1.0,
+      2.0 * random_double() - 1.0,
+      2.0 * random_double() - 1.0
+    );
+    if (length_vec3(random) >= 1) continue;
+    normalize_vec3(random, &random_in_sphere);
+    break;
+  }
+  return random_in_sphere;
+}
 //========================================================================================
 /*                                                                                      *
  *                                         COLOR *
@@ -425,12 +446,31 @@ static inline Color lerp_color(Color a, Color b, f32 t) {
 }
 
 static inline Color add_color(Color a, Color b) {
-  return (Color){ a.red + b.red, a.green + b.green, a.blue + b.blue, a.alpha + b.alpha };
+  return (Color) { a.red + b.red, a.green + b.green, a.blue + b.blue, a.alpha + b.alpha };
 }
 
 static inline Color scale_color(Color c, f32 s) {
-  return (Color){ c.red * s, c.green * s, c.blue * s, c.alpha * s };
+  return (Color) { c.red* s, c.green* s, c.blue* s, c.alpha* s };
 }
+
+static inline Color mul_color(Color a, Color b) {
+  return (Color) { a.red* b.red, a.green* b.green, a.blue* b.blue, a.alpha* b.alpha };
+}
+
+static inline Color gamma_color(Color c, f32 gamma) {
+  return (Color) {
+    powf(fmaxf(c.red, 0.0f), gamma),
+    powf(fmaxf(c.green, 0.0f), gamma),
+    powf(fmaxf(c.blue, 0.0f), gamma),
+    c.alpha
+  };
+}
+
+static const Color COLOR_BLACK = { 0.0f, 0.0f, 0.0f, 1.0f };
+static const Color COLOR_WHITE = { 1.0f, 1.0f, 1.0f, 1.0f };
+static const Color COLOR_RED = { 1.0f, 0.0f, 0.0f, 1.0f };
+static const Color COLOR_GREEN = { 0.0f, 1.0f, 0.0f, 1.0f };
+static const Color COLOR_BLUE = { 0.0f, 0.0f, 1.0f, 1.0f };
 
 //========================================================================================
 /*                                                                                      *
@@ -644,6 +684,7 @@ typedef struct {
 
 typedef struct {
   Vec3 positions[3];
+  f32 radius;
   void* props;
 } Triangle;
 
@@ -652,6 +693,7 @@ Triangle build_triangle(Vec3 p1, Vec3 p2, Vec3 p3) {
   triangle.positions[0] = p1;
   triangle.positions[1] = p2;
   triangle.positions[2] = p3;
+  triangle.radius = 0.0f;
   return triangle;
 }
 
@@ -665,6 +707,74 @@ AABB get_bounding_box_triangle(Triangle* triangle) {
   return box;
 }
 
+Vec3 get_bary_coord_triangle(Triangle* triangle, Vec3 p) {
+  Vec3* positions = triangle->positions;
+  Vec3 tangents[2] = {
+    sub_vec3(positions[1], positions[0]),
+    sub_vec3(positions[2], positions[0])
+  };
+  f32 a = dot_vec3(tangents[0], tangents[0]);
+  f32 b = dot_vec3(tangents[0], tangents[1]);
+  f32 c = b;
+  f32 d = dot_vec3(tangents[1], tangents[1]);
+  f32 detInv = 1 / (a * d - b * c);
+
+  Vec2 inv_u1 = vec2(d * detInv, -b * detInv);
+  Vec2 inv_u2 = vec2(-c * detInv, a * detInv);
+
+  Vec3 r = sub_vec3(p, positions[0]);
+  Vec2 x = vec2(dot_vec3(tangents[0], r), dot_vec3(tangents[1], r));
+  Vec2 alpha = vec2(dot_vec2(inv_u1, x), dot_vec2(inv_u2, x));
+  f32 sum = alpha.x + alpha.y;
+  return vec3(alpha.x, alpha.y, 1 - sum);
+}
+
+f32 distance_to_point_triangle(Triangle* triangle, Vec3 p) {
+  Vec3 alpha = get_bary_coord_triangle(triangle, p);
+  const f32 sum = alpha.x + alpha.y + alpha.z;
+
+  Vec3 tangents[2] = {
+    sub_vec3(triangle->positions[1], triangle->positions[0]),
+    sub_vec3(triangle->positions[2], triangle->positions[0])
+  };
+
+  alpha = vec3(alpha.x / sum, alpha.y / sum, alpha.z / sum);
+  Vec3 point_on_triangle = add_vec3(triangle->positions[0],
+    add_vec3(
+      scale_vec3(tangents[0], alpha.x),
+      scale_vec3(tangents[1], alpha.y)
+    )
+  );
+  return length_vec3(sub_vec3(p, point_on_triangle)) - triangle->radius;
+}
+
+Vec3 normal_to_point_triangle(Triangle* triangle, Vec3 p) {
+  if (triangle->radius == 0.0f) {
+    // Flat triangle: use cross product face normal with proper orientation
+    Vec3 tangents[2] = {
+      sub_vec3(triangle->positions[1], triangle->positions[0]),
+      sub_vec3(triangle->positions[2], triangle->positions[0])
+    };
+    Vec3 normal = cross_vec3(tangents[0], tangents[1]);
+    normalize_vec3(normal, &normal);
+    Vec3 r = sub_vec3(p, triangle->positions[0]);
+    f32 d = dot_vec3(normal, r);
+    return d < 1e-3f ? normal : scale_vec3(normal, -1.0f);
+  }
+  else {
+    // Rounded triangle: numerical gradient of distance function
+    f32 epsilon = 1e-6f;
+    f32 f = distance_to_point_triangle(triangle, p);
+    f32 sign = (f > 0) - (f < 0);
+    Vec3 grad = vec3(
+      distance_to_point_triangle(triangle, add_vec3(p, vec3(epsilon, 0, 0))) - f,
+      distance_to_point_triangle(triangle, add_vec3(p, vec3(0, epsilon, 0))) - f,
+      distance_to_point_triangle(triangle, add_vec3(p, vec3(0, 0, epsilon))) - f
+    );
+    normalize_vec3(grad, &grad);
+    return scale_vec3(grad, sign);
+  }
+}
 
 //========================================================================================
 /*                                                                                      *
@@ -690,6 +800,153 @@ AABB get_bounding_box_sphere(Sphere* sphere) {
   AABB box;
   box = build_aabb(sub_vec3(sphere->position, r_vec), add_vec3(sphere->position, r_vec));
   return box;
+}
+
+f32 distance_to_point_sphere(Sphere* sphere, Vec3 p) {
+  return length_vec3(sub_vec3(p, sphere->position)) - sphere->radius;
+}
+
+Vec3 normal_to_point_sphere(Sphere* sphere, Vec3 p) {
+  Vec3 r = sub_vec3(p, sphere->position);
+  f32 len = length_vec3(r);
+  normalize_vec3(r, &r);
+  return len >= sphere->radius ? r : scale_vec3(r, -1.0f);
+}
+
+//========================================================================================
+/*                                                                                      *
+ *                                       GEOMETRY                                       *
+ *                                                                                      */
+ //========================================================================================
+
+typedef enum {
+  TRIANGLE,
+  SPHERE
+} GeometryType;
+
+typedef struct {
+  Vec3 init;
+  Vec3 dir;
+} Ray;
+
+static inline Ray build_ray(Vec3 init, Vec3 dir) { return (Ray) { init, dir }; }
+
+static inline Vec3 trace_ray(Ray ray, f32 t) {
+  return add_vec3(ray.init, scale_vec3(ray.dir, t));
+}
+
+typedef struct {
+  bool hit;
+  f32 t;
+  Vec3 position;
+  Triangle* triangle;
+  Sphere* sphere;
+  GeometryType geometry_type;
+} SceneHit;
+
+SceneHit intersect_with_ray_triangle(Triangle* triangle, Ray ray) {
+  SceneHit hit;
+  hit.hit = false;
+  hit.t = INFINITY;
+  if (triangle->radius == 0.0f) {
+    const f32 epsilon = 1e-9;
+    const Vec3 v = ray.dir;
+    const Vec3 p = sub_vec3(ray.init, triangle->positions[0]);
+    Vec3 tangents[2] = {
+      sub_vec3(triangle->positions[1], triangle->positions[0]),
+      sub_vec3(triangle->positions[2], triangle->positions[0])
+    };
+    Vec3 n = cross_vec3(tangents[0], tangents[1]);
+    normalize_vec3(n, &n);
+    const f32 t = -dot_vec3(n, p) / dot_vec3(n, v);
+    if (t <= epsilon) return hit;
+    const Vec3 x = trace_ray(ray, t);
+    // Check if x is inside the triangle using edge tests
+    for (u32 i = 0; i < 3; i++) {
+      const Vec3 xi = triangle->positions[i];
+      const Vec3 u = sub_vec3(x, xi);
+      const Vec3 ni = cross_vec3(n, sub_vec3(triangle->positions[(i + 1) % 3], xi));
+      const f32 dot = dot_vec3(ni, u);
+      if (dot <= epsilon) return hit;
+    }
+    hit.hit = true;
+    hit.t = t;
+    hit.geometry_type = TRIANGLE;
+    hit.triangle = triangle;
+    hit.position = x;
+    return hit;
+  }
+  const u32 max_ite = 20;
+  const f32 epsilon = 1e-3;
+  Vec3 p = ray.init;
+  f32 t = distance_to_point_triangle(triangle, p);
+  f32 minT = t;
+  for (u32 i = 0; i < max_ite; i++) {
+    p = trace_ray(ray, t);
+    const f32 d = distance_to_point_triangle(triangle, p);
+    t += d;
+    if (d < epsilon) {
+      hit.hit = true;
+      hit.t = t;
+      hit.geometry_type = TRIANGLE;
+      hit.triangle = triangle;
+      hit.position = p;
+      return hit;
+    }
+    if (d > minT) {
+      break;
+    }
+    minT = d;
+  }
+  return hit;
+}
+
+bool is_inside_triangle(Triangle* triangle, Vec3 p) {
+  Vec3 tangents[2] = {
+    sub_vec3(triangle->positions[1], triangle->positions[0]),
+    sub_vec3(triangle->positions[2], triangle->positions[0])
+  };
+  Vec3 normal = cross_vec3(tangents[0], tangents[1]);
+  normalize_vec3(normal, &normal);
+  return dot_vec3(normal, sub_vec3(p, triangle->positions[0])) >= 0;
+}
+
+f32 intersect_sphere_aux(Sphere* sphere, Ray ray) {
+  Vec3 init = ray.init;
+  Vec3 dir = ray.dir;
+  const Vec3 diff = sub_vec3(init, sphere->position);
+  const f32 b = 2 * dot_vec3(dir, diff);
+  const f32 c = dot_vec3(diff, diff) - sphere->radius * sphere->radius;
+  const f32 discriminant = b * b - 4 * c; // a = 1
+  if (discriminant < 0) return INFINITY;
+  const f32 sqrt_disc = sqrtf(discriminant);
+  const f32 t1 = (-b - sqrt_disc) / 2;
+  const f32 t2 = (-b + sqrt_disc) / 2;
+  const f32 t = fminf(t1, t2);
+  const f32 tM = fmaxf(t1, t2);
+  if (t1 * t2 < 0) return tM;
+  return t1 >= 0 && t2 >= 0 ? t : INFINITY;
+}
+
+SceneHit intersect_with_ray_sphere(Sphere* sphere, Ray ray) {
+  const f32 epsilon = 1e-4;
+  SceneHit hit;
+  hit.hit = false;
+  hit.t = INFINITY;
+
+  f32 t = intersect_sphere_aux(sphere, ray);
+  if (t == INFINITY) return hit;
+
+  hit.hit = true;
+  hit.t = t;
+  hit.geometry_type = SPHERE;
+  hit.sphere = sphere;
+  hit.position = trace_ray(ray, t - epsilon);
+  return hit;
+}
+
+bool is_inside_sphere(Sphere* sphere, Vec3 p) {
+  return distance_to_point_sphere(sphere, p) < 0;
 }
 
 //========================================================================================
@@ -746,6 +1003,30 @@ NaiveScene clear_triangles_nscene(NaiveScene* scene) {
   return *scene;
 }
 
+
+SceneHit intersect_nscene(NaiveScene* scene, Ray ray) {
+  SceneHit closest_hit;
+  closest_hit.t = INFINITY;
+  closest_hit.hit = false;
+
+  for (u32 i = 0; i < scene->triangles.length; i++) {
+    Triangle* tri = (Triangle*)get_array_element(&scene->triangles, i);
+    SceneHit hit = intersect_with_ray_triangle(tri, ray);
+    if (hit.t < closest_hit.t) {
+      closest_hit = hit;
+    }
+  }
+
+  for (u32 i = 0; i < scene->spheres.length; i++) {
+    Sphere* sph = (Sphere*)get_array_element(&scene->spheres, i);
+    SceneHit hit = intersect_with_ray_sphere(sph, ray);
+    if (hit.t < closest_hit.t) {
+      closest_hit = hit;
+    }
+  }
+
+  return closest_hit;
+}
 //========================================================================================
 /*                                                                                      *
  *                                         TELA *
@@ -758,8 +1039,9 @@ typedef struct {
   u32 width;
   u32 height;
   u32 channels;
-  f32* image;
+  f32* image; // RGBA format, row-major order width * height * channels in size
   AABB_2D box;
+  u32 iterations; // used for exposed tela
 } Tela;
 
 static inline Tela* new_tela(u32 width, u32 height) {
@@ -769,6 +1051,7 @@ static inline Tela* new_tela(u32 width, u32 height) {
   tela->channels = COLOR_CHANNELS;
   tela->box = build_aabb_2d(vec2(0.0f, 0.0f), vec2((f32)width, (f32)height));
   tela->image = (f32*)calloc(width * height * COLOR_CHANNELS, sizeof(f32));
+  tela->iterations = 1;
   return tela;
 }
 
@@ -1114,6 +1397,85 @@ static inline Tela* draw_triangle_tela(
   return tela;
 }
 
+//========================================================================================
+/*                                                                                      *
+ *                                     EXPOSED_TELA                                     *
+ *                                                                                      */
+ //========================================================================================
+
+
+
+Tela* fill_exposed_tela(Tela* exposed, Color color) {
+  const u32 n = exposed->width * exposed->height * COLOR_CHANNELS;
+  if (color.alpha == 0) return exposed;
+  f32* img = exposed->image;
+  u32 it = exposed->iterations;
+  for (u32 k = 0; k < n; k += 4) {
+    img[k] = img[k] + (color.red - img[k]) / it;
+    img[k + 1] = img[k + 1] + (color.green - img[k + 1]) / it;
+    img[k + 2] = img[k + 2] + (color.blue - img[k + 2]) / it;
+    img[k + 3] = img[k + 3] + (color.alpha - img[k + 3]) / it;
+  }
+  if (exposed->iterations < UINT32_MAX) exposed->iterations++;
+  return exposed;
+}
+
+Tela* map_exposed_tela(Tela* exposed, Color(*lambda)(u32, u32, void const*), void const* context) {
+  const u32 n = exposed->width * exposed->height * COLOR_CHANNELS;
+  const u32 w = exposed->width;
+  const u32 h = exposed->height;
+
+  f32* img = exposed->image;
+  u32 it = exposed->iterations;
+  for (u32 k = 0; k < n; k += 4) {
+    const u32 i = k / (4 * w);
+    const u32 j = (k / 4) % w;
+    const u32 x = j;
+    const u32 y = h - 1 - i;
+    const Color color = lambda(x, y, context);
+    if (color.alpha == 0.0f) continue;
+    if (isnan(color.red) || isnan(color.green) || isnan(color.blue)) continue;
+    img[k] = img[k] + (color.red - img[k]) / it;
+    img[k + 1] = img[k + 1] + (color.green - img[k + 1]) / it;
+    img[k + 2] = img[k + 2] + (color.blue - img[k + 2]) / it;
+    img[k + 3] = img[k + 3] + (color.alpha - img[k + 3]) / it;
+  }
+  if (exposed->iterations < UINT32_MAX) exposed->iterations++;
+  return exposed;
+}
+
+Tela* set_pxl_exposed_tela(Tela* exposed, u32 x, u32 y, Color color) {
+  const u32 w = exposed->width;
+  f32* img = exposed->image;
+  u32 it = exposed->iterations;
+  const Vec2 ij = to_grid_tela(exposed, x, y);
+  u32 i = (u32)ij.x;
+  u32 j = (u32)ij.y;
+  u32 index = 4 * (w * i + j);
+  img[index] = img[index] + (color.red - img[index]) / it;
+  img[index + 1] = img[index + 1] + (color.green - img[index + 1]) / it;
+  img[index + 2] = img[index + 2] + (color.blue - img[index + 2]) / it;
+  img[index + 3] = img[index + 3] + (color.alpha - img[index + 3]) / it;
+  if (it < UINT32_MAX) it++;
+  return exposed;
+}
+
+Color get_pxl_exposed_tela(const Tela* exposed, u32 x, u32 y) {
+  const u32 w = exposed->width;
+  const u32 h = exposed->height;
+  Vec2 grid = to_grid_tela(exposed, x, y);
+  u32 i = (u32)grid.x;
+  u32 j = (u32)grid.y;
+  i = mod_u32(i, h);
+  j = mod_u32(j, w);
+  u32 index = COLOR_CHANNELS * (w * i + j);
+  return (Color) {
+    exposed->image[index],
+      exposed->image[index + 1],
+      exposed->image[index + 2],
+      exposed->image[index + 3]
+  };
+};
 
 //========================================================================================
 /*                                                                                      *
@@ -1615,10 +1977,10 @@ static inline Window* paint_window(Window* window, Tela* tela) {
     u32 tela_index = tela_pixel * channels;
 
     u32 r = 0, g = 0, b = 0, a = 255;
-    r = (u8)(tela->image[tela_index + 0] * 255.0f);
-    g = (u8)(tela->image[tela_index + 1] * 255.0f);
-    b = (u8)(tela->image[tela_index + 2] * 255.0f);
-    a = (u8)(tela->image[tela_index + 3] * 255.0f);
+    r = (u8)(clamp(tela->image[tela_index + 0], 0.0f, 1.0f) * 255.0f);
+    g = (u8)(clamp(tela->image[tela_index + 1], 0.0f, 1.0f) * 255.0f);
+    b = (u8)(clamp(tela->image[tela_index + 2], 0.0f, 1.0f) * 255.0f);
+    a = (u8)(clamp(tela->image[tela_index + 3], 0.0f, 1.0f) * 255.0f);
 
     u32 window_index = i * window->width + j;
     window->pixels[window_index] = (r << 24) | (g << 16) | (b << 8) | a;
@@ -1754,22 +2116,6 @@ typedef struct {
 
 //========================================================================================
 /*                                                                                      *
- *                                          RAY *
- *                                                                                      */
- //========================================================================================
-typedef struct {
-  Vec3 init;
-  Vec3 dir;
-} Ray;
-
-Ray ray(Vec3 init, Vec3 dir) { return (Ray) { init, dir }; }
-
-Vec3 trace_ray(Ray ray, f32 t) {
-  return add_vec3(ray.init, scale_vec3(ray.dir, t));
-}
-
-//========================================================================================
-/*                                                                                      *
  *                                        CAMERA *
  *                                                                                      */
  //========================================================================================
@@ -1870,7 +2216,7 @@ Color lambda_tela_from_ray(u32 x, u32 y, void const* context) {
     camera->basis[2].z * dirInLocal.z);
   Vec3 dir_norm;
   normalize_vec3(dir, &dir_norm);
-  Color c = lambda_context->lambdaWithRays(ray(camera->position, dir_norm),
+  Color c = lambda_context->lambdaWithRays(build_ray(camera->position, dir_norm),
     lambda_context->lambda_context);
   return c;
 }
@@ -1912,10 +2258,25 @@ typedef struct {
   Tela* tela;
 } RasterParams;
 
+typedef enum {
+  METALLIC,
+  DIFFUSE,
+  EMISSIVE,
+  ALPHA,
+  DIELECTRIC,
+} MaterialType;
+
+typedef struct {
+  bool emissive;
+  Ray(*scatter)(Ray, SceneHit);
+  void* data; // data of materials
+} Material;
+
 typedef struct {
   Color colors[3];
   Vec2 tex_coords[3];
   Tela* texture;
+  Material* material;
 } RasterTriangleProps;
 
 typedef struct {
@@ -2149,6 +2510,7 @@ typedef struct {
   Color color;
   Vec2 tex_coord;
   Tela* texture;
+  Material* material;
 } RasterSphereProps;
 
 typedef struct {
@@ -2170,7 +2532,7 @@ void raster_sphere(RasterSphereInput* input) {
   const f32 distance_to_plane = camera->distance_to_plane;
 
   RasterSphereProps* props = (RasterSphereProps*)sphere->props;
-  Color color = props ? props->color : (Color){ 1.0f, 1.0f, 1.0f, 1.0f };
+  Color color = props ? props->color : (Color) { 1.0f, 1.0f, 1.0f, 1.0f };
   Vec2 tex_coord = props ? props->tex_coord : vec2(0, 0);
   Tela* texture = props ? props->texture : NULL;
 
@@ -2260,6 +2622,280 @@ Tela* raster_scene(NaiveScene* scene, RasterParams params) {
   return tela;
 }
 
+//========================================================================================
+/*                                                                                      *
+ *                                       RAY_TRACE                                       *
+ *                                                                                      */
+ //========================================================================================
+
+typedef struct {
+  u32 samples_per_pixel;
+  u32 bounces;
+  f32 variance;
+  f32 gamma;
+  bool bilinear_texture;
+  bool is_biased;
+  Color(*render_background)(Ray, void*);
+  void* render_background_context;
+  Tela* exposed_tela;
+  Camera* camera;
+} RaytraceParams;
+
+typedef struct {
+  NaiveScene* scene;
+  RaytraceParams* params;
+} RayTraceLambdaInput;
+
+Ray scatter_diffuse(Ray ray, SceneHit hit) {
+  Vec3 normal = { 0, 0, 0 };
+  if (hit.geometry_type == TRIANGLE) {
+    normal = normal_to_point_triangle(hit.triangle, hit.position);
+  }
+  else if (hit.geometry_type == SPHERE) {
+    normal = normal_to_point_sphere(hit.sphere, hit.position);
+  }
+  const Vec3 randomInSphere = random_point_in_sphere();
+  if (dot_vec3(randomInSphere, normal) >= 0) return build_ray(hit.position, randomInSphere);
+  return build_ray(hit.position, scale_vec3(randomInSphere, -1));
+}
+
+Material build_emissive_material() {
+  return (Material) {
+    .emissive = true,
+      .scatter = NULL,
+      .data = NULL
+  };
+}
+
+Material build_diffuse_material() {
+  return (Material) {
+    .emissive = false,
+      .scatter = scatter_diffuse,
+      .data = NULL
+  };
+}
+
+// Forward declaration
+Material get_material_from_hit(SceneHit hit);
+
+Ray scatter_metallic(Ray ray, SceneHit hit) {
+  f32 fuzz = *((f32*)get_material_from_hit(hit).data);
+
+  fuzz = fmin(1, fmax(0, fuzz));
+  Vec3 normal = { 0, 0, 0 };
+  if (hit.geometry_type == TRIANGLE) {
+    normal = normal_to_point_triangle(hit.triangle, hit.position);
+  }
+  else if (hit.geometry_type == SPHERE) {
+    normal = normal_to_point_sphere(hit.sphere, hit.position);
+  }
+  Vec3 v = ray.dir;
+  Vec3 reflected = sub_vec3(v, scale_vec3(normal, 2 * dot_vec3(v, normal)));
+  reflected = add_vec3(reflected, scale_vec3(random_point_in_sphere(), fuzz));
+  normalize_vec3(reflected, &reflected);
+  return build_ray(hit.position, reflected);
+}
+
+Material build_metallic_material(f32 fuzz) {
+  f32* data = (f32*)malloc(sizeof(f32));
+  *data = fuzz;
+  return (Material) {
+    .emissive = false,
+      .scatter = scatter_metallic,
+      .data = data,
+  };
+}
+
+Ray scatter_alpha(Ray ray, SceneHit hit) {
+  f32 alpha = *((f32*)get_material_from_hit(hit).data);
+  Vec3 point = hit.position;
+  if (random_double() <= alpha) return scatter_diffuse(ray, hit);
+  Vec3 v = sub_vec3(point, ray.init);
+  f32 t = INFINITY;
+  if (ray.dir.x != 0) t = v.x / ray.dir.x;
+  if (ray.dir.y != 0) t = v.y / ray.dir.y;
+  if (ray.dir.z != 0) t = v.z / ray.dir.z;
+  return build_ray(trace_ray(ray, t + 1e-2), ray.dir);
+
+}
+
+Material build_alpha_material(f32 alpha) {
+  f32* data = (f32*)malloc(sizeof(f32));
+  *data = fmin(fmax(alpha, 0), 1);
+  return (Material) {
+    .emissive = false,
+      .scatter = scatter_alpha,
+      .data = data,
+  };
+}
+
+Ray scatter_dielectric(Ray ray, SceneHit hit) {
+  f32 index_of_refraction = *((f32*)get_material_from_hit(hit).data);
+  Vec3 point = hit.position;
+  Vec3 p = sub_vec3(point, ray.init);
+  f32 t = INFINITY;
+  if (ray.dir.x != 0) t = p.x / ray.dir.x;
+  if (ray.dir.y != 0) t = p.y / ray.dir.y;
+  if (ray.dir.z != 0) t = p.z / ray.dir.z;
+
+  bool is_inside = false;
+  if (hit.geometry_type == TRIANGLE) {
+    is_inside = is_inside_triangle(hit.triangle, point);
+  }
+  else if (hit.geometry_type == SPHERE) {
+    is_inside = is_inside_sphere(hit.sphere, point);
+  }
+  f32 refraction_ration = is_inside ? index_of_refraction : 1 / index_of_refraction;
+  Vec3 v_in = ray.dir;
+  Vec3 normal = { 0, 0, 0 };
+  if (hit.geometry_type == TRIANGLE) {
+    normal = normal_to_point_triangle(hit.triangle, hit.position);
+  }
+  else if (hit.geometry_type == SPHERE) {
+    normal = normal_to_point_sphere(hit.sphere, hit.position);
+  }
+  Vec3 n = scale_vec3(normal, -1);
+  f32 cos_theta_in = fminf(1.0f, dot_vec3(v_in, n));
+  f32 sin_theta_in = sqrtf(1.0f - cos_theta_in * cos_theta_in);
+  f32 sin_theta_out = refraction_ration * sin_theta_in;
+  if (sin_theta_out > 1) {
+    // reflect
+    Vec3 v_out = sub_vec3(v_in, scale_vec3(n, -2 * cos_theta_in));
+    return build_ray(trace_ray(ray, t + 1e-2), v_out);
+  }
+  // refract
+  f32 cos_theta_out = sqrt(1 - sin_theta_out * sin_theta_out);
+  Vec3 vp = scale_vec3(n, cos_theta_in);
+  Vec3 vo = sub_vec3(v_in, vp);
+  normalize_vec3(vo, &vo);
+
+  Vec3 v_out = add_vec3(scale_vec3(n, cos_theta_out), scale_vec3(vo, sin_theta_out));
+
+  return build_ray(trace_ray(ray, t + 1e-2), v_out);
+}
+
+Material build_dielectric_material(f32 index_of_refraction) {
+  f32* data = (f32*)malloc(sizeof(f32));
+  *data = index_of_refraction;
+  return (Material) {
+    .emissive = false,
+      .scatter = scatter_dielectric,
+      .data = data,
+  };
+}
+
+Color get_color_from_hit(SceneHit hit, Ray ray, bool bilinear_texture) {
+  if (hit.geometry_type == TRIANGLE) {
+    RasterTriangleProps* props = (RasterTriangleProps*)hit.triangle->props;
+    return props->colors[0];
+  }
+  if (hit.geometry_type == SPHERE) {
+    RasterSphereProps* props = (RasterSphereProps*)hit.sphere->props;
+    return props->color;
+  }
+  return (Color){ 0, 0, 0, 0 };
+}
+
+Material get_material_from_hit(SceneHit hit) {
+  if (hit.geometry_type == TRIANGLE) {
+    RasterTriangleProps* props = (RasterTriangleProps*)hit.triangle->props;
+    return *props->material;
+  }
+  if (hit.geometry_type == SPHERE) {
+    RasterSphereProps* props = (RasterSphereProps*)hit.sphere->props;
+    return *props->material;
+  }
+  return (Material){ 0 };
+}
+
+Color trace_ray_scene(Ray ray, RayTraceLambdaInput* input) {
+  NaiveScene* scene = input->scene;
+  RaytraceParams* params = input->params;
+  u32 bounces = params->bounces;
+  Color(*render_background)(Ray, void*) = params->render_background;
+  void* render_background_context = params->render_background_context;
+  bool bilinear_texture = params->bilinear_texture;
+
+  SceneHit intersection = intersect_nscene(scene, ray);
+  if (!intersection.hit) {
+    return render_background(ray, render_background_context);
+  }
+
+  GeometryType hit_geometry_type = intersection.geometry_type;
+  Color albedo = get_color_from_hit(intersection, ray, bilinear_texture);
+  Material material = get_material_from_hit(intersection);
+
+  bool is_emissive = material.emissive;
+  if (is_emissive) {
+    return albedo;
+  }
+
+  if (bounces == 0) {
+    return render_background(ray, render_background_context);
+  }
+
+  Ray scatter_ray = material.scatter(ray, intersection);
+  input->params->bounces = bounces - 1;
+  Color scattered_color = trace_ray_scene(scatter_ray, input);
+  input->params->bounces = bounces;
+  Vec3 normal = { 0, 0, 0 };
+  if (hit_geometry_type == TRIANGLE) {
+    normal = normal_to_point_triangle(intersection.triangle, intersection.position);
+  }
+  else if (hit_geometry_type == SPHERE) {
+    normal = normal_to_point_sphere(intersection.sphere, intersection.position);
+  }
+  f32 attenuation = fabs(dot_vec3(normal, scatter_ray.dir));
+  Color final_color = mul_color(albedo, scattered_color);
+  final_color = scale_color(final_color, attenuation);
+  final_color.alpha = 1.0f;
+  return final_color;
+}
+
+Color ray_trace_lambda(Ray ray, void* context) {
+  RayTraceLambdaInput* params = (RayTraceLambdaInput*)context;
+  u32 samples = params->params->samples_per_pixel;
+  u32 bounces = params->params->bounces;
+  f32 variance = params->params->variance;
+  f32 gamma = params->params->gamma;
+  bool bilinear_texture = params->params->bilinear_texture;
+  bool is_biased = params->params->is_biased;
+  Tela* exposed_tela = params->params->exposed_tela;
+  Camera* camera = params->params->camera;
+
+  f32 inv_samples = (is_biased ? bounces : 1.0f) / samples;
+  Color accumulated_color = { 0, 0, 0, 0 };
+  for (u32 i = 0; i < samples; i++) {
+    const Vec3 epsilon = scale_vec3(random_point_in_sphere(), variance);
+    const Vec3 epsilon_ortho = sub_vec3(epsilon, scale_vec3(ray.dir, dot_vec3(epsilon, ray.dir)));
+    Vec3 new_dir = add_vec3(ray.dir, epsilon_ortho);
+    normalize_vec3(new_dir, &new_dir);
+    Ray jittered_ray = build_ray(ray.init, new_dir);
+    accumulated_color = add_color(accumulated_color, trace_ray_scene(jittered_ray, params));
+  }
+  return gamma_color(scale_color(accumulated_color, inv_samples), gamma);
+}
+
+Tela* ray_map_camera_exposed(Camera* camera, Tela* tela,
+  Color(*ray_scene)(Ray, void*), void* context) {
+
+  LambdaRayContext lambda_context = {
+      .camera = camera,
+      .tela = tela,
+      .lambda_context = context,
+      .lambdaWithRays = ray_scene,
+  };
+  return map_exposed_tela(tela, lambda_tela_from_ray, &lambda_context);
+}
+
+Tela* ray_trace_scene(NaiveScene* scene, RaytraceParams* params) {
+  RayTraceLambdaInput lambda_input = {
+    .scene = scene,
+    .params = params
+  };
+  return ray_map_camera_exposed(params->camera, params->exposed_tela, ray_trace_lambda, &lambda_input);
+}
+
 
 //========================================================================================
 /*                                                                                      *
@@ -2272,17 +2908,6 @@ typedef struct {
   u32 normal_indices[3];
 } Face;
 
-typedef enum {
-  MATERIAL_NONE,
-  MATERIAL_DIFFUSE,
-  MATERIAL_SPECULAR,
-  MATERIAL_EMISSIVE,
-} MaterialType;
-typedef struct {
-  MaterialType type;
-  void* data;
-} Material;
-
 typedef struct {
   Array vertices;  // Vec3
   Array tex_coords; // Vec2
@@ -2294,7 +2919,136 @@ typedef struct {
   String name;
 } Mesh;
 
-// ---- OBJ Parsing Helpers ----
+AABB get_bounding_box_mesh(Mesh* mesh) {
+  AABB box = { 0 };
+  Array vertices = mesh->vertices;
+  for (u32 i = 0; i < vertices.length; i++) {
+    Vec3 vertex = *(Vec3*)get_array_element(&vertices, i);
+    AABB vertex_box = build_aabb(vertex, vertex);
+    box = union_aabb(&box, &vertex_box);
+  }
+  return box;
+}
+
+Mesh map_vertices_mesh(Mesh* mesh, Vec3(*mapper)(Vec3, void*), void* context) {
+  for (u32 i = 0; i < mesh->vertices.length; i++) {
+    Vec3* v = (Vec3*)get_array_element(&mesh->vertices, i);
+    *v = mapper(*v, context);
+  }
+  return *mesh;
+}
+
+Mesh map_colors_mesh(Mesh* mesh, Color(*mapper)(Vec3, void*), void* context) {
+  mesh->colors = new_array(mesh->vertices.length, sizeof(Color));
+  for (u32 i = 0; i < mesh->vertices.length; i++) {
+    Vec3* v = (Vec3*)get_array_element(&mesh->vertices, i);
+    Color c = mapper(*v, context);
+    push_array(&mesh->colors, &c);
+  }
+  return *mesh;
+}
+
+Mesh add_texture_mesh(Mesh* mesh, Tela* texture) {
+  mesh->texture = texture;
+  return *mesh;
+}
+
+Array get_triangles_mesh(Mesh* mesh) {
+  Array triangles = new_array(mesh->faces.length, sizeof(Triangle));
+  Color default_color = { 1.0f, 1.0f, 1.0f, 1.0f };
+
+  for (u32 i = 0; i < mesh->faces.length; i++) {
+    Face* face = (Face*)get_array_element(&mesh->faces, i);
+
+    Triangle tri;
+    // positions from vertex indices
+    for (u32 j = 0; j < 3; j++) {
+      Vec3* v = (Vec3*)get_array_element(&mesh->vertices, face->vertex_indices[j]);
+      tri.positions[j] = v ? *v : vec3(0, 0, 0);
+    }
+
+    // Build props (colors, tex_coords, texture)
+    RasterTriangleProps* props = (RasterTriangleProps*)malloc(sizeof(RasterTriangleProps));
+    props->texture = mesh->texture;
+
+    for (u32 j = 0; j < 3; j++) {
+      // colors
+      if (mesh->colors.length > 0) {
+        Color* c = (Color*)get_array_element(&mesh->colors, face->vertex_indices[j]);
+        props->colors[j] = c ? *c : default_color;
+      }
+      else {
+        props->colors[j] = default_color;
+      }
+      // texture coordinates
+      if (mesh->tex_coords.length > 0) {
+        Vec2* tc = (Vec2*)get_array_element(&mesh->tex_coords, face->tex_coord_indices[j]);
+        props->tex_coords[j] = tc ? *tc : vec2(0, 0);
+      }
+      else {
+        props->tex_coords[j] = vec2(0, 0);
+      }
+    }
+
+    tri.props = props;
+    push_array(&triangles, &tri);
+  }
+  return triangles;
+}
+
+
+Array get_spheres_mesh(Mesh* mesh, f32 radius) {
+  Array spheres = new_array(mesh->vertices.length, sizeof(Sphere));
+  Color default_color = { 1.0f, 1.0f, 1.0f, 1.0f };
+
+  // Track which vertices have already been added (deduplication)
+  bool visited[mesh->vertices.length];
+  memset(visited, 0, mesh->vertices.length);
+
+  for (u32 i = 0; i < mesh->faces.length; i++) {
+    Face* face = (Face*)get_array_element(&mesh->faces, i);
+
+    for (u32 j = 0; j < 3; j++) {
+      u32 vi = face->vertex_indices[j];
+      if (visited[vi]) continue;
+      visited[vi] = true;
+
+      Vec3* v = (Vec3*)get_array_element(&mesh->vertices, vi);
+      Sphere sphere = build_sphere(v ? *v : vec3(0, 0, 0), radius);
+
+      // Build props (color, tex_coord, texture)
+      RasterSphereProps* props = (RasterSphereProps*)malloc(sizeof(RasterSphereProps));
+      props->texture = mesh->texture;
+
+      if (mesh->colors.length > 0) {
+        Color* c = (Color*)get_array_element(&mesh->colors, vi);
+        props->color = c ? *c : default_color;
+      }
+      else {
+        props->color = default_color;
+      }
+
+      if (mesh->tex_coords.length > 0) {
+        Vec2* tc = (Vec2*)get_array_element(&mesh->tex_coords, face->tex_coord_indices[j]);
+        props->tex_coord = tc ? *tc : vec2(0, 0);
+      }
+      else {
+        props->tex_coord = vec2(0, 0);
+      }
+
+      sphere.props = props;
+      push_array(&spheres, &sphere);
+    }
+  }
+
+  return spheres;
+}
+
+//========================================================================================
+/*                                                                                      *
+ *                                OBJ PARSING MESH UTILS                                *
+ *                                                                                      */
+ //========================================================================================
 
 typedef struct {
   u32 start;
@@ -2426,138 +3180,20 @@ Mesh read_obj_mesh(String obj_file, char* mesh_name) {
 
     if (obj_match_prefix(obj_file.data, i, line.end, "vn")) {
       obj_parse_normal(obj_file.data, i + 2, &mesh.normals);
-    } else if (obj_match_prefix(obj_file.data, i, line.end, "vt")) {
+    }
+    else if (obj_match_prefix(obj_file.data, i, line.end, "vt")) {
       obj_parse_tex_coord(obj_file.data, i + 2, &mesh.tex_coords);
-    } else if (obj_match_prefix(obj_file.data, i, line.end, "v")) {
+    }
+    else if (obj_match_prefix(obj_file.data, i, line.end, "v")) {
       obj_parse_vertex(obj_file.data, i + 1, &mesh.vertices);
-    } else if (obj_match_prefix(obj_file.data, i, line.end, "f")) {
+    }
+    else if (obj_match_prefix(obj_file.data, i, line.end, "f")) {
       obj_parse_face(obj_file.data, i + 1, line.end, &mesh.faces);
     }
   }
   return mesh;
 }
 
-AABB get_bounding_box_mesh(Mesh* mesh) {
-  AABB box = { 0 };
-  Array vertices = mesh->vertices;
-  for (u32 i = 0; i < vertices.length; i++) {
-    Vec3 vertex = *(Vec3*)get_array_element(&vertices, i);
-    AABB vertex_box = build_aabb(vertex, vertex);
-    box = union_aabb(&box, &vertex_box);
-  }
-  return box;
-}
 
-Mesh map_vertices_mesh(Mesh* mesh, Vec3(*mapper)(Vec3, void*), void* context) {
-  for (u32 i = 0; i < mesh->vertices.length; i++) {
-    Vec3* v = (Vec3*)get_array_element(&mesh->vertices, i);
-    *v = mapper(*v, context);
-  }
-  return *mesh;
-}
-
-Mesh map_colors_mesh(Mesh* mesh, Color(*mapper)(Vec3, void*), void* context) {
-  mesh->colors = new_array(mesh->vertices.length, sizeof(Color));
-  for (u32 i = 0; i < mesh->vertices.length; i++) {
-    Vec3* v = (Vec3*)get_array_element(&mesh->vertices, i);
-    Color c = mapper(*v, context);
-    push_array(&mesh->colors, &c);
-  }
-  return *mesh;
-}
-
-Mesh add_texture_mesh(Mesh* mesh, Tela* texture) {
-  mesh->texture = texture;
-  return *mesh;
-}
-
-Array get_triangles_mesh(Mesh* mesh) {
-  Array triangles = new_array(mesh->faces.length, sizeof(Triangle));
-  Color default_color = { 1.0f, 1.0f, 1.0f, 1.0f };
-
-  for (u32 i = 0; i < mesh->faces.length; i++) {
-    Face* face = (Face*)get_array_element(&mesh->faces, i);
-
-    Triangle tri;
-    // positions from vertex indices
-    for (u32 j = 0; j < 3; j++) {
-      Vec3* v = (Vec3*)get_array_element(&mesh->vertices, face->vertex_indices[j]);
-      tri.positions[j] = v ? *v : vec3(0, 0, 0);
-    }
-
-    // Build props (colors, tex_coords, texture)
-    RasterTriangleProps* props = (RasterTriangleProps*)malloc(sizeof(RasterTriangleProps));
-    props->texture = mesh->texture;
-
-    for (u32 j = 0; j < 3; j++) {
-      // colors
-      if (mesh->colors.length > 0) {
-        Color* c = (Color*)get_array_element(&mesh->colors, face->vertex_indices[j]);
-        props->colors[j] = c ? *c : default_color;
-      }
-      else {
-        props->colors[j] = default_color;
-      }
-      // texture coordinates
-      if (mesh->tex_coords.length > 0) {
-        Vec2* tc = (Vec2*)get_array_element(&mesh->tex_coords, face->tex_coord_indices[j]);
-        props->tex_coords[j] = tc ? *tc : vec2(0, 0);
-      }
-      else {
-        props->tex_coords[j] = vec2(0, 0);
-      }
-    }
-
-    tri.props = props;
-    push_array(&triangles, &tri);
-  }
-  return triangles;
-}
-
-
-Array get_spheres_mesh(Mesh* mesh, f32 radius) {
-  Array spheres = new_array(mesh->vertices.length, sizeof(Sphere));
-  Color default_color = { 1.0f, 1.0f, 1.0f, 1.0f };
-
-  // Track which vertices have already been added (deduplication)
-  bool visited[mesh->vertices.length];
-  memset(visited, 0, mesh->vertices.length);
-
-  for (u32 i = 0; i < mesh->faces.length; i++) {
-    Face* face = (Face*)get_array_element(&mesh->faces, i);
-
-    for (u32 j = 0; j < 3; j++) {
-      u32 vi = face->vertex_indices[j];
-      if (visited[vi]) continue;
-      visited[vi] = true;
-
-      Vec3* v = (Vec3*)get_array_element(&mesh->vertices, vi);
-      Sphere sphere = build_sphere(v ? *v : vec3(0, 0, 0), radius);
-
-      // Build props (color, tex_coord, texture)
-      RasterSphereProps* props = (RasterSphereProps*)malloc(sizeof(RasterSphereProps));
-      props->texture = mesh->texture;
-
-      if (mesh->colors.length > 0) {
-        Color* c = (Color*)get_array_element(&mesh->colors, vi);
-        props->color = c ? *c : default_color;
-      } else {
-        props->color = default_color;
-      }
-
-      if (mesh->tex_coords.length > 0) {
-        Vec2* tc = (Vec2*)get_array_element(&mesh->tex_coords, face->tex_coord_indices[j]);
-        props->tex_coord = tc ? *tc : vec2(0, 0);
-      } else {
-        props->tex_coord = vec2(0, 0);
-      }
-
-      sphere.props = props;
-      push_array(&spheres, &sphere);
-    }
-  }
-
-  return spheres;
-}
 
 #endif /* TELA_C */
