@@ -25,7 +25,7 @@ typedef struct {
     Tela* tela;
     Window* window;
     Camera* camera;
-    NaiveScene* scene;
+    Scene* scene;
 } App;
 
 /* =============================================================================
@@ -42,7 +42,7 @@ static Vec2 g_mouse_pos = { 0 };
 static void on_frame(f32 dt, f32 time, void* ctx) {
     App* app = (App*)ctx;
 
-    NaiveScene* scene = app->scene;
+    Scene* scene = app->scene;
 
     // Render
     raster_scene(
@@ -139,8 +139,8 @@ int main(void) {
         .texture = NULL
     };
 
-    NaiveScene scene = { 0 };
-    add_triangle_nscene(
+    Scene scene = new_naive_scene();
+    add_triangle_scene(
         &scene,
         (Triangle) {
         .positions = { vec3(1, 0, 0), vec3(0, 1, 0), vec3(0, 0, 1) },

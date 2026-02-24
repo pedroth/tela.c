@@ -26,7 +26,7 @@ typedef struct {
     Tela* tela;
     Window* window;
     Camera* camera;
-    NaiveScene* scene;
+    Scene* scene;
     Vec3 cam_speed;
 } App;
 
@@ -169,8 +169,8 @@ int main(void) {
     add_texture_mesh(&mesh, io_read_image("./assets/summer_forest.png"));
 
     // Build scene
-    NaiveScene scene = { 0 };
-    add_triangles_nscene(&scene, get_triangles_mesh(&mesh));
+    Scene scene = new_naive_scene();
+    add_triangles_scene(&scene, get_triangles_mesh(&mesh));
 
     // Application state
     App app = {

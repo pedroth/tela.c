@@ -27,7 +27,7 @@ typedef struct {
     Tela* tela;
     Window* window;
     Camera* camera;
-    NaiveScene* scene;
+    Scene* scene;
 } App;
 
 /* =============================================================================
@@ -178,8 +178,8 @@ int main(void) {
     map_colors_mesh(&mesh, position_to_color, NULL);
 
     // Build scene from spheres
-    NaiveScene scene = { 0 };
-    add_spheres_nscene(&scene, get_spheres_mesh(&mesh, SPHERE_RADIUS));
+    Scene scene = new_naive_scene();
+    add_spheres_scene(&scene, get_spheres_mesh(&mesh, SPHERE_RADIUS));
 
     App app = {
         .tela = tela,
