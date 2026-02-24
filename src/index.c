@@ -477,9 +477,9 @@ static inline Color mul_color(Color a, Color b) {
 static inline Color gamma_color(Color c, f32 gamma) {
   return (Color) {
     powf(fmaxf(c.red, 0.0f), gamma),
-    powf(fmaxf(c.green, 0.0f), gamma),
-    powf(fmaxf(c.blue, 0.0f), gamma),
-    c.alpha
+      powf(fmaxf(c.green, 0.0f), gamma),
+      powf(fmaxf(c.blue, 0.0f), gamma),
+      c.alpha
   };
 }
 
@@ -1102,6 +1102,31 @@ static inline Tela* map_tela(Tela* tela,
   return tela;
 }
 
+static inline Tela* map_tela_parallel(Tela* tela,
+  Color(*lambda)(u32, u32, void const*),
+  void const* context) {
+  const u32 w = tela->width;
+  const u32 h = tela->height;
+  const u32 c = tela->channels;
+  const u32 size = w * h * c;
+#pragma omp parallel for schedule(dynamic, 64)
+  for (u32 k = 0; k < size; k += c) {
+    u32 i = k / (c * w);
+    u32 j = (k / c) % w;
+    const u32 x = j;
+    const u32 y = h - 1 - i;
+    Color color = lambda(x, y, context);
+    if (color.alpha == 0.0f) {
+      continue;
+    }
+    tela->image[k + 0] = color.red;
+    tela->image[k + 1] = color.green;
+    tela->image[k + 2] = color.blue;
+    tela->image[k + 3] = color.alpha;
+  }
+  return tela;
+}
+
 static inline Tela* fill_tela(Tela* tela, Color color) {
   const u32 w = tela->width;
   const u32 h = tela->height;
@@ -1420,8 +1445,6 @@ static inline Tela* draw_triangle_tela(
  *                                                                                      */
  //========================================================================================
 
-
-
 Tela* fill_exposed_tela(Tela* exposed, Color color) {
   const u32 n = exposed->width * exposed->height * COLOR_CHANNELS;
   if (color.alpha == 0) return exposed;
@@ -1478,9 +1501,9 @@ Tela* map_exposed_tela_parallel(Tela* exposed, Color(*lambda)(u32, u32, void con
     if (color.alpha == 0.0f) continue;
     if (isnan(color.red) || isnan(color.green) || isnan(color.blue)) continue;
     const u32 k = p * 4;
-    img[k]     = img[k]     + (color.red   - img[k])     / it;
+    img[k] = img[k] + (color.red - img[k]) / it;
     img[k + 1] = img[k + 1] + (color.green - img[k + 1]) / it;
-    img[k + 2] = img[k + 2] + (color.blue  - img[k + 2]) / it;
+    img[k + 2] = img[k + 2] + (color.blue - img[k + 2]) / it;
     img[k + 3] = img[k + 3] + (color.alpha - img[k + 3]) / it;
   }
   if (exposed->iterations < UINT32_MAX) exposed->iterations++;
@@ -2276,6 +2299,18 @@ Tela* ray_map_camera(Camera* camera, Tela* tela,
   return map_tela(tela, lambda_tela_from_ray, &lambda_context);
 }
 
+Tela* ray_map_camera_parallel(Camera* camera, Tela* tela,
+  Color(*ray_scene)(Ray, void*), void* context) {
+
+  LambdaRayContext lambda_context = {
+      .camera = camera,
+      .tela = tela,
+      .lambda_context = context,
+      .lambdaWithRays = ray_scene,
+  };
+  return map_tela_parallel(tela, lambda_tela_from_ray, &lambda_context);
+}
+
 Vec3 to_local_coords_camera(const Camera* camera, Vec3 world_coords) {
   Vec3 p = sub_vec3(world_coords, camera->position);
   return vec3(
@@ -2836,7 +2871,7 @@ Color get_color_from_hit(SceneHit hit, Ray ray, bool bilinear_texture) {
     RasterSphereProps* props = (RasterSphereProps*)hit.sphere->props;
     return props->color;
   }
-  return (Color){ 0, 0, 0, 0 };
+  return (Color) { 0, 0, 0, 0 };
 }
 
 Material get_material_from_hit(SceneHit hit) {
@@ -2848,7 +2883,7 @@ Material get_material_from_hit(SceneHit hit) {
     RasterSphereProps* props = (RasterSphereProps*)hit.sphere->props;
     return *props->material;
   }
-  return (Material){ 0 };
+  return (Material) { 0 };
 }
 
 Color trace_ray_scene(Ray ray, RayTraceLambdaInput* input, u32 bounces) {
