@@ -838,7 +838,8 @@ Vec3 normal_to_point_sphere(Sphere* sphere, Vec3 p) {
 
 typedef enum {
   TRIANGLE,
-  SPHERE
+  SPHERE,
+  AABB_GEOMETRY
 } GeometryType;
 
 typedef struct {
@@ -858,8 +859,41 @@ typedef struct {
   Vec3 position;
   Triangle* triangle;
   Sphere* sphere;
+  AABB* aabb;
   GeometryType geometry_type;
 } SceneHit;
+
+SceneHit intersect_with_ray_aabb(Ray ray, const AABB* box) {
+  SceneHit hit;
+  hit.t = INFINITY;
+  hit.hit = false;
+
+  f32 epsilon = 1e-3;
+  f32 tmin = -INFINITY;
+  f32 tmax = INFINITY;
+  if (box->is_empty) return hit;
+  f32 min_array[3] = { box->min.x, box->min.y, box->min.z };
+  f32 max_array[3] = { box->max.x, box->max.y, box->max.z };
+  f32 r_init[3] = { ray.init.x, ray.init.y, ray.init.z };
+  f32 dir_inv[3] = { 1 / ray.dir.x, 1 / ray.dir.y, 1 / ray.dir.z };
+  const u32 dim = 3;
+  for (u32 i = 0; i < dim; ++i) {
+    f32 t1 = (min_array[i] - r_init[i]) * dir_inv[i];
+    f32 t2 = (max_array[i] - r_init[i]) * dir_inv[i];
+
+    tmin = fmaxf(tmin, fminf(t1, t2));
+    tmax = fminf(tmax, fmaxf(t1, t2));
+  }
+  if(tmax >= fmaxf(tmin, 0)) {
+    hit.t = tmin - epsilon;
+    hit.hit = true;
+    hit.position = trace_ray(ray, tmin - epsilon);
+    hit.geometry_type = AABB_GEOMETRY;
+    hit.aabb = (AABB*)box;
+    return hit;
+  }
+  return hit;
+}
 
 SceneHit intersect_with_ray_triangle(Triangle* triangle, Ray ray) {
   SceneHit hit;
@@ -983,9 +1017,9 @@ typedef struct {
   void     (*add_spheres)(Scene* self, Array spheres);
   void     (*clear_triangles)(Scene* self);
   void     (*clear_spheres)(Scene* self);
-  SceneHit (*intersect)(Scene* self, Ray ray);
-  Array*   (*get_triangles)(Scene* self);
-  Array*   (*get_spheres)(Scene* self);
+  SceneHit(*intersect)(Scene* self, Ray ray);
+  Array* (*get_triangles)(Scene* self);
+  Array* (*get_spheres)(Scene* self);
   void     (*free_scene)(Scene* self);
 } SceneVTable;
 
@@ -1123,21 +1157,21 @@ static void _naive_free_scene(Scene* self) {
 }
 
 static const SceneVTable NAIVE_SCENE_VTABLE = {
-  .add_triangle    = _naive_add_triangle,
-  .add_sphere      = _naive_add_sphere,
-  .add_triangles   = _naive_add_triangles,
-  .add_spheres     = _naive_add_spheres,
+  .add_triangle = _naive_add_triangle,
+  .add_sphere = _naive_add_sphere,
+  .add_triangles = _naive_add_triangles,
+  .add_spheres = _naive_add_spheres,
   .clear_triangles = _naive_clear_triangles,
-  .clear_spheres   = _naive_clear_spheres,
-  .intersect       = _naive_intersect,
-  .get_triangles   = _naive_get_triangles,
-  .get_spheres     = _naive_get_spheres,
-  .free_scene      = _naive_free_scene,
+  .clear_spheres = _naive_clear_spheres,
+  .intersect = _naive_intersect,
+  .get_triangles = _naive_get_triangles,
+  .get_spheres = _naive_get_spheres,
+  .free_scene = _naive_free_scene,
 };
 
 Scene new_naive_scene(void) {
   NaiveScene* ns = (NaiveScene*)calloc(1, sizeof(NaiveScene));
-  return (Scene){ .vtable = &NAIVE_SCENE_VTABLE, .data = ns };
+  return (Scene) { .vtable = &NAIVE_SCENE_VTABLE, .data = ns };
 }
 //========================================================================================
 /*                                                                                      *
@@ -2414,6 +2448,25 @@ Vec3 to_local_coords_camera(const Camera* camera, Vec3 world_coords) {
     dot_vec3(camera->basis[2], p)
   );
 }
+
+Ray ray_from_tela_camera(const Camera* camera, const Tela* tela, u32 x, u32 y) {
+  f32 w = (f32)tela->width;
+  f32 invW = 1.0f / w;
+  f32 h = (f32)tela->height;
+  f32 invH = 1.0f / h;
+  Vec3 dirInLocal = { (x * invW - 0.5), (y * invH - 0.5),
+                     camera->distance_to_plane };
+  Vec3 dir = vec3(
+    camera->basis[0].x * dirInLocal.x + camera->basis[1].x * dirInLocal.y +
+    camera->basis[2].x * dirInLocal.z,
+    camera->basis[0].y * dirInLocal.x + camera->basis[1].y * dirInLocal.y +
+    camera->basis[2].y * dirInLocal.z,
+    camera->basis[0].z * dirInLocal.x + camera->basis[1].z * dirInLocal.y +
+    camera->basis[2].z * dirInLocal.z);
+  Vec3 dir_norm;
+  normalize_vec3(dir, &dir_norm);
+  return build_ray(camera->position, dir_norm);
+};
 
 //========================================================================================
 /*                                                                                      *
