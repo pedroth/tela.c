@@ -38,7 +38,7 @@ static Vec2 g_mouse_pos = { 0 };
  * Animation / Render Loop
  * ========================================================================== */
 
-static inline Color render_solid_color(Ray ray, void* ctx) {
+static inline Color render_background(Ray ray, void* ctx) {
   return COLOR_BLACK;
 }
 
@@ -56,7 +56,7 @@ static void on_frame(f32 dt, f32 time, void* ctx) {
     .bilinear_texture = false,
     .is_biased = true,
     .camera = camera,
-    .render_background = render_solid_color,
+    .render_background = render_background,
     .exposed_tela = exposed,
   };
 

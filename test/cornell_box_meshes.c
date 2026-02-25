@@ -3,8 +3,6 @@
  *
  * A path-traced Cornell box scene with diffuse, metallic, dielectric, and
  * alpha materials. Features interactive orbit camera controls via mouse.
- * 
- * gcc -O3 -fopenmp -o app test/cornell_box_parallel.c -lSDL2 -lm
  *
  */
 
@@ -35,13 +33,23 @@ typedef struct {
 
 static bool g_mouse_down = false;
 static Vec2 g_mouse_pos = { 0 };
+static Tela* g_background = NULL;
 
 /* =============================================================================
  * Animation / Render Loop
  * ========================================================================== */
 
 static inline Color render_background(Ray ray, void* ctx) {
-  return COLOR_BLACK;
+  Tela* background = (Tela*)ctx;
+  if (!background) {
+    return (Color){ 0.0f, 0.0f, 0.0f, 1.0f };
+  }
+Vec3 dir = ray.dir;
+  f32 theta = atan2f(dir.y, dir.x) / (2.0f * PI) + 0.5f;
+  f32 alpha = acosf(fminf(1.0f, fmaxf(-1.0f, -dir.z))) / PI;
+  return get_pxl_tela(background,
+    (u32)(theta * background->width),
+    (u32)(alpha * background->height));
 }
 
 static void on_frame(f32 dt, f32 time, void* ctx) {
@@ -51,14 +59,15 @@ static void on_frame(f32 dt, f32 time, void* ctx) {
   Tela* exposed = app->tela;
 
   RaytraceParams params = {
-    .samples_per_pixel = 5,
-    .bounces = 7,
+    .samples_per_pixel = 1,
+    .bounces = 10,
     .variance = 0.001f,
     .gamma = 0.5f,
-    .bilinear_texture = false,
-    .is_biased = true,
+    .bilinear_texture = true,
+    .is_biased = false,
     .camera = camera,
     .render_background = render_background,
+    .render_background_context = g_background,
     .exposed_tela = exposed,
   };
 
@@ -226,35 +235,62 @@ static void build_cornell_box(Scene* scene) {
   light_2.props = new_tri_props(COLOR_WHITE, mat_emissive);
   add_triangle_scene(scene, light_2);
 
-  // sphere (metallic fuzz=0.25, magenta)
-  Sphere sphere = build_sphere(vec3(1.5, 0.5, 1.5), 0.25);
-  sphere.props = new_sph_props((Color){ 1.0f, 0.0f, 1.0f, 1.0f }, mat_metallic_025);
-  add_sphere_scene(scene, sphere);
+}
 
-  // metal-sphere (metallic fuzz=0, white)
-  Sphere metal_sphere = build_sphere(vec3(1.5, 2.5, 1.5), 0.25);
-  metal_sphere.props = new_sph_props(COLOR_WHITE, mat_metallic_0);
-  add_sphere_scene(scene, metal_sphere);
+typedef struct {
+    Vec3 center;
+    f32 scale_inv;
+} FirstTransformContext;
 
-  // glass-sphere (dielectric ior=1.3)
-  Sphere glass_sphere = build_sphere(vec3(1.0, 1.5, 1.0), 0.5);
-  glass_sphere.props = new_sph_props((Color){ 1.0f, 1.0f, 1.0f, 1.0f }, mat_dielectric_13);
-  add_sphere_scene(scene, glass_sphere);
+Vec3 first_transform(Vec3 v, void* ctx) {
+    Vec3 center = ((FirstTransformContext*)ctx)->center;
+    f32 scale_inv = ((FirstTransformContext*)ctx)->scale_inv;
+    return scale_vec3(sub_vec3(v, center), scale_inv);
+}
 
-  // alpha-tri (metallic, yellow)
-  Triangle alpha_tri = build_triangle(vec3(1, 0, 0), vec3(0, 1, 0), vec3(0, 0, 1));
-  alpha_tri.props = new_tri_props((Color){ 1.0f, 1.0f, 0.0f, 1.0f }, mat_metallic_0);
-  add_triangle_scene(scene, alpha_tri);
+Vec3 second_transform(Vec3 v, void* ctx) {
+    return vec3(-v.z, -v.x, v.y);
+}
 
-  // alpha-tri-2 (dielectric ior=2, white)
-  Triangle alpha_tri_2 = build_triangle(vec3(3, 1, 1), vec3(3, 2, 1), vec3(3, 1.5, 2));
-  alpha_tri_2.props = new_tri_props(COLOR_WHITE, mat_dielectric_2);
-  add_triangle_scene(scene, alpha_tri_2);
+Vec3 third_transform(Vec3 v, void* ctx) {
+    return add_vec3(v, vec3(1.5f, 1.5f, 1.0f));
+}
 
-  // alpha-sphere (alpha=0.25, cyan)
-  Sphere alpha_sphere = build_sphere(vec3(3, 1.5, 2), 0.25);
-  alpha_sphere.props = new_sph_props((Color){ 0.0f, 1.0f, 1.0f, 1.0f }, mat_alpha_025);
-  add_sphere_scene(scene, alpha_sphere);
+Material diffuse_material_mapper(Face face, void* ctx) {
+  return build_diffuse_material();
+}
+
+void add_mesh_scene(Scene* scene) {
+  char* obj_files[] = {
+        "./assets/megaman.obj",
+        "./assets/statue.obj",
+        "./assets/JesusMary.obj",
+        "./assets/spot.obj",
+        "./assets/riku.obj",
+        "./assets/burger.obj",
+    };
+    char* texture_files[] = {
+        "./assets/megaman.png",
+        "./assets/statue.jpg",
+        "./assets/JesusMary.jpg",
+        "./assets/spot.png",
+        "./assets/riku.png",
+        "./assets/burger.jpg",
+    };
+
+    u32 mesh_index = 3;
+    String obj = io_read_file(obj_files[mesh_index]);
+    Mesh mesh = read_obj_mesh(obj, "mesh");
+    AABB box = get_bounding_box_mesh(&mesh);
+    f32 scale_inv = 2.0f / max_comp_vec3(box.diagonal);
+    map_vertices_mesh(&mesh, first_transform, &(FirstTransformContext){ .center = box.center, .scale_inv = scale_inv });
+    map_vertices_mesh(&mesh, second_transform, NULL);
+    map_vertices_mesh(&mesh, third_transform, NULL);
+    add_texture_mesh(&mesh, io_read_image(texture_files[mesh_index]));
+
+    map_triangles_materials_mesh(&mesh, diffuse_material_mapper, NULL);
+
+    add_triangles_scene(scene, get_triangles_mesh(&mesh));
 }
 
 /* =============================================================================
@@ -262,6 +298,8 @@ static void build_cornell_box(Scene* scene) {
  * ========================================================================== */
 
 int main(void) {
+  g_background = io_read_image("assets/sky.jpg");
+
   Tela* tela = new_tela(WIDTH, HEIGHT);
   Window* window = new_window(WIDTH * 2, HEIGHT * 2, "Cornell Box");
 
@@ -269,8 +307,9 @@ int main(void) {
   Camera camera = create_camera(vec3(3.0f, 0.0f, 0.0f), vec3(1.5f, 1.5f, 1.5f), 1.0f);
   set_orbit_camera(&camera, 3.0f, 0.0f, 0.0f);
 
-  Scene scene = new_naive_scene();
+  Scene scene = new_kscene(20);
   build_cornell_box(&scene);
+  add_mesh_scene(&scene);
 
   App app = {
       .tela = tela,

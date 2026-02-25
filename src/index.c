@@ -187,6 +187,16 @@ Array filter_array(Array* a, bool (*func)(void* element, u32 index)) {
   return ans;
 }
 
+Array map_array(Array* a, void (*func)(void* element, u32 index, void* ctx), void* ctx) {
+  Array ans = new_array(a->capacity, a->element_size);
+  for (u32 i = 0; i < a->length; i++) {
+    void* element = (char*)a->data + (i * a->element_size);
+    func(element, i, ctx);
+    push_array(&ans, element);
+  }
+  return ans;
+}
+
 void* get_array_element(Array* a, u32 index) {
   if (index >= a->length || index < 0) {
     return NULL;
@@ -218,6 +228,148 @@ void free_array(Array* array) {
   array->data = NULL;
   array->length = 0;
   array->capacity = 0;
+}
+
+i32 arg_min_array(Array* a, f32 (*cost_function)(void* element, u32 index, void* ctx), void* ctx) {
+  i32 argmin_index = -1;
+  f32 cost = __FLT_MAX__;
+  for (u32 i = 0; i < a->length; i++) {
+    f32 new_cost = cost_function(get_array_element(a, i), i, ctx);
+    if (new_cost < cost) {
+      cost = new_cost;
+      argmin_index = (i32)i;
+    }
+  }
+  return argmin_index;
+}
+
+//========================================================================================
+/*                                                                                      *
+ *                                         ANIMA                                        *
+ *                                                                                      */
+//========================================================================================
+
+/**
+ * A behavior is a timed action: a callback that runs for a given duration.
+ * The callback receives (tau, dt, ctx) where tau is local time within
+ * the behavior [0, duration].
+ */
+typedef struct {
+  void (*behavior)(f32 tau, f32 dt, void* ctx);
+  f32 duration;
+} AnimaBehavior;
+
+/**
+ * An entry in the animation sequence, with precomputed start/end times.
+ */
+typedef struct {
+  void (*behavior)(f32 tau, f32 dt, void* ctx);
+  f32 duration;
+  f32 start;
+  f32 end;
+} AnimaEntry;
+
+/**
+ * Anima — a sequencer that plays a list of behaviors in order.
+ * Uses Array of AnimaEntry internally.
+ */
+typedef struct {
+  Array entries; // Array of AnimaEntry
+} Anima;
+
+/**
+ * Create a behavior (callback + duration pair).
+ */
+static inline AnimaBehavior anima_behavior(void (*lambda)(f32, f32, void*), f32 duration) {
+  return (AnimaBehavior){ .behavior = lambda, .duration = duration };
+}
+
+/**
+ * Create a wait (no-op behavior for a given duration).
+ */
+static inline AnimaBehavior anima_wait(f32 duration) {
+  return (AnimaBehavior){ .behavior = NULL, .duration = duration };
+}
+
+/**
+ * Build an Anima from an Array of AnimaBehavior.
+ * Precomputes start/end times for each entry.
+ */
+static inline Anima new_anima(Array behaviors) {
+  Anima a;
+  a.entries = new_array(behaviors.length, sizeof(AnimaEntry));
+  f32 acc = 0.0f;
+  for (u32 i = 0; i < behaviors.length; i++) {
+    AnimaBehavior* b = (AnimaBehavior*)get_array_element(&behaviors, i);
+    AnimaEntry entry = {
+      .behavior = b->behavior,
+      .duration = b->duration,
+      .start = acc,
+      .end = acc + b->duration,
+    };
+    acc = entry.end;
+    push_array(&a.entries, &entry);
+  }
+  return a;
+}
+
+/**
+ * Total duration of the animation sequence.
+ */
+static inline f32 anima_time(const Anima* a) {
+  if (a->entries.length == 0) return 0.0f;
+  AnimaEntry* last = (AnimaEntry*)get_array_element((Array*)&a->entries, a->entries.length - 1);
+  return last->end;
+}
+
+/**
+ * Play the animation at global time t.
+ * Finds the active behavior and calls it with local time tau.
+ */
+static inline void anima_play(const Anima* a, f32 t, f32 dt, void* ctx) {
+  if (a->entries.length == 0) return;
+
+  // Find which behavior is active at time t
+  f32 s = 0.0f;
+  u32 i = 0;
+  while (s < t && i < a->entries.length) {
+    AnimaEntry* e = (AnimaEntry*)get_array_element((Array*)&a->entries, i);
+    s += e->duration;
+    i++;
+  }
+  u32 index = (i > 0) ? i - 1 : 0;
+  AnimaEntry* entry = (AnimaEntry*)get_array_element((Array*)&a->entries, index);
+
+  // Compute local time within this behavior
+  f32 tau = t - entry->start;
+  if (i >= a->entries.length) {
+    // Past the end — clamp to final behavior's duration
+    tau = fminf(tau, entry->duration);
+  }
+  // Snap to exact end if within one dt of finishing
+  if (fabsf(tau - entry->duration) < dt) {
+    tau = entry->duration;
+  }
+
+  if (entry->behavior) {
+    entry->behavior(tau, dt, ctx);
+  }
+}
+
+/**
+ * Play the animation in a loop (wraps time around total duration).
+ */
+static inline void anima_loop(const Anima* a, f32 t, f32 dt, void* ctx) {
+  if (a->entries.length == 0) return;
+  f32 max_t = anima_time(a);
+  anima_play(a, fmodf(t, max_t), dt, ctx);
+}
+
+/**
+ * Free the animation sequence.
+ */
+static inline void free_anima(Anima* a) {
+  free_array(&a->entries);
 }
 
 //========================================================================================
@@ -546,7 +698,8 @@ static inline AABB_2D union_aabb_2d(const AABB_2D* a, const AABB_2D* b) {
   return build_aabb_2d(new_min, new_max);
 }
 
-static inline AABB_2D sub_aabb_2d(const AABB_2D* box, const AABB_2D* other) {
+//
+static inline AABB_2D inter_aabb_2d(const AABB_2D* box, const AABB_2D* other) {
   if (box->is_empty || other->is_empty)
     return EMPTY_AABB_2D;
   Vec2 new_min = op_vec2(box->min, other->min, fmaxf);
@@ -557,7 +710,7 @@ static inline AABB_2D sub_aabb_2d(const AABB_2D* box, const AABB_2D* other) {
 }
 
 static inline bool collides_aabb_2d(const AABB_2D* box, const AABB_2D* other) {
-  return !sub_aabb_2d(box, other).is_empty;
+  return !inter_aabb_2d(box, other).is_empty;
 }
 
 static inline f32 max_comp_vec2(const Vec2 v) { return fmaxf(v.x, v.y); }
@@ -627,7 +780,7 @@ static inline AABB union_aabb(const AABB* a, const AABB* b) {
   return build_aabb(new_min, new_max);
 }
 
-static inline AABB sub_aabb(const AABB* box, const AABB* other) {
+static inline AABB inter_aabb(const AABB* box, const AABB* other) {
   if (box->is_empty || other->is_empty)
     return EMPTY_AABB;
   Vec3 new_min =
@@ -643,7 +796,7 @@ static inline AABB sub_aabb(const AABB* box, const AABB* other) {
 }
 
 static inline bool collides_aabb(const AABB* box, const AABB* other) {
-  return !sub_aabb(box, other).is_empty;
+  return !inter_aabb(box, other).is_empty;
 }
 
 static inline f32 max_comp_vec3(const Vec3 v) {
@@ -656,6 +809,15 @@ static inline f32 distance_aabb(const AABB* box, const Vec3 point) {
   const Vec3 q = sub_vec3(map_vec3(p, fabsf), r);
   return length_vec3(op_vec3(q, vec3(0, 0, 0), fmaxf)) +
     fminf(0, max_comp_vec3(q));
+}
+
+static inline Vec3 sample_aabb(const AABB* box) {
+  Vec3 uvw = random_vec3();
+  return vec3(
+    lerp_f32(box->min.x, box->max.x, uvw.x),
+    lerp_f32(box->min.y, box->max.y, uvw.y),
+    lerp_f32(box->min.z, box->max.z, uvw.z)
+  );
 }
 
 //========================================================================================
@@ -884,7 +1046,7 @@ SceneHit intersect_with_ray_aabb(Ray ray, const AABB* box) {
     tmin = fmaxf(tmin, fminf(t1, t2));
     tmax = fminf(tmax, fmaxf(t1, t2));
   }
-  if(tmax >= fmaxf(tmin, 0)) {
+  if (tmax >= fmaxf(tmin, 0)) {
     hit.t = tmin - epsilon;
     hit.hit = true;
     hit.position = trace_ray(ray, tmin - epsilon);
@@ -1173,6 +1335,462 @@ Scene new_naive_scene(void) {
   NaiveScene* ns = (NaiveScene*)calloc(1, sizeof(NaiveScene));
   return (Scene) { .vtable = &NAIVE_SCENE_VTABLE, .data = ns };
 }
+
+//========================================================================================
+/*                                                                                      *
+ *                                        KSCENE                                        *
+ *                                                                                      */
+ //========================================================================================
+typedef struct NodeKScene {
+  AABB box;
+  bool is_leaf;
+  u32 num_of_primitives;
+  union {
+    struct {
+      struct NodeKScene* left;
+      struct NodeKScene* right;
+    };
+    struct {
+      Array triangles; // only valid if is_leaf is true
+      Array spheres;   // only valid if is_leaf is true
+    };
+  };
+} NodeKScene;
+
+/* --- NodeKScene helpers --- */
+
+static NodeKScene* new_node_k_scene(u32 k) {
+  NodeKScene* node = (NodeKScene*)calloc(1, sizeof(NodeKScene));
+  node->box = EMPTY_AABB;
+  node->is_leaf = true;
+  node->num_of_primitives = 0;
+  return node;
+}
+
+static void free_node_k_scene(NodeKScene* node) {
+  if (!node) return;
+  if (node->is_leaf) {
+    if (node->triangles.data) free_array(&node->triangles);
+    if (node->spheres.data) free_array(&node->spheres);
+  } else {
+    free_node_k_scene(node->left);
+    free_node_k_scene(node->right);
+  }
+  free(node);
+}
+
+/**
+ * Temporary struct for clustering primitives by their bounding box center.
+ */
+typedef struct {
+  Vec3 center;
+  bool is_triangle; // true = triangle, false = sphere
+  u32 index;        // index into the leaf's triangles or spheres array
+} PrimRef;
+
+/**
+ * 2-means clustering of primitives (port of JS clusterLeafs).
+ * Splits prim_refs into two groups: group_a and group_b.
+ */
+static void cluster_prims(
+  const AABB* box,
+  const PrimRef* refs, u32 count,
+  Array* group_a, Array* group_b
+) {
+  if (count == 0) return;
+
+  const u32 ITERATIONS = 10;
+
+  // Initialize two cluster centers by sampling the bounding box
+  Vec3 centers[2] = { sample_aabb(box), sample_aabb(box) };
+
+  // Temp arrays for cluster assignment indices
+  Array cluster_indices[2];
+  cluster_indices[0] = new_array(count, sizeof(u32));
+  cluster_indices[1] = new_array(count, sizeof(u32));
+
+  for (u32 iter = 0; iter < ITERATIONS; iter++) {
+    clear_array(&cluster_indices[0]);
+    clear_array(&cluster_indices[1]);
+
+    // Assign each primitive to nearest cluster
+    for (u32 j = 0; j < count; j++) {
+      Vec3 pos = refs[j].center;
+      Vec3 d0 = sub_vec3(centers[0], pos);
+      Vec3 d1 = sub_vec3(centers[1], pos);
+      f32 dist0 = dot_vec3(d0, d0);
+      f32 dist1 = dot_vec3(d1, d1);
+      u32 ki = (dist0 <= dist1) ? 0 : 1;
+      push_array(&cluster_indices[ki], &j);
+    }
+
+    // Fix empty clusters
+    for (u32 j = 0; j < 2; j++) {
+      if (cluster_indices[j].length == 0) {
+        u32 other = (j + 1) % 2;
+        u32 rand_idx = (u32)(random_double() * cluster_indices[other].length);
+        if (rand_idx >= cluster_indices[other].length) rand_idx = 0;
+        u32* picked = (u32*)get_array_element(&cluster_indices[other], rand_idx);
+        push_array(&cluster_indices[j], picked);
+      }
+    }
+
+    // Update cluster centers
+    for (u32 j = 0; j < 2; j++) {
+      Vec3 acc = vec3(0, 0, 0);
+      for (u32 m = 0; m < cluster_indices[j].length; m++) {
+        u32* idx = (u32*)get_array_element(&cluster_indices[j], m);
+        acc = add_vec3(acc, refs[*idx].center);
+      }
+      centers[j] = scale_vec3(acc, 1.0f / (f32)cluster_indices[j].length);
+    }
+  }
+
+  // Output: copy PrimRefs into group_a and group_b
+  for (u32 j = 0; j < 2; j++) {
+    Array* target = (j == 0) ? group_a : group_b;
+    for (u32 m = 0; m < cluster_indices[j].length; m++) {
+      u32* idx = (u32*)get_array_element(&cluster_indices[j], m);
+      push_array(target, &refs[*idx]);
+    }
+  }
+
+  free_array(&cluster_indices[0]);
+  free_array(&cluster_indices[1]);
+}
+
+/**
+ * Split a leaf node that has exceeded k primitives.
+ * Clusters all primitives into two groups using 2-means,
+ * then creates left/right children.
+ */
+static void split_node_k_scene(NodeKScene* node, u32 k) {
+  // Collect all primitives with their centers
+  u32 total = node->num_of_primitives;
+  PrimRef* refs = (PrimRef*)malloc(total * sizeof(PrimRef));
+  u32 idx = 0;
+
+  for (u32 i = 0; i < node->triangles.length; i++) {
+    Triangle* tri = (Triangle*)get_array_element(&node->triangles, i);
+    AABB tri_box = get_bounding_box_triangle(tri);
+    refs[idx++] = (PrimRef){ .center = tri_box.center, .is_triangle = true, .index = i };
+  }
+  for (u32 i = 0; i < node->spheres.length; i++) {
+    Sphere* sph = (Sphere*)get_array_element(&node->spheres, i);
+    refs[idx++] = (PrimRef){ .center = sph->position, .is_triangle = false, .index = i };
+  }
+
+  // Cluster into two groups
+  Array group_a = new_array(total, sizeof(PrimRef));
+  Array group_b = new_array(total, sizeof(PrimRef));
+  cluster_prims(&node->box, refs, total, &group_a, &group_b);
+
+  // Create left and right children
+  NodeKScene* left = new_node_k_scene(k);
+  NodeKScene* right = new_node_k_scene(k);
+
+  // Populate left
+  for (u32 i = 0; i < group_a.length; i++) {
+    PrimRef* ref = (PrimRef*)get_array_element(&group_a, i);
+    if (ref->is_triangle) {
+      Triangle* tri = (Triangle*)get_array_element(&node->triangles, ref->index);
+      if (left->triangles.element_size == 0)
+        left->triangles = new_array(4, sizeof(Triangle));
+      push_array(&left->triangles, tri);
+      AABB tri_box = get_bounding_box_triangle(tri);
+      left->box = union_aabb(&left->box, &tri_box);
+    } else {
+      Sphere* sph = (Sphere*)get_array_element(&node->spheres, ref->index);
+      if (left->spheres.element_size == 0)
+        left->spheres = new_array(4, sizeof(Sphere));
+      push_array(&left->spheres, sph);
+      AABB sph_box = get_bounding_box_sphere(sph);
+      left->box = union_aabb(&left->box, &sph_box);
+    }
+    left->num_of_primitives++;
+  }
+
+  // Populate right
+  for (u32 i = 0; i < group_b.length; i++) {
+    PrimRef* ref = (PrimRef*)get_array_element(&group_b, i);
+    if (ref->is_triangle) {
+      Triangle* tri = (Triangle*)get_array_element(&node->triangles, ref->index);
+      if (right->triangles.element_size == 0)
+        right->triangles = new_array(4, sizeof(Triangle));
+      push_array(&right->triangles, tri);
+      AABB tri_box = get_bounding_box_triangle(tri);
+      right->box = union_aabb(&right->box, &tri_box);
+    } else {
+      Sphere* sph = (Sphere*)get_array_element(&node->spheres, ref->index);
+      if (right->spheres.element_size == 0)
+        right->spheres = new_array(4, sizeof(Sphere));
+      push_array(&right->spheres, sph);
+      AABB sph_box = get_bounding_box_sphere(sph);
+      right->box = union_aabb(&right->box, &sph_box);
+    }
+    right->num_of_primitives++;
+  }
+
+  // Free old leaf arrays before overwriting the union
+  if (node->triangles.data) free_array(&node->triangles);
+  if (node->spheres.data) free_array(&node->spheres);
+
+  // Convert to internal node
+  node->is_leaf = false;
+  node->left = left;
+  node->right = right;
+
+  free(refs);
+  free_array(&group_a);
+  free_array(&group_b);
+}
+
+/**
+ * Add a triangle to a node (recursive, splits when leaf exceeds k).
+ * Port of JS Node.add().
+ */
+static void add_triangle_node_k_scene(NodeKScene* node, Triangle triangle, u32 k) {
+  node->num_of_primitives++;
+  AABB tri_box = get_bounding_box_triangle(&triangle);
+  node->box = union_aabb(&node->box, &tri_box);
+
+  if (node->is_leaf) {
+    if (node->triangles.element_size == 0)
+      node->triangles = new_array(4, sizeof(Triangle));
+    push_array(&node->triangles, &triangle);
+
+    if (node->num_of_primitives > k) {
+      split_node_k_scene(node, k);
+    }
+  } else {
+    // Insert into closer child
+    f32 dist_left = distance_aabb(&node->left->box, tri_box.center);
+    f32 dist_right = distance_aabb(&node->right->box, tri_box.center);
+    if (dist_left <= dist_right) {
+      add_triangle_node_k_scene(node->left, triangle, k);
+    } else {
+      add_triangle_node_k_scene(node->right, triangle, k);
+    }
+  }
+}
+
+/**
+ * Add a sphere to a node (recursive, splits when leaf exceeds k).
+ */
+static void add_sphere_node_k_scene(NodeKScene* node, Sphere sphere, u32 k) {
+  node->num_of_primitives++;
+  AABB sph_box = get_bounding_box_sphere(&sphere);
+  node->box = union_aabb(&node->box, &sph_box);
+
+  if (node->is_leaf) {
+    if (node->spheres.element_size == 0)
+      node->spheres = new_array(4, sizeof(Sphere));
+    push_array(&node->spheres, &sphere);
+
+    if (node->num_of_primitives > k) {
+      split_node_k_scene(node, k);
+    }
+  } else {
+    f32 dist_left = distance_aabb(&node->left->box, sphere.position);
+    f32 dist_right = distance_aabb(&node->right->box, sphere.position);
+    if (dist_left <= dist_right) {
+      add_sphere_node_k_scene(node->left, sphere, k);
+    } else {
+      add_sphere_node_k_scene(node->right, sphere, k);
+    }
+  }
+}
+
+/**
+ * Intersect ray with all primitives in a leaf node.
+ */
+static SceneHit leaf_intersect_node_k_scene(NodeKScene* node, Ray ray) {
+  SceneHit closest = { .hit = false, .t = INFINITY };
+
+  if (node->triangles.data) {
+    for (u32 i = 0; i < node->triangles.length; i++) {
+      Triangle* tri = (Triangle*)get_array_element(&node->triangles, i);
+      SceneHit hit = intersect_with_ray_triangle(tri, ray);
+      if (hit.hit && hit.t < closest.t) closest = hit;
+    }
+  }
+  if (node->spheres.data) {
+    for (u32 i = 0; i < node->spheres.length; i++) {
+      Sphere* sph = (Sphere*)get_array_element(&node->spheres, i);
+      SceneHit hit = intersect_with_ray_sphere(sph, ray);
+      if (hit.hit && hit.t < closest.t) closest = hit;
+    }
+  }
+  return closest;
+}
+
+/**
+ * Intersect ray with the BVH (port of JS Node.interceptWithRay).
+ * Traverses near child first, skips far child when possible.
+ */
+static SceneHit intersect_node_k_scene(NodeKScene* node, Ray ray) {
+  if (!node) return (SceneHit){ .hit = false, .t = INFINITY };
+
+  if (node->is_leaf) {
+    return leaf_intersect_node_k_scene(node, ray);
+  }
+
+  SceneHit left_box_hit = intersect_with_ray_aabb(ray, &node->left->box);
+  SceneHit right_box_hit = intersect_with_ray_aabb(ray, &node->right->box);
+
+  f32 left_t = left_box_hit.hit ? left_box_hit.t : INFINITY;
+  f32 right_t = right_box_hit.hit ? right_box_hit.t : INFINITY;
+
+  if (left_t == INFINITY && right_t == INFINITY)
+    return (SceneHit){ .hit = false, .t = INFINITY };
+
+  NodeKScene* first = (left_t <= right_t) ? node->left : node->right;
+  NodeKScene* second = (left_t > right_t) ? node->left : node->right;
+  f32 second_t = fmaxf(left_t, right_t);
+
+  SceneHit first_hit = intersect_node_k_scene(first, ray);
+
+  // If first hit is closer than the second AABB entry, skip second
+  if (first_hit.hit && first_hit.t < second_t) return first_hit;
+
+  SceneHit second_hit = intersect_node_k_scene(second, ray);
+
+  if (second_hit.hit && second_hit.t < (first_hit.hit ? first_hit.t : INFINITY))
+    return second_hit;
+
+  return first_hit;
+}
+
+/* --- KScene --- */
+
+typedef struct {
+  Array triangles;
+  Array spheres;
+  u32 k; // max number of primitives per leaf
+  NodeKScene* root;
+} KScene;
+
+/* --- KScene implementation functions --- */
+
+static void add_triangle_kscene(KScene* ks, Triangle triangle) {
+  if (ks->triangles.element_size == 0)
+    ks->triangles = new_array(4, sizeof(Triangle));
+  push_array(&ks->triangles, &triangle);
+
+  if (!ks->root) ks->root = new_node_k_scene(ks->k);
+  add_triangle_node_k_scene(ks->root, triangle, ks->k);
+}
+
+static void add_sphere_kscene(KScene* ks, Sphere sphere) {
+  if (ks->spheres.element_size == 0)
+    ks->spheres = new_array(4, sizeof(Sphere));
+  push_array(&ks->spheres, &sphere);
+
+  if (!ks->root) ks->root = new_node_k_scene(ks->k);
+  add_sphere_node_k_scene(ks->root, sphere, ks->k);
+}
+
+static void add_triangles_kscene(KScene* ks, Array triangles) {
+  for (u32 i = 0; i < triangles.length; i++) {
+    Triangle* tri = (Triangle*)get_array_element(&triangles, i);
+    add_triangle_kscene(ks, *tri);
+  }
+}
+
+static void add_spheres_kscene(KScene* ks, Array spheres) {
+  for (u32 i = 0; i < spheres.length; i++) {
+    Sphere* sph = (Sphere*)get_array_element(&spheres, i);
+    add_sphere_kscene(ks, *sph);
+  }
+}
+
+static void clear_triangles_kscene(KScene* ks) {
+  if (ks->triangles.data) clear_array(&ks->triangles);
+  if (ks->root) { free_node_k_scene(ks->root); ks->root = NULL; }
+}
+
+static void clear_spheres_kscene(KScene* ks) {
+  if (ks->spheres.data) clear_array(&ks->spheres);
+  if (ks->root) { free_node_k_scene(ks->root); ks->root = NULL; }
+}
+
+static SceneHit intersect_kscene(KScene* ks, Ray ray) {
+  if (!ks->root) return (SceneHit){ .hit = false, .t = INFINITY };
+  return intersect_node_k_scene(ks->root, ray);
+}
+
+static Array* get_triangles_kscene(KScene* ks) {
+  return &ks->triangles;
+}
+
+static Array* get_spheres_kscene(KScene* ks) {
+  return &ks->spheres;
+}
+
+static void free_kscene(KScene* ks) {
+  if (ks->triangles.data) free_array(&ks->triangles);
+  if (ks->spheres.data) free_array(&ks->spheres);
+  if (ks->root) { free_node_k_scene(ks->root); ks->root = NULL; }
+}
+
+/* --- KScene vtable wrappers --- */
+
+static void _kscene_add_triangle(Scene* self, Triangle t) {
+  add_triangle_kscene((KScene*)self->data, t);
+}
+static void _kscene_add_sphere(Scene* self, Sphere sp) {
+  add_sphere_kscene((KScene*)self->data, sp);
+}
+static void _kscene_add_triangles(Scene* self, Array triangles) {
+  add_triangles_kscene((KScene*)self->data, triangles);
+}
+static void _kscene_add_spheres(Scene* self, Array spheres) {
+  add_spheres_kscene((KScene*)self->data, spheres);
+}
+static void _kscene_clear_triangles(Scene* self) {
+  clear_triangles_kscene((KScene*)self->data);
+}
+static void _kscene_clear_spheres(Scene* self) {
+  clear_spheres_kscene((KScene*)self->data);
+}
+static SceneHit _kscene_intersect(Scene* self, Ray ray) {
+  return intersect_kscene((KScene*)self->data, ray);
+}
+static Array* _kscene_get_triangles(Scene* self) {
+  return get_triangles_kscene((KScene*)self->data);
+}
+static Array* _kscene_get_spheres(Scene* self) {
+  return get_spheres_kscene((KScene*)self->data);
+}
+static void _kscene_free_scene(Scene* self) {
+  KScene* ks = (KScene*)self->data;
+  free_kscene(ks);
+  free(ks);
+  self->data = NULL;
+}
+
+static const SceneVTable KSCENE_VTABLE = {
+  .add_triangle = _kscene_add_triangle,
+  .add_sphere = _kscene_add_sphere,
+  .add_triangles = _kscene_add_triangles,
+  .add_spheres = _kscene_add_spheres,
+  .clear_triangles = _kscene_clear_triangles,
+  .clear_spheres = _kscene_clear_spheres,
+  .intersect = _kscene_intersect,
+  .get_triangles = _kscene_get_triangles,
+  .get_spheres = _kscene_get_spheres,
+  .free_scene = _kscene_free_scene,
+};
+
+Scene new_kscene(u32 k) {
+  if (k == 0) {
+    k = 10; // default value
+  }
+  KScene* ks = (KScene*)calloc(1, sizeof(KScene));
+  ks->k = k;
+  return (Scene) { .vtable = &KSCENE_VTABLE, .data = ks };
+}
+
 //========================================================================================
 /*                                                                                      *
  *                                         TELA *
@@ -1524,7 +2142,7 @@ static inline Tela* draw_triangle_tela(
     AABB_2D pointBox = build_aabb_from_vec2(triangle->positions[i]);
     boundingBox = union_aabb_2d(&boundingBox, &pointBox);
   }
-  const AABB_2D finalBox = sub_aabb_2d(&canvasBox, &boundingBox);
+  const AABB_2D finalBox = inter_aabb_2d(&canvasBox, &boundingBox);
   if (finalBox.is_empty) return tela;
   const Vec2 xmin = finalBox.min;
   const Vec2 xmax = finalBox.max;
@@ -1536,16 +2154,10 @@ static inline Tela* draw_triangle_tela(
   const Vec2 e2 = sub_vec2(positions[0], positions[2]);
   const ConvexPrecomputed precomputed = {
     .normals = {
-      (Vec2) {
- -e0.y, e0.x
-},
-(Vec2) {
--e1.y, e1.x
-},
-(Vec2) {
--e2.y, e2.x
-},
-},
+      (Vec2) {-e0.y, e0.x},
+    (Vec2) {-e1.y, e1.x},
+    (Vec2) {-e2.y, e2.x},
+  },
 .vertices = { positions[0], positions[1], positions[2] },
 .vertex_count = 3,
 .orientation = wedge_vec2(e0, e1) >= 0 ? 1.0f : -1.0f,
@@ -3015,7 +3627,45 @@ Material build_dielectric_material(f32 index_of_refraction) {
 Color get_color_from_hit(SceneHit hit, Ray ray, bool bilinear_texture) {
   if (hit.geometry_type == TRIANGLE) {
     RasterTriangleProps* props = (RasterTriangleProps*)hit.triangle->props;
-    return props->colors[0];
+    Triangle* tri = hit.triangle;
+
+    // Compute barycentric coordinates via tangent-based projection
+    Vec3 u1 = sub_vec3(tri->positions[1], tri->positions[0]);
+    Vec3 u2 = sub_vec3(tri->positions[2], tri->positions[0]);
+    Vec3 v = sub_vec3(ray.init, tri->positions[0]);
+    Vec3 r = ray.dir;
+    f32 det_inv = 1.0f / dot_vec3(cross_vec3(u1, u2), r);
+    f32 alpha = dot_vec3(cross_vec3(v, u2), r) * det_inv;
+    f32 beta  = dot_vec3(cross_vec3(u1, v), r) * det_inv;
+    f32 gamma = 1.0f - alpha - beta;
+
+    // Texture sampling if available
+    bool have_texture = props->texture != NULL
+      && !(props->tex_coords[0].x == 0 && props->tex_coords[0].y == 0
+        && props->tex_coords[1].x == 0 && props->tex_coords[1].y == 0
+        && props->tex_coords[2].x == 0 && props->tex_coords[2].y == 0);
+
+    if (have_texture) {
+      Vec2 tex_uv = add_vec2(
+        add_vec2(
+          scale_vec2(props->tex_coords[0], gamma),
+          scale_vec2(props->tex_coords[1], alpha)
+        ),
+        scale_vec2(props->tex_coords[2], beta)
+      );
+      return bilinear_texture
+        ? get_bilinear_tex_color(props->texture, tex_uv)
+        : get_tex_color(props->texture, tex_uv);
+    }
+
+    // Barycentric color interpolation
+    return add_color(
+      add_color(
+        scale_color(props->colors[0], gamma),
+        scale_color(props->colors[1], alpha)
+      ),
+      scale_color(props->colors[2], beta)
+    );
   }
   if (hit.geometry_type == SPHERE) {
     RasterSphereProps* props = (RasterSphereProps*)hit.sphere->props;
@@ -3183,6 +3833,16 @@ Mesh map_vertices_mesh(Mesh* mesh, Vec3(*mapper)(Vec3, void*), void* context) {
   return *mesh;
 }
 
+Mesh map_triangles_materials_mesh(Mesh* mesh, Material(*mapper)(Face, void*), void* context) {
+  mesh->materials = new_array(mesh->faces.length, sizeof(Material));
+  for (u32 i = 0; i < mesh->faces.length; i++) {
+    Face* face = (Face*)get_array_element(&mesh->faces, i);
+    Material m = mapper(*face, context);
+    push_array(&mesh->materials, &m);
+  }
+  return *mesh;
+}
+
 Mesh map_colors_mesh(Mesh* mesh, Color(*mapper)(Vec3, void*), void* context) {
   mesh->colors = new_array(mesh->vertices.length, sizeof(Color));
   for (u32 i = 0; i < mesh->vertices.length; i++) {
@@ -3206,6 +3866,8 @@ Array get_triangles_mesh(Mesh* mesh) {
     Face* face = (Face*)get_array_element(&mesh->faces, i);
 
     Triangle tri;
+    tri.radius = 0.0f;
+    tri.props = NULL;
     // positions from vertex indices
     for (u32 j = 0; j < 3; j++) {
       Vec3* v = (Vec3*)get_array_element(&mesh->vertices, face->vertex_indices[j]);
@@ -3233,6 +3895,20 @@ Array get_triangles_mesh(Mesh* mesh) {
       else {
         props->tex_coords[j] = vec2(0, 0);
       }
+    }
+
+    // material
+    if (mesh->materials.length > 0) {
+      Material* mat = (Material*)get_array_element(&mesh->materials, i);
+      if (mat) {
+        Material* mat_copy = (Material*)malloc(sizeof(Material));
+        *mat_copy = *mat;
+        props->material = mat_copy;
+      } else {
+        props->material = NULL;
+      }
+    } else {
+      props->material = NULL;
     }
 
     tri.props = props;
