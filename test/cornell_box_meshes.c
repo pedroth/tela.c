@@ -270,6 +270,7 @@ void add_mesh_scene(Scene* scene) {
         "./assets/statue.obj",
         "./assets/JesusMary.obj",
         "./assets/spot.obj",
+        "./assets/oil.obj",
         "./assets/riku.obj",
         "./assets/burger.obj",
     };
@@ -278,6 +279,7 @@ void add_mesh_scene(Scene* scene) {
         "./assets/statue.jpg",
         "./assets/JesusMary.jpg",
         "./assets/spot.png",
+        "./assets/oil.png",
         "./assets/riku.png",
         "./assets/burger.jpg",
     };

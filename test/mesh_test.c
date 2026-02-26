@@ -158,8 +158,10 @@ int main(void) {
         "./assets/statue.obj",
         "./assets/JesusMary.obj",
         "./assets/spot.obj",
+        "./assets/oil.obj",
         "./assets/riku.obj",
         "./assets/burger.obj",
+        "./assets/rocks.obj",
         "./assets/little_tokyo.obj",
     };
     char* texture_files[] = {
@@ -167,12 +169,14 @@ int main(void) {
         "./assets/statue.jpg",
         "./assets/JesusMary.jpg",
         "./assets/spot.png",
+        "./assets/oil.png",
         "./assets/riku.png",
         "./assets/burger.jpg",
+        "./assets/rocks.jpg",
         "./assets/little_tokyo.jpg"
     };
 
-    u32 mesh_index = 1;
+    u32 mesh_index = 7;
     String obj = io_read_file(obj_files[mesh_index]);
     Mesh mesh = read_obj_mesh(obj, "mesh");
     AABB box = get_bounding_box_mesh(&mesh);

@@ -68,7 +68,7 @@ static void on_frame(f32 dt, f32 time, void* ctx) {
      .variance = 0.001f,
      .gamma = 0.5f,
      .bilinear_texture = false,
-     .is_biased = true,
+     .is_biased = false,
      .camera = app->camera,
      .render_background = render_background,
      .render_background_context = g_background,

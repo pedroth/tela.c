@@ -170,10 +170,10 @@ int main(void) {
         "./assets/spot.obj",
         "./assets/riku.obj",
         "./assets/burger.obj",
-        "./assets/little_tokyo.obj",
+        "./assets/rocks.obj",
     };
     // Load mesh
-    u32 mesh_index = 5;
+    u32 mesh_index = 7;
     String obj = io_read_file(obj_files[mesh_index]);
     Mesh mesh = read_obj_mesh(obj, "mesh");
 
