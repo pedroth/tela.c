@@ -230,7 +230,7 @@ void free_array(Array* array) {
   array->capacity = 0;
 }
 
-i32 arg_min_array(Array* a, f32 (*cost_function)(void* element, u32 index, void* ctx), void* ctx) {
+i32 arg_min_array(Array* a, f32(*cost_function)(void* element, u32 index, void* ctx), void* ctx) {
   i32 argmin_index = -1;
   f32 cost = __FLT_MAX__;
   for (u32 i = 0; i < a->length; i++) {
@@ -245,15 +245,113 @@ i32 arg_min_array(Array* a, f32 (*cost_function)(void* element, u32 index, void*
 
 //========================================================================================
 /*                                                                                      *
+ *                                        PQUEUE                                        *
+ *                                                                                      */
+ //========================================================================================
+
+typedef struct {
+  Array data; // Array of void* pointers
+  f32(*comparator_function)(void* a, void* b, void* ctx);
+  void* priority_ctx;
+} PQueue;
+
+u32 length_pqueue(PQueue* pq) {
+  return pq->data.length;
+}
+
+void* peek_pqueue(PQueue* pq) {
+  if (pq->data.length == 0) {
+    return NULL;
+  }
+  return get_array_element(&pq->data, 0);
+}
+
+
+static void _heapify_pqueue(PQueue* pq, u32 root_index) {
+  u32 left_index = 2 * root_index + 1;
+  u32 right_index = 2 * root_index + 2;
+  u32 min_index = root_index;
+
+  if (left_index < pq->data.length) {
+    void* left_val = *(void**)get_array_element(&pq->data, left_index);
+    void* root_val = *(void**)get_array_element(&pq->data, root_index);
+    if (pq->comparator_function(left_val, root_val, pq->priority_ctx) < 0) {
+      min_index = left_index;
+    }
+  }
+  if (right_index < pq->data.length) {
+    void* right_val = *(void**)get_array_element(&pq->data, right_index);
+    void* min_val = *(void**)get_array_element(&pq->data, min_index);
+    if (pq->comparator_function(right_val, min_val, pq->priority_ctx) < 0) {
+      min_index = right_index;
+    }
+  }
+  if (min_index != root_index) {
+    void** root_ptr = (void**)get_array_element(&pq->data, root_index);
+    void** min_ptr = (void**)get_array_element(&pq->data, min_index);
+    void* temp = *root_ptr;
+    *root_ptr = *min_ptr;
+    *min_ptr = temp;
+    _heapify_pqueue(pq, min_index);
+  }
+}
+
+void push_pqueue(PQueue* pq, void* element) {
+  push_array(&pq->data, &element);
+  if (pq->data.length <= 1) return;
+  u32 i = pq->data.length - 1;
+  while (i > 0) {
+    u32 parent_index = (i % 2 != 0) ? i / 2 : i / 2 - 1;
+    void* parent_val = *(void**)get_array_element(&pq->data, parent_index);
+    void* current_val = *(void**)get_array_element(&pq->data, i);
+    if (pq->comparator_function(parent_val, current_val, pq->priority_ctx) <= 0) break;
+    void** parent_ptr = (void**)get_array_element(&pq->data, parent_index);
+    void** current_ptr = (void**)get_array_element(&pq->data, i);
+    void* temp = *parent_ptr;
+    *parent_ptr = *current_ptr;
+    *current_ptr = temp;
+    i = parent_index;
+  }
+}
+
+void* pop_pqueue(PQueue* pq) {
+  if (pq->data.length == 0) return NULL;
+  void* result = *(void**)get_array_element(&pq->data, 0);
+  if (pq->data.length <= 1) {
+    pq->data.length = 0;
+    return result;
+  }
+  // Move last element to front
+  void* last = *(void**)get_array_element(&pq->data, pq->data.length - 1);
+  *(void**)get_array_element(&pq->data, 0) = last;
+  pq->data.length--;
+  _heapify_pqueue(pq, 0);
+  return result;
+}
+
+PQueue* of_array_pqueue(Array* elements, f32(*comparator_function)(void* a, void* b, void* ctx), void* priority_ctx) {
+  PQueue* pq = (PQueue*)malloc(sizeof(PQueue));
+  pq->data = new_array(elements->length > 0 ? elements->length : 4, sizeof(void*));
+  pq->comparator_function = comparator_function;
+  pq->priority_ctx = priority_ctx;
+  for (u32 i = 0; i < elements->length; i++) {
+    void* element = *(void**)get_array_element(elements, i);
+    push_pqueue(pq, element);
+  }
+  return pq;
+}
+
+//========================================================================================
+/*                                                                                      *
  *                                         ANIMA                                        *
  *                                                                                      */
-//========================================================================================
+ //========================================================================================
 
-/**
- * A behavior is a timed action: a callback that runs for a given duration.
- * The callback receives (tau, dt, ctx) where tau is local time within
- * the behavior [0, duration].
- */
+ /**
+  * A behavior is a timed action: a callback that runs for a given duration.
+  * The callback receives (tau, dt, ctx) where tau is local time within
+  * the behavior [0, duration].
+  */
 typedef struct {
   void (*behavior)(f32 tau, f32 dt, void* ctx);
   f32 duration;
@@ -281,14 +379,14 @@ typedef struct {
  * Create a behavior (callback + duration pair).
  */
 static inline AnimaBehavior anima_behavior(void (*lambda)(f32, f32, void*), f32 duration) {
-  return (AnimaBehavior){ .behavior = lambda, .duration = duration };
+  return (AnimaBehavior) { .behavior = lambda, .duration = duration };
 }
 
 /**
  * Create a wait (no-op behavior for a given duration).
  */
 static inline AnimaBehavior anima_wait(f32 duration) {
-  return (AnimaBehavior){ .behavior = NULL, .duration = duration };
+  return (AnimaBehavior) { .behavior = NULL, .duration = duration };
 }
 
 /**
@@ -1189,6 +1287,7 @@ typedef struct {
   Array* (*get_triangles)(Scene* self);
   Array* (*get_spheres)(Scene* self);
   void     (*free_scene)(Scene* self);
+  Scene* (*rebuild_scene)(Scene* self);
 } SceneVTable;
 
 /* Generic Scene — holds a vtable pointer and opaque data */
@@ -1324,6 +1423,11 @@ static void _naive_free_scene(Scene* self) {
   self->data = NULL;
 }
 
+static Scene* _naive_rebuild_scene(Scene* self) {
+  // No-op for naive scene since it doesn't have an acceleration structure
+  return self;
+}
+
 static const SceneVTable NAIVE_SCENE_VTABLE = {
   .add_triangle = _naive_add_triangle,
   .add_sphere = _naive_add_sphere,
@@ -1335,6 +1439,7 @@ static const SceneVTable NAIVE_SCENE_VTABLE = {
   .get_triangles = _naive_get_triangles,
   .get_spheres = _naive_get_spheres,
   .free_scene = _naive_free_scene,
+  .rebuild_scene = _naive_rebuild_scene
 };
 
 Scene new_naive_scene(void) {
@@ -1375,12 +1480,23 @@ static NodeKScene* new_node_k_scene(u32 k) {
   return node;
 }
 
+static NodeKScene* join_node_k_scene(NodeKScene* scene, NodeKScene* node_or_leaf) {
+  NodeKScene* new_node = (NodeKScene*)calloc(1, sizeof(NodeKScene));
+  new_node->is_leaf = false;
+  new_node->left = scene;
+  new_node->right = node_or_leaf;
+  new_node->box = union_aabb(&scene->box, &node_or_leaf->box);
+  new_node->num_of_primitives = scene->num_of_primitives + node_or_leaf->num_of_primitives;
+  return new_node;
+}
+
 static void free_node_k_scene(NodeKScene* node) {
   if (!node) return;
   if (node->is_leaf) {
     if (node->triangles.data) free_array(&node->triangles);
     if (node->spheres.data) free_array(&node->spheres);
-  } else {
+  }
+  else {
     free_node_k_scene(node->left);
     free_node_k_scene(node->right);
   }
@@ -1505,7 +1621,8 @@ static void split_node_k_scene(NodeKScene* node, u32 k) {
       push_array(&left->triangles, tri);
       AABB tri_box = get_bounding_box_triangle(tri);
       left->box = union_aabb(&left->box, &tri_box);
-    } else {
+    }
+    else {
       Sphere* sph = (Sphere*)get_array_element(&node->spheres, ref->index);
       push_array(&left->spheres, sph);
       AABB sph_box = get_bounding_box_sphere(sph);
@@ -1522,7 +1639,8 @@ static void split_node_k_scene(NodeKScene* node, u32 k) {
       push_array(&right->triangles, tri);
       AABB tri_box = get_bounding_box_triangle(tri);
       right->box = union_aabb(&right->box, &tri_box);
-    } else {
+    }
+    else {
       Sphere* sph = (Sphere*)get_array_element(&node->spheres, ref->index);
       push_array(&right->spheres, sph);
       AABB sph_box = get_bounding_box_sphere(sph);
@@ -1560,13 +1678,15 @@ static void add_triangle_node_k_scene(NodeKScene* node, Triangle triangle, u32 k
     if (node->num_of_primitives > k) {
       split_node_k_scene(node, k);
     }
-  } else {
+  }
+  else {
     // Insert into closer child
     f32 dist_left = box_distance_aabb(&node->left->box, &tri_box);
     f32 dist_right = box_distance_aabb(&node->right->box, &tri_box);
     if (dist_left <= dist_right) {
       add_triangle_node_k_scene(node->left, triangle, k);
-    } else {
+    }
+    else {
       add_triangle_node_k_scene(node->right, triangle, k);
     }
   }
@@ -1586,12 +1706,14 @@ static void add_sphere_node_k_scene(NodeKScene* node, Sphere sphere, u32 k) {
     if (node->num_of_primitives > k) {
       split_node_k_scene(node, k);
     }
-  } else {
+  }
+  else {
     f32 dist_left = box_distance_aabb(&node->left->box, &sph_box);
     f32 dist_right = box_distance_aabb(&node->right->box, &sph_box);
     if (dist_left <= dist_right) {
       add_sphere_node_k_scene(node->left, sphere, k);
-    } else {
+    }
+    else {
       add_sphere_node_k_scene(node->right, sphere, k);
     }
   }
@@ -1625,7 +1747,7 @@ static SceneHit leaf_intersect_node_k_scene(NodeKScene* node, Ray ray) {
  * Traverses near child first, skips far child when possible.
  */
 static SceneHit intersect_node_k_scene(NodeKScene* node, Ray ray) {
-  if (!node) return (SceneHit){ .hit = false, .t = INFINITY };
+  if (!node) return (SceneHit) { .hit = false, .t = INFINITY };
 
   if (node->is_leaf) {
     return leaf_intersect_node_k_scene(node, ray);
@@ -1635,7 +1757,7 @@ static SceneHit intersect_node_k_scene(NodeKScene* node, Ray ray) {
   SceneHit right_box_hit = intersect_with_ray_aabb(ray, &node->right->box);
 
   if (!left_box_hit.hit && !right_box_hit.hit)
-    return (SceneHit){ .hit = false, .t = INFINITY };
+    return (SceneHit) { .hit = false, .t = INFINITY };
 
   NodeKScene* first = (left_box_hit.t <= right_box_hit.t) ? node->left : node->right;
   NodeKScene* second = (left_box_hit.t > right_box_hit.t) ? node->left : node->right;
@@ -1710,7 +1832,7 @@ static void clear_spheres_kscene(KScene* ks) {
 }
 
 static SceneHit intersect_kscene(KScene* ks, Ray ray) {
-  if (!ks->root) return (SceneHit){ .hit = false, .t = INFINITY };
+  if (!ks->root) return (SceneHit) { .hit = false, .t = INFINITY };
   return intersect_node_k_scene(ks->root, ray);
 }
 
@@ -1726,6 +1848,192 @@ static void free_kscene(KScene* ks) {
   if (ks->triangles.data) free_array(&ks->triangles);
   if (ks->spheres.data) free_array(&ks->spheres);
   if (ks->root) { free_node_k_scene(ks->root); ks->root = NULL; }
+}
+
+/**
+ * Comparator for PQueue in rebuild: largest group first.
+ * a, b are Array* pointers (groups of PrimRefs).
+ */
+static f32 _rebuild_group_comparator(void* a, void* b, void* ctx) {
+  (void)ctx;
+  Array* ga = (Array*)a;
+  Array* gb = (Array*)b;
+  return (f32)((i32)gb->length - (i32)ga->length);
+}
+
+/**
+ * Check if any group in the PQueue exceeds k primitives.
+ */
+static bool _any_group_exceeds_k(PQueue* pq, u32 k) {
+  for (u32 i = 0; i < pq->data.length; i++) {
+    Array* group = *(Array**)get_array_element(&pq->data, i);
+    if (group->length > k) return true;
+  }
+  return false;
+}
+
+/**
+ * Compute bounding box from a group of PrimRefs referencing into ks.
+ */
+static AABB _compute_group_box(Array* group, KScene* ks) {
+  AABB box = EMPTY_AABB;
+  for (u32 i = 0; i < group->length; i++) {
+    PrimRef* ref = (PrimRef*)get_array_element(group, i);
+    if (ref->is_triangle) {
+      Triangle* tri = (Triangle*)get_array_element(&ks->triangles, ref->index);
+      AABB tri_box = get_bounding_box_triangle(tri);
+      box = union_aabb(&box, &tri_box);
+    } else {
+      Sphere* sph = (Sphere*)get_array_element(&ks->spheres, ref->index);
+      AABB sph_box = get_bounding_box_sphere(sph);
+      box = union_aabb(&box, &sph_box);
+    }
+  }
+  return box;
+}
+
+/**
+ * Rebuild the KScene BVH from scratch for better quality.
+ * Port of JS KScene.rebuild().
+ *
+ * Algorithm:
+ *  1. Cluster all primitives into two groups using 2-means.
+ *  2. Use a PQueue (max by group size) to iteratively split groups > k.
+ *  3. Create a leaf NodeKScene for each final group.
+ *  4. Bottom-up merge: repeatedly join the closest pair of nodes.
+ */
+static KScene rebuild_kscene(KScene* ks) {
+  u32 total = ks->triangles.length + ks->spheres.length;
+  if (total == 0) return *ks;
+
+  // Free old tree
+  if (ks->root) {
+    free_node_k_scene(ks->root);
+    ks->root = NULL;
+  }
+
+  // Step 1: Build PrimRef array and overall bounding box
+  AABB overall_box = EMPTY_AABB;
+  Array all_refs = new_array(total, sizeof(PrimRef));
+
+  for (u32 i = 0; i < ks->triangles.length; i++) {
+    Triangle* tri = (Triangle*)get_array_element(&ks->triangles, i);
+    AABB tri_box = get_bounding_box_triangle(tri);
+    overall_box = union_aabb(&overall_box, &tri_box);
+    PrimRef ref = { .center = tri_box.center, .is_triangle = true, .index = i };
+    push_array(&all_refs, &ref);
+  }
+  for (u32 i = 0; i < ks->spheres.length; i++) {
+    Sphere* sph = (Sphere*)get_array_element(&ks->spheres, i);
+    AABB sph_box = get_bounding_box_sphere(sph);
+    overall_box = union_aabb(&overall_box, &sph_box);
+    PrimRef ref = { .center = sph->position, .is_triangle = false, .index = i };
+    push_array(&all_refs, &ref);
+  }
+
+  // Step 2: Initial clustering into two groups
+  Array* group_a = (Array*)malloc(sizeof(Array));
+  *group_a = new_array(total, sizeof(PrimRef));
+  Array* group_b = (Array*)malloc(sizeof(Array));
+  *group_b = new_array(total, sizeof(PrimRef));
+  cluster_prims(&overall_box, (PrimRef*)all_refs.data, all_refs.length, group_a, group_b);
+
+  // Step 3: PQueue sorted by group size (largest first via comparator)
+  PQueue groups_queue;
+  groups_queue.data = new_array(16, sizeof(void*));
+  groups_queue.comparator_function = _rebuild_group_comparator;
+  groups_queue.priority_ctx = NULL;
+  push_pqueue(&groups_queue, group_a);
+  push_pqueue(&groups_queue, group_b);
+
+  // Step 4: Split groups exceeding k
+  while (_any_group_exceeds_k(&groups_queue, ks->k)) {
+    Array* top = (Array*)*(void**)peek_pqueue(&groups_queue);
+    if (top->length > ks->k) {
+      Array* group = (Array*)pop_pqueue(&groups_queue);
+      AABB group_box = _compute_group_box(group, ks);
+
+      Array* left_g = (Array*)malloc(sizeof(Array));
+      *left_g = new_array(group->length, sizeof(PrimRef));
+      Array* right_g = (Array*)malloc(sizeof(Array));
+      *right_g = new_array(group->length, sizeof(PrimRef));
+      cluster_prims(&group_box, (PrimRef*)group->data, group->length, left_g, right_g);
+
+      push_pqueue(&groups_queue, left_g);
+      push_pqueue(&groups_queue, right_g);
+
+      free_array(group);
+      free(group);
+    }
+  }
+
+  // Step 5: Create a leaf NodeKScene for each group
+  u32 num_groups = groups_queue.data.length;
+  NodeKScene** node_stack = (NodeKScene**)malloc(num_groups * sizeof(NodeKScene*));
+  u32 node_count = 0;
+
+  for (u32 g = 0; g < groups_queue.data.length; g++) {
+    Array* group = *(Array**)get_array_element(&groups_queue.data, g);
+    NodeKScene* node = new_node_k_scene(ks->k);
+    for (u32 i = 0; i < group->length; i++) {
+      PrimRef* ref = (PrimRef*)get_array_element(group, i);
+      if (ref->is_triangle) {
+        Triangle* tri = (Triangle*)get_array_element(&ks->triangles, ref->index);
+        push_array(&node->triangles, tri);
+        AABB tri_box = get_bounding_box_triangle(tri);
+        node->box = union_aabb(&node->box, &tri_box);
+      } else {
+        Sphere* sph = (Sphere*)get_array_element(&ks->spheres, ref->index);
+        push_array(&node->spheres, sph);
+        AABB sph_box = get_bounding_box_sphere(sph);
+        node->box = union_aabb(&node->box, &sph_box);
+      }
+      node->num_of_primitives++;
+    }
+    node_stack[node_count++] = node;
+    free_array(group);
+    free(group);
+  }
+
+  free_array(&groups_queue.data);
+  free_array(&all_refs);
+
+  // Step 6: Bottom-up merge — repeatedly join closest pair
+  while (node_count > 1) {
+    NodeKScene* first = node_stack[0];
+    // Shift array left (remove first element)
+    for (u32 i = 0; i < node_count - 1; i++) {
+      node_stack[i] = node_stack[i + 1];
+    }
+    node_count--;
+
+    // Find the node closest to 'first'
+    i32 min_index = 0;
+    f32 min_dist = INFINITY;
+    for (u32 i = 0; i < node_count; i++) {
+      f32 dist = box_distance_aabb(&first->box, &node_stack[i]->box);
+      if (dist < min_dist) {
+        min_dist = dist;
+        min_index = (i32)i;
+      }
+    }
+
+    NodeKScene* nearest = node_stack[min_index];
+    // Remove nearest from stack
+    for (u32 i = (u32)min_index; i < node_count - 1; i++) {
+      node_stack[i] = node_stack[i + 1];
+    }
+    node_count--;
+
+    // Join and push back
+    NodeKScene* joined = join_node_k_scene(first, nearest);
+    node_stack[node_count++] = joined;
+  }
+
+  ks->root = (node_count > 0) ? node_stack[0] : NULL;
+  free(node_stack);
+
+  return *ks;
 }
 
 /* --- KScene vtable wrappers --- */
@@ -1764,6 +2072,12 @@ static void _kscene_free_scene(Scene* self) {
   self->data = NULL;
 }
 
+static Scene* _kscene_rebuild_scene(Scene* self) {
+  KScene* ks = (KScene*)self->data;
+  rebuild_kscene(ks);
+  return self;
+}
+
 static const SceneVTable KSCENE_VTABLE = {
   .add_triangle = _kscene_add_triangle,
   .add_sphere = _kscene_add_sphere,
@@ -1775,6 +2089,7 @@ static const SceneVTable KSCENE_VTABLE = {
   .get_triangles = _kscene_get_triangles,
   .get_spheres = _kscene_get_spheres,
   .free_scene = _kscene_free_scene,
+  .rebuild_scene = _kscene_rebuild_scene,
 };
 
 Scene new_kscene(u32 k) {
@@ -2149,10 +2464,16 @@ static inline Tela* draw_triangle_tela(
   const Vec2 e2 = sub_vec2(positions[0], positions[2]);
   const ConvexPrecomputed precomputed = {
     .normals = {
-      (Vec2) {-e0.y, e0.x},
-    (Vec2) {-e1.y, e1.x},
-    (Vec2) {-e2.y, e2.x},
-  },
+      (Vec2) {
+-e0.y, e0.x
+},
+(Vec2) {
+-e1.y, e1.x
+},
+(Vec2) {
+-e2.y, e2.x
+},
+},
 .vertices = { positions[0], positions[1], positions[2] },
 .vertex_count = 3,
 .orientation = wedge_vec2(e0, e1) >= 0 ? 1.0f : -1.0f,
@@ -3635,7 +3956,7 @@ Color get_color_from_hit(SceneHit hit, Ray ray, bool bilinear_texture) {
     Vec3 r = ray.dir;
     f32 det_inv = 1.0f / dot_vec3(cross_vec3(u1, u2), r);
     f32 alpha = dot_vec3(cross_vec3(v, u2), r) * det_inv;
-    f32 beta  = dot_vec3(cross_vec3(u1, v), r) * det_inv;
+    f32 beta = dot_vec3(cross_vec3(u1, v), r) * det_inv;
     f32 gamma = 1.0f - alpha - beta;
 
     // Texture sampling if available
@@ -3903,10 +4224,12 @@ Array get_triangles_mesh(Mesh* mesh) {
         Material* mat_copy = (Material*)malloc(sizeof(Material));
         *mat_copy = *mat;
         props->material = mat_copy;
-      } else {
+      }
+      else {
         props->material = NULL;
       }
-    } else {
+    }
+    else {
       props->material = NULL;
     }
 

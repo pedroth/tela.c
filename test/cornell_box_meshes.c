@@ -39,6 +39,10 @@ static Tela* g_background = NULL;
  * Animation / Render Loop
  * ========================================================================== */
 
+static inline Color default_render_background(Ray ray, void* ctx) {
+  return COLOR_BLACK;
+}
+
 static inline Color render_background(Ray ray, void* ctx) {
   Tela* background = (Tela*)ctx;
   if (!background) {
@@ -310,6 +314,7 @@ int main(void) {
   Scene scene = new_kscene(20);
   build_cornell_box(&scene);
   add_mesh_scene(&scene);
+  scene.vtable->rebuild_scene(&scene); // force build before rendering
 
   App app = {
       .tela = tela,
