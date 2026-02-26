@@ -163,9 +163,19 @@ int main(void) {
 
     Camera camera = create_camera(vec3(5.0f, 0.0f, 0.0f), vec3(0, 0, 0), 1.0f);
 
+    char* obj_files[] = {
+        "./assets/bunny.obj",
+        "./assets/statue.obj",
+        "./assets/JesusMary.obj",
+        "./assets/spot.obj",
+        "./assets/riku.obj",
+        "./assets/burger.obj",
+        "./assets/little_tokyo.obj",
+    };
     // Load mesh
-    String obj = io_read_file("./assets/statue.obj");
-    Mesh mesh = read_obj_mesh(obj, "bunny");
+    u32 mesh_index = 5;
+    String obj = io_read_file(obj_files[mesh_index]);
+    Mesh mesh = read_obj_mesh(obj, "mesh");
 
     // Normalize to [-1, 1]
     AABB box = get_bounding_box_mesh(&mesh);
