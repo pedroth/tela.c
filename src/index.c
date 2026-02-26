@@ -206,6 +206,25 @@ void* get_array_element(Array* a, u32 index) {
   return base + offset;
 }
 
+void set_array_element(Array* a, u32 index, const void* element) {
+  if (index >= a->length) return;
+  char* destination = (char*)a->data + (index * a->element_size);
+  memcpy(destination, element, a->element_size);
+}
+
+void swap_array_elements(Array* a, u32 i, u32 j) {
+  if (i >= a->length || j >= a->length || i == j) return;
+  char* ei = (char*)a->data + (i * a->element_size);
+  char* ej = (char*)a->data + (j * a->element_size);
+  // Use stack buffer for small elements, heap for large
+  char buf[64];
+  char* temp = (a->element_size <= sizeof(buf)) ? buf : (char*)malloc(a->element_size);
+  memcpy(temp, ei, a->element_size);
+  memcpy(ei, ej, a->element_size);
+  memcpy(ej, temp, a->element_size);
+  if (temp != buf) free(temp);
+}
+
 void* pop_array(Array* a) {
   if (a->length == 0) {
     return NULL;
@@ -287,11 +306,7 @@ static void _heapify_pqueue(PQueue* pq, u32 root_index) {
     }
   }
   if (min_index != root_index) {
-    void** root_ptr = (void**)get_array_element(&pq->data, root_index);
-    void** min_ptr = (void**)get_array_element(&pq->data, min_index);
-    void* temp = *root_ptr;
-    *root_ptr = *min_ptr;
-    *min_ptr = temp;
+    swap_array_elements(&pq->data, root_index, min_index);
     _heapify_pqueue(pq, min_index);
   }
 }
@@ -305,11 +320,7 @@ void push_pqueue(PQueue* pq, void* element) {
     void* parent_val = *(void**)get_array_element(&pq->data, parent_index);
     void* current_val = *(void**)get_array_element(&pq->data, i);
     if (pq->comparator_function(parent_val, current_val, pq->priority_ctx) <= 0) break;
-    void** parent_ptr = (void**)get_array_element(&pq->data, parent_index);
-    void** current_ptr = (void**)get_array_element(&pq->data, i);
-    void* temp = *parent_ptr;
-    *parent_ptr = *current_ptr;
-    *current_ptr = temp;
+    swap_array_elements(&pq->data, parent_index, i);
     i = parent_index;
   }
 }
@@ -321,9 +332,9 @@ void* pop_pqueue(PQueue* pq) {
     pq->data.length = 0;
     return result;
   }
-  // Move last element to front
+  // Move last element to front and shrink
   void* last = *(void**)get_array_element(&pq->data, pq->data.length - 1);
-  *(void**)get_array_element(&pq->data, 0) = last;
+  set_array_element(&pq->data, 0, &last);
   pq->data.length--;
   _heapify_pqueue(pq, 0);
   return result;
