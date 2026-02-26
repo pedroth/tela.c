@@ -811,6 +811,10 @@ static inline f32 distance_aabb(const AABB* box, const Vec3 point) {
     fminf(0, max_comp_vec3(q));
 }
 
+static inline f32 box_distance_aabb(AABB* a, AABB* b) {
+  return length_vec3(sub_vec3(a->min, b->min)) + length_vec3(sub_vec3(a->max, b->max));
+}
+
 static inline Vec3 sample_aabb(const AABB* box) {
   Vec3 uvw = random_vec3();
   return vec3(
@@ -1034,8 +1038,10 @@ SceneHit intersect_with_ray_aabb(Ray ray, const AABB* box) {
   f32 tmin = -INFINITY;
   f32 tmax = INFINITY;
   if (box->is_empty) return hit;
-  f32 min_array[3] = { box->min.x, box->min.y, box->min.z };
-  f32 max_array[3] = { box->max.x, box->max.y, box->max.z };
+  // Pad AABB slightly to compensate for f32 precision loss in slab test
+  f32 pad = 1e-4f;
+  f32 min_array[3] = { box->min.x - pad, box->min.y - pad, box->min.z - pad };
+  f32 max_array[3] = { box->max.x + pad, box->max.y + pad, box->max.z + pad };
   f32 r_init[3] = { ray.init.x, ray.init.y, ray.init.z };
   f32 dir_inv[3] = { 1 / ray.dir.x, 1 / ray.dir.y, 1 / ray.dir.z };
   const u32 dim = 3;
@@ -1364,6 +1370,8 @@ static NodeKScene* new_node_k_scene(u32 k) {
   node->box = EMPTY_AABB;
   node->is_leaf = true;
   node->num_of_primitives = 0;
+  node->triangles = new_array(4, sizeof(Triangle));
+  node->spheres = new_array(4, sizeof(Sphere));
   return node;
 }
 
@@ -1494,15 +1502,11 @@ static void split_node_k_scene(NodeKScene* node, u32 k) {
     PrimRef* ref = (PrimRef*)get_array_element(&group_a, i);
     if (ref->is_triangle) {
       Triangle* tri = (Triangle*)get_array_element(&node->triangles, ref->index);
-      if (left->triangles.element_size == 0)
-        left->triangles = new_array(4, sizeof(Triangle));
       push_array(&left->triangles, tri);
       AABB tri_box = get_bounding_box_triangle(tri);
       left->box = union_aabb(&left->box, &tri_box);
     } else {
       Sphere* sph = (Sphere*)get_array_element(&node->spheres, ref->index);
-      if (left->spheres.element_size == 0)
-        left->spheres = new_array(4, sizeof(Sphere));
       push_array(&left->spheres, sph);
       AABB sph_box = get_bounding_box_sphere(sph);
       left->box = union_aabb(&left->box, &sph_box);
@@ -1515,15 +1519,11 @@ static void split_node_k_scene(NodeKScene* node, u32 k) {
     PrimRef* ref = (PrimRef*)get_array_element(&group_b, i);
     if (ref->is_triangle) {
       Triangle* tri = (Triangle*)get_array_element(&node->triangles, ref->index);
-      if (right->triangles.element_size == 0)
-        right->triangles = new_array(4, sizeof(Triangle));
       push_array(&right->triangles, tri);
       AABB tri_box = get_bounding_box_triangle(tri);
       right->box = union_aabb(&right->box, &tri_box);
     } else {
       Sphere* sph = (Sphere*)get_array_element(&node->spheres, ref->index);
-      if (right->spheres.element_size == 0)
-        right->spheres = new_array(4, sizeof(Sphere));
       push_array(&right->spheres, sph);
       AABB sph_box = get_bounding_box_sphere(sph);
       right->box = union_aabb(&right->box, &sph_box);
@@ -1555,8 +1555,6 @@ static void add_triangle_node_k_scene(NodeKScene* node, Triangle triangle, u32 k
   node->box = union_aabb(&node->box, &tri_box);
 
   if (node->is_leaf) {
-    if (node->triangles.element_size == 0)
-      node->triangles = new_array(4, sizeof(Triangle));
     push_array(&node->triangles, &triangle);
 
     if (node->num_of_primitives > k) {
@@ -1564,8 +1562,8 @@ static void add_triangle_node_k_scene(NodeKScene* node, Triangle triangle, u32 k
     }
   } else {
     // Insert into closer child
-    f32 dist_left = distance_aabb(&node->left->box, tri_box.center);
-    f32 dist_right = distance_aabb(&node->right->box, tri_box.center);
+    f32 dist_left = box_distance_aabb(&node->left->box, &tri_box);
+    f32 dist_right = box_distance_aabb(&node->right->box, &tri_box);
     if (dist_left <= dist_right) {
       add_triangle_node_k_scene(node->left, triangle, k);
     } else {
@@ -1583,16 +1581,14 @@ static void add_sphere_node_k_scene(NodeKScene* node, Sphere sphere, u32 k) {
   node->box = union_aabb(&node->box, &sph_box);
 
   if (node->is_leaf) {
-    if (node->spheres.element_size == 0)
-      node->spheres = new_array(4, sizeof(Sphere));
     push_array(&node->spheres, &sphere);
 
     if (node->num_of_primitives > k) {
       split_node_k_scene(node, k);
     }
   } else {
-    f32 dist_left = distance_aabb(&node->left->box, sphere.position);
-    f32 dist_right = distance_aabb(&node->right->box, sphere.position);
+    f32 dist_left = box_distance_aabb(&node->left->box, &sph_box);
+    f32 dist_right = box_distance_aabb(&node->right->box, &sph_box);
     if (dist_left <= dist_right) {
       add_sphere_node_k_scene(node->left, sphere, k);
     } else {
@@ -1638,15 +1634,12 @@ static SceneHit intersect_node_k_scene(NodeKScene* node, Ray ray) {
   SceneHit left_box_hit = intersect_with_ray_aabb(ray, &node->left->box);
   SceneHit right_box_hit = intersect_with_ray_aabb(ray, &node->right->box);
 
-  f32 left_t = left_box_hit.hit ? left_box_hit.t : INFINITY;
-  f32 right_t = right_box_hit.hit ? right_box_hit.t : INFINITY;
-
-  if (left_t == INFINITY && right_t == INFINITY)
+  if (!left_box_hit.hit && !right_box_hit.hit)
     return (SceneHit){ .hit = false, .t = INFINITY };
 
-  NodeKScene* first = (left_t <= right_t) ? node->left : node->right;
-  NodeKScene* second = (left_t > right_t) ? node->left : node->right;
-  f32 second_t = fmaxf(left_t, right_t);
+  NodeKScene* first = (left_box_hit.t <= right_box_hit.t) ? node->left : node->right;
+  NodeKScene* second = (left_box_hit.t > right_box_hit.t) ? node->left : node->right;
+  f32 second_t = fmaxf(left_box_hit.t, right_box_hit.t);
 
   SceneHit first_hit = intersect_node_k_scene(first, ray);
 
@@ -1673,8 +1666,9 @@ typedef struct {
 /* --- KScene implementation functions --- */
 
 static void add_triangle_kscene(KScene* ks, Triangle triangle) {
-  if (ks->triangles.element_size == 0)
+  if (ks->triangles.element_size == 0) {
     ks->triangles = new_array(4, sizeof(Triangle));
+  }
   push_array(&ks->triangles, &triangle);
 
   if (!ks->root) ks->root = new_node_k_scene(ks->k);
@@ -1682,8 +1676,9 @@ static void add_triangle_kscene(KScene* ks, Triangle triangle) {
 }
 
 static void add_sphere_kscene(KScene* ks, Sphere sphere) {
-  if (ks->spheres.element_size == 0)
+  if (ks->spheres.element_size == 0) {
     ks->spheres = new_array(4, sizeof(Sphere));
+  }
   push_array(&ks->spheres, &sphere);
 
   if (!ks->root) ks->root = new_node_k_scene(ks->k);
@@ -3495,8 +3490,10 @@ Ray scatter_diffuse(Ray ray, SceneHit hit) {
     normal = normal_to_point_sphere(hit.sphere, hit.position);
   }
   const Vec3 randomInSphere = random_point_in_sphere();
-  if (dot_vec3(randomInSphere, normal) >= 0) return build_ray(hit.position, randomInSphere);
-  return build_ray(hit.position, scale_vec3(randomInSphere, -1));
+  // Offset origin slightly along normal to prevent f32 self-intersection
+  const Vec3 origin = add_vec3(hit.position, scale_vec3(normal, 1e-4f));
+  if (dot_vec3(randomInSphere, normal) >= 0) return build_ray(origin, randomInSphere);
+  return build_ray(origin, scale_vec3(randomInSphere, -1));
 }
 
 Material build_emissive_material() {
@@ -3533,7 +3530,9 @@ Ray scatter_metallic(Ray ray, SceneHit hit) {
   Vec3 reflected = sub_vec3(v, scale_vec3(normal, 2 * dot_vec3(v, normal)));
   reflected = add_vec3(reflected, scale_vec3(random_point_in_sphere(), fuzz));
   normalize_vec3(reflected, &reflected);
-  return build_ray(hit.position, reflected);
+  // Offset origin slightly along normal to prevent f32 self-intersection
+  const Vec3 origin = add_vec3(hit.position, scale_vec3(normal, 1e-4f));
+  return build_ray(origin, reflected);
 }
 
 Material build_metallic_material(f32 fuzz) {

@@ -172,7 +172,7 @@ int main(void) {
         "./assets/little_tokyo.jpg"
     };
 
-    u32 mesh_index = 6;
+    u32 mesh_index = 1;
     String obj = io_read_file(obj_files[mesh_index]);
     Mesh mesh = read_obj_mesh(obj, "mesh");
     AABB box = get_bounding_box_mesh(&mesh);

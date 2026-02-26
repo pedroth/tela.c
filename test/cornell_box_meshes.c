@@ -256,7 +256,7 @@ Vec3 third_transform(Vec3 v, void* ctx) {
     return add_vec3(v, vec3(1.5f, 1.5f, 1.0f));
 }
 
-Material diffuse_material_mapper(Face face, void* ctx) {
+Material material_mapper(Face face, void* ctx) {
   return build_diffuse_material();
 }
 
@@ -288,7 +288,7 @@ void add_mesh_scene(Scene* scene) {
     map_vertices_mesh(&mesh, third_transform, NULL);
     add_texture_mesh(&mesh, io_read_image(texture_files[mesh_index]));
 
-    map_triangles_materials_mesh(&mesh, diffuse_material_mapper, NULL);
+    map_triangles_materials_mesh(&mesh, material_mapper, NULL);
 
     add_triangles_scene(scene, get_triangles_mesh(&mesh));
 }
