@@ -1177,7 +1177,7 @@ SceneHit intersect_with_ray_triangle(Triangle* triangle, Ray ray) {
   hit.hit = false;
   hit.t = INFINITY;
   if (triangle->radius == 0.0f) {
-    const f32 epsilon = 1e-9;
+    const f32 epsilon = 1e-6f;
     const Vec3 v = ray.dir;
     const Vec3 p = sub_vec3(ray.init, triangle->positions[0]);
     Vec3 tangents[2] = {
@@ -1198,7 +1198,7 @@ SceneHit intersect_with_ray_triangle(Triangle* triangle, Ray ray) {
       if (dot <= epsilon) return hit;
     }
     hit.hit = true;
-    hit.t = t;
+    hit.t = t - epsilon;
     hit.geometry_type = TRIANGLE;
     hit.triangle = triangle;
     hit.position = x;
