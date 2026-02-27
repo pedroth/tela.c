@@ -1189,7 +1189,7 @@ SceneHit intersect_with_ray_triangle(Triangle* triangle, Ray ray) {
     const f32 t = -dot_vec3(n, p) / dot_vec3(n, v);
     if (t <= epsilon) return hit;
     const Vec3 x = trace_ray(ray, t);
-    // Check if x is inside the triangle using edge tests
+    const f32 edge_epsilon = 1e-4f;
     for (u32 i = 0; i < 3; i++) {
       const Vec3 xi = triangle->positions[i];
       const Vec3 u = sub_vec3(x, xi);
@@ -1198,10 +1198,12 @@ SceneHit intersect_with_ray_triangle(Triangle* triangle, Ray ray) {
       if (dot <= epsilon) return hit;
     }
     hit.hit = true;
-    hit.t = t - epsilon;
+    const f32 hit_t = t - epsilon;
+    hit.t = hit_t;
     hit.geometry_type = TRIANGLE;
     hit.triangle = triangle;
-    hit.position = x;
+    // Position should match the returned t value
+    hit.position = trace_ray(ray, hit_t);
     return hit;
   }
   const u32 max_ite = 20;
@@ -1235,7 +1237,9 @@ bool is_inside_triangle(Triangle* triangle, Vec3 p) {
     sub_vec3(triangle->positions[2], triangle->positions[0])
   };
   Vec3 normal = cross_vec3(tangents[0], tangents[1]);
-  normalize_vec3(normal, &normal);
+  if (!normalize_vec3(normal, &normal)) {
+    return false;  // Degenerate triangle
+  }
   return dot_vec3(normal, sub_vec3(p, triangle->positions[0])) >= 0;
 }
 
@@ -3628,7 +3632,7 @@ void raster_triangle(RasterTriangleInput* input) {
   Vec2 u = sub_vec2(intPoints[1], intPoints[0]);
   Vec2 v = sub_vec2(intPoints[2], intPoints[0]);
   f32 det = wedge_vec2(u, v); // wedge product
-  if (det == 0) return;
+  if (fabsf(det) < 1e-6f) return;  // Degenerate triangle in screen space
   f32 invDet = 1 / det;
   Color c1 = colors[0];
   Color c2 = colors[1];

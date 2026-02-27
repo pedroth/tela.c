@@ -1,18 +1,19 @@
 /**
  * Minecraft
  *
- * A rasterized 3D mesh viewer for a Minecraft map.
+ * A ray-traced 3D mesh viewer for a Minecraft map.
  * Features interactive orbit camera controls via mouse and WASD camera movement.
  */
 
 #include "../src/index.c"
 
+
  /* =============================================================================
   * Constants
   * ========================================================================== */
 
-static const u32 WIDTH = 640;
-static const u32 HEIGHT = 480;
+static const u32 WIDTH = 640/2;
+static const u32 HEIGHT = 480/2;
 
 /* =============================================================================
  * Types
@@ -32,10 +33,25 @@ typedef struct {
 
 static bool g_mouse_down = false;
 static Vec2 g_mouse_pos = { 0 };
+static Tela* g_background = NULL;
 
 /* =============================================================================
  * Animation Loop
  * ========================================================================== */
+
+static inline Color render_background(Ray ray, void* ctx) {
+    Tela* background = (Tela*)ctx;
+    if (!background) {
+        return (Color) { 0.0f, 0.0f, 0.0f, 1.0f };
+    }
+    Vec3 dir = ray.dir;
+    f32 theta = atan2f(dir.y, dir.x) / (2.0f * PI) + 0.5f;
+    f32 alpha = acosf(fminf(1.0f, fmaxf(-1.0f, -dir.z))) / PI;
+    return get_pxl_tela(background,
+        (u32)(theta * background->width),
+        (u32)(alpha * background->height));
+}
+
 
 static void on_frame(f32 dt, f32 time, void* ctx) {
     App* app = (App*)ctx;
@@ -46,18 +62,20 @@ static void on_frame(f32 dt, f32 time, void* ctx) {
     app->camera->look_at = add_vec3(app->camera->look_at, scale_vec3(world_speed, dt));
 
     // Render
-    raster_scene(
-        app->scene,
-        (RasterParams) {
-        .camera = app->camera,
-            .tela = app->tela,
-            .cull_backfaces = true,
-            .bilinear_texture = false,
-            .clip_camera_plane = true,
-            .clear_screen = true,
-            .background_color = (Color){ 0.0f, 0.0f, 0.0f, 1.0f },
-            .perspective_correct = false
-    });
+    RaytraceParams params = {
+     .samples_per_pixel = 1,
+     .bounces = 5,
+     .variance = 0.001f,
+     .gamma = 0.5f,
+     .bilinear_texture = false,
+     .is_biased = false,
+     .camera = app->camera,
+     .render_background = render_background,
+     .render_background_context = g_background,
+     .exposed_tela = app->tela,
+    };
+
+    ray_trace_scene_parallel(app->scene, &params);
 
     // Update window title with FPS
     set_window_title(app->window, format_string("FPS: %.2f", 1.0f / dt));
@@ -103,6 +121,8 @@ static void on_mouse_move(Window* window, i32 x, i32 y, void* ctx) {
         app->camera, orient.x + theta_delta, orient.y + phi_delta);
 
     g_mouse_pos = new_pos;
+    Tela* exposed = app->tela;
+    exposed->iterations = 1;
 }
 
 static void on_mouse_scroll(Window* window, i32 delta_y, void* ctx) {
@@ -112,6 +132,8 @@ static void on_mouse_scroll(Window* window, i32 delta_y, void* ctx) {
     f32 new_radius = orbit.x + delta_y * 0.1f;
 
     set_orbit_camera(app->camera, new_radius, orbit.y, orbit.z);
+    Tela* exposed = app->tela;
+    exposed->iterations = 1;
 }
 
 static void on_key_down(Window* window, u32 keycode, void* ctx) {
@@ -119,6 +141,8 @@ static void on_key_down(Window* window, u32 keycode, void* ctx) {
     const f32 magnitude = 10.0f;
     if (keycode == SDLK_w) app->cam_speed = vec3(0, 0, magnitude);
     if (keycode == SDLK_s) app->cam_speed = vec3(0, 0, -magnitude);
+    Tela* exposed = app->tela;
+    exposed->iterations = 1;
 }
 
 static void on_key_up(Window* window, u32 keycode, void* ctx) {
@@ -136,6 +160,14 @@ static void register_input_handlers(Window* window, App* app) {
 }
 
 /* =============================================================================
+ * Material
+ * ========================================================================== */
+
+Material diffuse_material_mapper(Face face, void* ctx) {
+    return build_diffuse_material();
+}
+
+/* =============================================================================
  * Main
  * ========================================================================== */
 
@@ -145,9 +177,11 @@ Vec3 swizzle_vertex(Vec3 v, void* ctx) {
 }
 
 int main(void) {
-    // Create canvas and window
+    g_background = io_read_image("assets/sky.jpg");
+
+    // Create canvas and window (canvas is half-size, window is full-size)
     Tela* tela = new_tela(WIDTH, HEIGHT);
-    Window* window = new_window(WIDTH, HEIGHT, "Minecraft");
+    Window* window = new_window(WIDTH*2, HEIGHT*2, "Minecraft");
 
     Camera camera = create_camera(vec3(0, 0, 0), vec3(0, 0, 0), 1.0f);
     set_orbit_camera(&camera, 3.0f, 0.0f, 0.0f);
@@ -170,9 +204,13 @@ int main(void) {
     // Add texture
     add_texture_mesh(&mesh, io_read_image("./assets/minecraft.png"));
 
+    // Assign diffuse material to all triangles (required by ray tracer)
+    map_triangles_materials_mesh(&mesh, diffuse_material_mapper, NULL);
+
     // Build scene
-    Scene scene = new_naive_scene();
+    Scene scene = new_kscene(20);
     add_triangles_scene(&scene, get_triangles_mesh(&mesh));
+    scene.vtable->rebuild_scene(&scene); // force build before rendering
 
     // Application state
     App app = {
