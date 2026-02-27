@@ -1178,7 +1178,7 @@ SceneHit intersect_with_ray_triangle(Triangle* triangle, Ray ray) {
   hit.hit = false;
   hit.t = INFINITY;
   if (triangle->radius == 0.0f) {
-    const f32 epsilon = 1e-6f;
+    const f32 epsilon = 1e-9f;
     const Vec3 v = ray.dir;
     const Vec3 p = sub_vec3(ray.init, triangle->positions[0]);
     Vec3 tangents[2] = {
@@ -1190,7 +1190,6 @@ SceneHit intersect_with_ray_triangle(Triangle* triangle, Ray ray) {
     const f32 t = -dot_vec3(n, p) / dot_vec3(n, v);
     if (t <= epsilon) return hit;
     const Vec3 x = trace_ray(ray, t);
-    const f32 edge_epsilon = 1e-4f;
     for (u32 i = 0; i < 3; i++) {
       const Vec3 xi = triangle->positions[i];
       const Vec3 u = sub_vec3(x, xi);
@@ -1199,12 +1198,10 @@ SceneHit intersect_with_ray_triangle(Triangle* triangle, Ray ray) {
       if (dot <= epsilon) return hit;
     }
     hit.hit = true;
-    const f32 hit_t = t - epsilon;
-    hit.t = hit_t;
+    hit.t = t - epsilon;   /* t value offset for ordering (matches JS) */
     hit.geometry_type = TRIANGLE;
     hit.triangle = triangle;
-    // Position should match the returned t value
-    hit.position = trace_ray(ray, hit_t);
+    hit.position = x;      /* position at exact surface point t, not t-epsilon */
     return hit;
   }
   const u32 max_ite = 20;
@@ -3875,9 +3872,7 @@ Ray scatter_metallic(Ray ray, SceneHit hit) {
   Vec3 reflected = sub_vec3(v, scale_vec3(normal, 2 * dot_vec3(v, normal)));
   reflected = add_vec3(reflected, scale_vec3(random_point_in_sphere(), fuzz));
   normalize_vec3(reflected, &reflected);
-  // Offset origin slightly along normal to prevent f32 self-intersection
-  const Vec3 origin = add_vec3(hit.position, scale_vec3(normal, 1e-4f));
-  return build_ray(origin, reflected);
+  return build_ray(hit.position, reflected);
 }
 
 Material build_metallic_material(f32 fuzz) {
