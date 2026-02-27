@@ -51,8 +51,8 @@ static void on_frame(f32 dt, f32 time, void* ctx) {
   Tela* exposed = app->tela;
 
   RaytraceParams params = {
-    .samples_per_pixel = 5,
-    .bounces = 7,
+    .samples_per_pixel = 7,
+    .bounces = 10,
     .variance = 0.001f,
     .gamma = 0.5f,
     .bilinear_texture = false,

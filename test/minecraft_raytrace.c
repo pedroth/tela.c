@@ -34,6 +34,8 @@ typedef struct {
 static bool g_mouse_down = false;
 static Vec2 g_mouse_pos = { 0 };
 static Tela* g_background = NULL;
+static DirectionalLightParams* g_directional_light = NULL;
+
 
 /* =============================================================================
  * Animation Loop
@@ -73,6 +75,7 @@ static void on_frame(f32 dt, f32 time, void* ctx) {
      .render_background = render_background,
      .render_background_context = g_background,
      .exposed_tela = app->tela,
+     .directional_light = g_directional_light,
     };
 
     ray_trace_scene_parallel(app->scene, &params);
@@ -178,6 +181,12 @@ Vec3 swizzle_vertex(Vec3 v, void* ctx) {
 
 int main(void) {
     g_background = io_read_image("assets/sky.jpg");
+    Vec3 light_dir = vec3(1.0f, 1.0f, 1.0f);
+    normalize_vec3(light_dir, &light_dir);
+    g_directional_light = &(DirectionalLightParams) {
+        .direction = light_dir,
+        .sharpness = 200.0f
+    };
 
     // Create canvas and window (canvas is half-size, window is full-size)
     Tela* tela = new_tela(WIDTH, HEIGHT);

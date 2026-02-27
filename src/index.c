@@ -749,6 +749,7 @@ static const Color COLOR_WHITE = { 1.0f, 1.0f, 1.0f, 1.0f };
 static const Color COLOR_RED = { 1.0f, 0.0f, 0.0f, 1.0f };
 static const Color COLOR_GREEN = { 0.0f, 1.0f, 0.0f, 1.0f };
 static const Color COLOR_BLUE = { 0.0f, 0.0f, 1.0f, 1.0f };
+static const Color COLOR_YELLOW = { 1.0f, 1.0f, 0.0f, 1.0f };
 
 //========================================================================================
 /*                                                                                      *
@@ -1240,7 +1241,7 @@ bool is_inside_triangle(Triangle* triangle, Vec3 p) {
   if (!normalize_vec3(normal, &normal)) {
     return false;  // Degenerate triangle
   }
-  return dot_vec3(normal, sub_vec3(p, triangle->positions[0])) >= 0;
+  return dot_vec3(normal, sub_vec3(p, triangle->positions[0])) >= -1e-3f;
 }
 
 f32 intersect_sphere_aux(Sphere* sphere, Ray ray) {
@@ -1898,7 +1899,8 @@ static AABB _compute_group_box(Array* group, KScene* ks) {
       Triangle* tri = (Triangle*)get_array_element(&ks->triangles, ref->index);
       AABB tri_box = get_bounding_box_triangle(tri);
       box = union_aabb(&box, &tri_box);
-    } else {
+    }
+    else {
       Sphere* sph = (Sphere*)get_array_element(&ks->spheres, ref->index);
       AABB sph_box = get_bounding_box_sphere(sph);
       box = union_aabb(&box, &sph_box);
@@ -1997,7 +1999,8 @@ static KScene rebuild_kscene(KScene* ks) {
         push_array(&node->triangles, tri);
         AABB tri_box = get_bounding_box_triangle(tri);
         node->box = union_aabb(&node->box, &tri_box);
-      } else {
+      }
+      else {
         Sphere* sph = (Sphere*)get_array_element(&ks->spheres, ref->index);
         push_array(&node->spheres, sph);
         AABB sph_box = get_bounding_box_sphere(sph);
@@ -3800,6 +3803,11 @@ Tela* raster_scene(Scene* scene, RasterParams params) {
  //========================================================================================
 
 typedef struct {
+  Vec3 direction;
+  f32 sharpness;
+}DirectionalLightParams;
+
+typedef struct {
   u32 samples_per_pixel;
   u32 bounces;
   f32 variance;
@@ -3810,6 +3818,7 @@ typedef struct {
   void* render_background_context;
   Tela* exposed_tela;
   Camera* camera;
+  DirectionalLightParams* directional_light;
 } RaytraceParams;
 
 typedef struct {
@@ -4021,6 +4030,30 @@ Material get_material_from_hit(SceneHit hit) {
   return (Material) { 0 };
 }
 
+Color render_miss_scene(Ray ray, void* context) {
+  RayTraceLambdaInput* input = (RayTraceLambdaInput*)context;
+  RaytraceParams* params = input->params;
+  Scene* scene = input->scene;
+  DirectionalLightParams* directional_light = params->directional_light;
+  Color(*render_background)(Ray, void*) = params->render_background;
+  void* render_background_context = params->render_background_context;
+
+  Color sky_color = render_background != NULL ? render_background(ray, render_background_context) : COLOR_BLACK;
+  if (directional_light == NULL) {
+    return sky_color;
+  }
+  SceneHit hit = intersect_scene(scene, build_ray(ray.init, directional_light->direction));
+  if (hit.hit) {
+    return lerp_color(sky_color, COLOR_BLACK, 0.5f);
+  }
+
+  f32 dot = fmaxf(0, dot_vec3(directional_light->direction, ray.dir));
+
+  f32 sun_intensity = powf(dot, directional_light->sharpness);
+
+  return lerp_color(sky_color, COLOR_WHITE, sun_intensity);
+}
+
 Color trace_ray_scene(Ray ray, RayTraceLambdaInput* input, u32 bounces) {
   Scene* scene = input->scene;
   RaytraceParams* params = input->params;
@@ -4028,9 +4061,13 @@ Color trace_ray_scene(Ray ray, RayTraceLambdaInput* input, u32 bounces) {
   void* render_background_context = params->render_background_context;
   bool bilinear_texture = params->bilinear_texture;
 
+  if (bounces == 0) {
+    return render_miss_scene(ray, input);
+  }
+
   SceneHit intersection = intersect_scene(scene, ray);
   if (!intersection.hit) {
-    return render_background(ray, render_background_context);
+    return render_miss_scene(ray, input);
   }
 
   GeometryType hit_geometry_type = intersection.geometry_type;
@@ -4040,10 +4077,6 @@ Color trace_ray_scene(Ray ray, RayTraceLambdaInput* input, u32 bounces) {
   bool is_emissive = material.emissive;
   if (is_emissive) {
     return albedo;
-  }
-
-  if (bounces == 0) {
-    return render_background(ray, render_background_context);
   }
 
   Ray scatter_ray = material.scatter(ray, intersection);
@@ -4063,15 +4096,17 @@ Color trace_ray_scene(Ray ray, RayTraceLambdaInput* input, u32 bounces) {
 }
 
 Color ray_trace_lambda(Ray ray, void* context) {
-  RayTraceLambdaInput* params = (RayTraceLambdaInput*)context;
-  u32 samples = params->params->samples_per_pixel;
-  u32 bounces = params->params->bounces;
-  f32 variance = params->params->variance;
-  f32 gamma = params->params->gamma;
-  bool bilinear_texture = params->params->bilinear_texture;
-  bool is_biased = params->params->is_biased;
-  Tela* exposed_tela = params->params->exposed_tela;
-  Camera* camera = params->params->camera;
+  RayTraceLambdaInput* ray_trace_inputs = (RayTraceLambdaInput*)context;
+  RaytraceParams* params = ray_trace_inputs->params;
+  u32 samples = params->samples_per_pixel;
+  u32 bounces = params->bounces;
+  f32 variance = params->variance;
+  f32 gamma = params->gamma;
+  bool bilinear_texture = params->bilinear_texture;
+  bool is_biased = params->is_biased;
+  Tela* exposed_tela = params->exposed_tela;
+  Camera* camera = params->camera;
+  DirectionalLightParams* directional_light = params->directional_light;
 
   f32 inv_samples = (is_biased ? bounces : 1.0f) / samples;
   Color accumulated_color = { 0, 0, 0, 0 };
@@ -4081,7 +4116,7 @@ Color ray_trace_lambda(Ray ray, void* context) {
     Vec3 new_dir = add_vec3(ray.dir, epsilon_ortho);
     normalize_vec3(new_dir, &new_dir);
     Ray jittered_ray = build_ray(ray.init, new_dir);
-    accumulated_color = add_color(accumulated_color, trace_ray_scene(jittered_ray, params, bounces));
+    accumulated_color = add_color(accumulated_color, trace_ray_scene(jittered_ray, ray_trace_inputs, bounces));
   }
   return gamma_color(scale_color(accumulated_color, inv_samples), gamma);
 }
