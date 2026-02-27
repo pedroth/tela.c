@@ -284,7 +284,7 @@ void add_mesh_scene(Scene* scene) {
         "./assets/burger.jpg",
     };
 
-    u32 mesh_index = 3;
+    u32 mesh_index = 1;
     String obj = io_read_file(obj_files[mesh_index]);
     Mesh mesh = read_obj_mesh(obj, "mesh");
     AABB box = get_bounding_box_mesh(&mesh);

@@ -30,13 +30,13 @@ typedef struct {
 static const MeshEntry MESH_TABLE[] = {
     { "./assets/spot.obj",       "./assets/spot.png"    },
     { "./assets/megaman.obj",    "./assets/megaman.png" },
+    { "./assets/bunny.obj", NULL                   },
+    { "./assets/riku.obj",       "./assets/riku.png"    },
+    { "./assets/oil.obj",        "./assets/oil.png"     },
     { "./assets/statue.obj",     "./assets/statue.jpg"  },
     { "./assets/burger.obj",     "./assets/burger.jpg"  },
     { "./assets/rocks.obj",     "./assets/rocks.jpg"   },
     { "./assets/JesusMary.obj", "./assets/JesusMary.jpg" },
-    { "./assets/oil.obj",        "./assets/oil.png"     },
-    { "./assets/riku.obj",       "./assets/riku.png"    },
-    { "./assets/bunny.obj", NULL                   },
 };
 
 static const u32 MESH_COUNT = sizeof(MESH_TABLE) / sizeof(MESH_TABLE[0]);

@@ -1144,14 +1144,14 @@ SceneHit intersect_with_ray_aabb(Ray ray, const AABB* box) {
   hit.t = INFINITY;
   hit.hit = false;
 
-  f32 epsilon = 1e-3;
+  f32 epsilon = 1e-3f;
   f32 tmin = -INFINITY;
   f32 tmax = INFINITY;
   if (box->is_empty) return hit;
   // Pad AABB slightly to compensate for f32 precision loss in slab test
   f32 pad = 1e-4f;
-  f32 min_array[3] = { box->min.x - pad, box->min.y - pad, box->min.z - pad };
-  f32 max_array[3] = { box->max.x + pad, box->max.y + pad, box->max.z + pad };
+  f32 min_array[3] = { box->min.x, box->min.y, box->min.z };
+  f32 max_array[3] = { box->max.x, box->max.y, box->max.z };
   f32 r_init[3] = { ray.init.x, ray.init.y, ray.init.z };
   f32 dir_inv[3] = { 1 / ray.dir.x, 1 / ray.dir.y, 1 / ray.dir.z };
   const u32 dim = 3;
@@ -1204,6 +1204,7 @@ SceneHit intersect_with_ray_triangle(Triangle* triangle, Ray ray) {
     hit.position = x;      /* position at exact surface point t, not t-epsilon */
     return hit;
   }
+  printf("Intersecting rounded triangle with radius %.3f\n", triangle->radius);
   const u32 max_ite = 20;
   const f32 epsilon = 1e-3;
   Vec3 p = ray.init;
