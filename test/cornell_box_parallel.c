@@ -14,8 +14,8 @@
   * Constants
   * ========================================================================== */
 
-static const u32 WIDTH = 640 / 2;
-static const u32 HEIGHT = 480 / 2;
+static const u32 WIDTH = 640;
+static const u32 HEIGHT = 480;
 
 
 /* =============================================================================
@@ -51,8 +51,8 @@ static void on_frame(f32 dt, f32 time, void* ctx) {
   Tela* exposed = app->tela;
 
   RaytraceParams params = {
-    .samples_per_pixel = 7,
-    .bounces = 10,
+    .samples_per_pixel = 3,
+    .bounces = 15,
     .variance = 0.001f,
     .gamma = 0.5f,
     .bilinear_texture = false,
@@ -160,9 +160,9 @@ static void build_cornell_box(Scene* scene) {
   Material* mat_metallic_0 = (Material*)malloc(sizeof(Material));
   *mat_metallic_0 = build_metallic_material(0.0);
   Material* mat_dielectric_13 = (Material*)malloc(sizeof(Material));
-  *mat_dielectric_13 = build_dielectric_material(1.3);
+  *mat_dielectric_13 = build_dielectric_material(3);
   Material* mat_dielectric_2 = (Material*)malloc(sizeof(Material));
-  *mat_dielectric_2 = build_dielectric_material(2.0);
+  *mat_dielectric_2 = build_dielectric_material(2);
   Material* mat_alpha_025 = (Material*)malloc(sizeof(Material));
   *mat_alpha_025 = build_alpha_material(0.25);
 
@@ -247,7 +247,7 @@ static void build_cornell_box(Scene* scene) {
   add_triangle_scene(scene, alpha_tri);
 
   // alpha-tri-2 (dielectric ior=2, white)
-  Triangle alpha_tri_2 = build_triangle(vec3(3, 1, 1), vec3(3, 2, 1), vec3(3, 1.5, 2));
+  Triangle alpha_tri_2 = build_triangle(vec3(3, 1, 1), vec3(3, 2, 1), vec3(2.5, 1.5, 2));
   alpha_tri_2.props = new_tri_props(COLOR_WHITE, mat_dielectric_2);
   add_triangle_scene(scene, alpha_tri_2);
 
@@ -263,7 +263,7 @@ static void build_cornell_box(Scene* scene) {
 
 int main(void) {
   Tela* tela = new_tela(WIDTH, HEIGHT);
-  Window* window = new_window(WIDTH * 2, HEIGHT * 2, "Cornell Box");
+  Window* window = new_window(WIDTH, HEIGHT, "Cornell Box");
 
   /* camera looks at center of box, orbiting at distance 3 */
   Camera camera = create_camera(vec3(3.0f, 0.0f, 0.0f), vec3(1.5f, 1.5f, 1.5f), 1.0f);

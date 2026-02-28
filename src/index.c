@@ -1150,10 +1150,10 @@ SceneHit intersect_with_ray_aabb(Ray ray, const AABB* box) {
   if (box->is_empty) return hit;
   // Pad AABB slightly to compensate for f32 precision loss in slab test
   f32 pad = 1e-4f;
-  f32 min_array[3] = { box->min.x, box->min.y, box->min.z };
-  f32 max_array[3] = { box->max.x, box->max.y, box->max.z };
+  f32 min_array[3] = { box->min.x - pad, box->min.y - pad, box->min.z - pad };
+  f32 max_array[3] = { box->max.x + pad, box->max.y + pad, box->max.z + pad };
   f32 r_init[3] = { ray.init.x, ray.init.y, ray.init.z };
-  f32 dir_inv[3] = { 1 / ray.dir.x, 1 / ray.dir.y, 1 / ray.dir.z };
+  f32 dir_inv[3] = { 1.0f / ray.dir.x, 1.0f / ray.dir.y, 1.0f / ray.dir.z };
   const u32 dim = 3;
   for (u32 i = 0; i < dim; ++i) {
     f32 t1 = (min_array[i] - r_init[i]) * dir_inv[i];
@@ -1178,7 +1178,7 @@ SceneHit intersect_with_ray_triangle(Triangle* triangle, Ray ray) {
   hit.hit = false;
   hit.t = INFINITY;
   if (triangle->radius == 0.0f) {
-    const f32 epsilon = 1e-9f;
+    const f32 epsilon = 1e-12f;
     const Vec3 v = ray.dir;
     const Vec3 p = sub_vec3(ray.init, triangle->positions[0]);
     Vec3 tangents[2] = {
@@ -1188,14 +1188,14 @@ SceneHit intersect_with_ray_triangle(Triangle* triangle, Ray ray) {
     Vec3 n = cross_vec3(tangents[0], tangents[1]);
     normalize_vec3(n, &n);
     const f32 t = -dot_vec3(n, p) / dot_vec3(n, v);
-    if (t <= epsilon) return hit;
+    if (t <= -epsilon) return hit;
     const Vec3 x = trace_ray(ray, t);
     for (u32 i = 0; i < 3; i++) {
       const Vec3 xi = triangle->positions[i];
       const Vec3 u = sub_vec3(x, xi);
       const Vec3 ni = cross_vec3(n, sub_vec3(triangle->positions[(i + 1) % 3], xi));
       const f32 dot = dot_vec3(ni, u);
-      if (dot <= epsilon) return hit;
+      if (dot <= -epsilon) return hit;
     }
     hit.hit = true;
     hit.t = t - epsilon;   /* t value offset for ordering (matches JS) */
@@ -1204,7 +1204,6 @@ SceneHit intersect_with_ray_triangle(Triangle* triangle, Ray ray) {
     hit.position = x;      /* position at exact surface point t, not t-epsilon */
     return hit;
   }
-  printf("Intersecting rounded triangle with radius %.3f\n", triangle->radius);
   const u32 max_ite = 20;
   const f32 epsilon = 1e-3;
   Vec3 p = ray.init;
@@ -1239,7 +1238,7 @@ bool is_inside_triangle(Triangle* triangle, Vec3 p) {
   if (!normalize_vec3(normal, &normal)) {
     return false;  // Degenerate triangle
   }
-  return dot_vec3(normal, sub_vec3(p, triangle->positions[0])) >= -1e-3f;
+  return dot_vec3(normal, sub_vec3(p, triangle->positions[0])) > 0;
 }
 
 f32 intersect_sphere_aux(Sphere* sphere, Ray ray) {
@@ -3605,7 +3604,7 @@ void raster_triangle(RasterTriangleInput* input) {
   u32 outFrustum[3];
   u32 outFrustumCount = 0;
   for (u32 i = 0; i < 3; i++) {
-    if (points_in_cam_coords[i].z < distanceToPlane) {
+    if (points_in_cam_coords[i].z < 0 ) {
       outFrustum[outFrustumCount++] = i;
     }
     else {
@@ -3918,15 +3917,6 @@ Ray scatter_dielectric(Ray ray, SceneHit hit) {
   if (ray.dir.y != 0) t = p.y / ray.dir.y;
   if (ray.dir.z != 0) t = p.z / ray.dir.z;
 
-  bool is_inside = false;
-  if (hit.geometry_type == TRIANGLE) {
-    is_inside = is_inside_triangle(hit.triangle, point);
-  }
-  else if (hit.geometry_type == SPHERE) {
-    is_inside = is_inside_sphere(hit.sphere, point);
-  }
-  f32 refraction_ration = is_inside ? index_of_refraction : 1 / index_of_refraction;
-  Vec3 v_in = ray.dir;
   Vec3 normal = { 0, 0, 0 };
   if (hit.geometry_type == TRIANGLE) {
     normal = normal_to_point_triangle(hit.triangle, hit.position);
@@ -3934,7 +3924,10 @@ Ray scatter_dielectric(Ray ray, SceneHit hit) {
   else if (hit.geometry_type == SPHERE) {
     normal = normal_to_point_sphere(hit.sphere, hit.position);
   }
-  Vec3 n = scale_vec3(normal, -1);
+  Vec3 v_in = ray.dir;
+  bool is_outside = dot_vec3(v_in, normal) < 0;
+  f32 refraction_ration = is_outside ? 1 / index_of_refraction : index_of_refraction;
+  Vec3 n = is_outside ? scale_vec3(normal, -1) : normal;
   f32 cos_theta_in = fminf(1.0f, dot_vec3(v_in, n));
   f32 sin_theta_in = sqrtf(1.0f - cos_theta_in * cos_theta_in);
   f32 sin_theta_out = refraction_ration * sin_theta_in;
@@ -3978,6 +3971,7 @@ Color get_color_from_hit(SceneHit hit, Ray ray, bool bilinear_texture) {
     f32 alpha = dot_vec3(cross_vec3(v, u2), r) * det_inv;
     f32 beta = dot_vec3(cross_vec3(u1, v), r) * det_inv;
     f32 gamma = 1.0f - alpha - beta;
+
 
     // Texture sampling if available
     bool have_texture = props->texture != NULL

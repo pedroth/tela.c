@@ -50,7 +50,7 @@ static void on_frame(f32 dt, f32 time, void* ctx) {
 
   RaytraceParams params = {
     .samples_per_pixel = 1,
-    .bounces = 11,
+    .bounces = 15,
     .variance = 0.001f,
     .gamma = 0.5f,
     .bilinear_texture = false,
@@ -158,9 +158,9 @@ static void build_cornell_box(Scene* scene) {
   Material* mat_metallic_0 = (Material*)malloc(sizeof(Material));
   *mat_metallic_0 = build_metallic_material(0.0);
   Material* mat_dielectric_13 = (Material*)malloc(sizeof(Material));
-  *mat_dielectric_13 = build_dielectric_material(1.3);
+  *mat_dielectric_13 = build_dielectric_material(3);
   Material* mat_dielectric_2 = (Material*)malloc(sizeof(Material));
-  *mat_dielectric_2 = build_dielectric_material(2.0);
+  *mat_dielectric_2 = build_dielectric_material(2);
   Material* mat_alpha_025 = (Material*)malloc(sizeof(Material));
   *mat_alpha_025 = build_alpha_material(0.25);
 
@@ -245,7 +245,7 @@ static void build_cornell_box(Scene* scene) {
   add_triangle_scene(scene, alpha_tri);
 
   // alpha-tri-2 (dielectric ior=2, white)
-  Triangle alpha_tri_2 = build_triangle(vec3(3, 1, 1), vec3(3, 2, 1), vec3(3, 1.5, 2));
+  Triangle alpha_tri_2 = build_triangle(vec3(3, 1, 1), vec3(3, 2, 1), vec3(2.5, 1.5, 2));
   alpha_tri_2.props = new_tri_props(COLOR_WHITE, mat_dielectric_2);
   add_triangle_scene(scene, alpha_tri_2);
 

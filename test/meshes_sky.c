@@ -30,7 +30,7 @@ typedef struct {
 static const MeshEntry MESH_TABLE[] = {
     { "./assets/spot.obj",       "./assets/spot.png"    },
     { "./assets/megaman.obj",    "./assets/megaman.png" },
-    { "./assets/bunny.obj", NULL                   },
+    { "./assets/bunny_orig.obj", NULL                   },
     { "./assets/riku.obj",       "./assets/riku.png"    },
     { "./assets/oil.obj",        "./assets/oil.png"     },
     { "./assets/statue.obj",     "./assets/statue.jpg"  },
@@ -175,7 +175,8 @@ static void load_mesh(App* app, i32 index) {
   if (index < 0 || (u32)index >= MESH_COUNT) return;
 
   /* Read and parse OBJ */
-  String obj = io_read_file(MESH_TABLE[index].mesh_path);
+  // String obj = io_read_file(MESH_TABLE[index].mesh_path);
+  String obj = io_read_file(MESH_TABLE[7].mesh_path);
   Mesh   mesh = read_obj_mesh(obj, "mesh");
 
   /* Normalize to fit inside a unit cube, then place at scene center */
@@ -192,7 +193,8 @@ static void load_mesh(App* app, i32 index) {
 
   /* Optional texture */
   if (MESH_TABLE[index].texture_path != NULL) {
-    add_texture_mesh(&mesh, io_read_image(MESH_TABLE[index].texture_path));
+    // add_texture_mesh(&mesh, io_read_image(MESH_TABLE[index].texture_path));
+    add_texture_mesh(&mesh, io_read_image(MESH_TABLE[7].texture_path));
   }
 
   /* Assign diffuse material to every triangle */
@@ -230,7 +232,7 @@ static void on_frame(f32 dt, f32 time, void* ctx) {
       .bounces = 10,
       .variance = 0.001f,
       .gamma = 0.5f,
-      .bilinear_texture = true,
+      .bilinear_texture = false,
       .is_biased = false,
       .camera = app->camera,
       .render_background = render_sky,

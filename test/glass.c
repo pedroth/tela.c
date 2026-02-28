@@ -169,7 +169,11 @@ Color white_color_mapper(Vec3 v, void* ctx) {
 }
 
 Material glass_material_mapper(Face face, void* ctx) {
-    return build_dielectric_material(1.333f);
+    static Material mat = { 0 };
+    if (mat.data == NULL) {
+        mat = build_dielectric_material(3);
+    }
+    return mat;
 }
 
 static void build_scene(Scene* scene) {

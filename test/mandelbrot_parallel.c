@@ -13,7 +13,7 @@
 
 static const u32 WIDTH = 640;
 static const u32 HEIGHT = 480;
-static const u32 MAX_ITERATIONS = 100;
+static const u32 MAX_ITERATIONS = 200;
 
 /* =============================================================================
  * Types
