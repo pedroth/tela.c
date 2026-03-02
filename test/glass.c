@@ -203,75 +203,77 @@ static void build_scene(Scene* scene) {
     map_triangles_materials_mesh(&bunny_mesh, glass_material_mapper, NULL);
 
     // Add triangles to scene
-    add_triangles_scene(scene, get_triangles_mesh(&bunny_mesh));
+    Array bunny_elems = triangles_to_scene_elems(get_triangles_mesh(&bunny_mesh));
+    add_scene_elems_scene(scene, bunny_elems);
+    free_array(&bunny_elems);
 
     // Build Cornell Box walls
 
     // left-1
     Triangle left_1 = build_triangle(vec3(3, 0, 3), vec3(3, 0, 0), vec3(0, 0, 0));
     left_1.props = new_tri_props(COLOR_RED, mat_diffuse);
-    add_triangle_scene(scene, left_1);
+    add_scene_elem_scene(scene, build_scene_elem_triangle(left_1));
 
     // left-2
     Triangle left_2 = build_triangle(vec3(0, 0, 0), vec3(0, 0, 3), vec3(3, 0, 3));
     left_2.props = new_tri_props(COLOR_RED, mat_diffuse);
-    add_triangle_scene(scene, left_2);
+    add_scene_elem_scene(scene, build_scene_elem_triangle(left_2));
 
     // right-1
     Triangle right_1 = build_triangle(vec3(0, 3, 0), vec3(3, 3, 0), vec3(3, 3, 3));
     right_1.props = new_tri_props(COLOR_GREEN, mat_diffuse);
-    add_triangle_scene(scene, right_1);
+    add_scene_elem_scene(scene, build_scene_elem_triangle(right_1));
 
     // right-2
     Triangle right_2 = build_triangle(vec3(3, 3, 3), vec3(0, 3, 3), vec3(0, 3, 0));
     right_2.props = new_tri_props(COLOR_GREEN, mat_diffuse);
-    add_triangle_scene(scene, right_2);
+    add_scene_elem_scene(scene, build_scene_elem_triangle(right_2));
 
     // bottom-1
     Triangle bottom_1 = build_triangle(vec3(0, 0, 0), vec3(3, 0, 0), vec3(3, 3, 0));
     bottom_1.props = new_tri_props(COLOR_WHITE, mat_diffuse);
-    add_triangle_scene(scene, bottom_1);
+    add_scene_elem_scene(scene, build_scene_elem_triangle(bottom_1));
 
     // bottom-2
     Triangle bottom_2 = build_triangle(vec3(3, 3, 0), vec3(0, 3, 0), vec3(0, 0, 0));
     bottom_2.props = new_tri_props(COLOR_WHITE, mat_diffuse);
-    add_triangle_scene(scene, bottom_2);
+    add_scene_elem_scene(scene, build_scene_elem_triangle(bottom_2));
 
     // top-1
     Triangle top_1 = build_triangle(vec3(3, 3, 3), vec3(3, 0, 3), vec3(0, 0, 3));
     top_1.props = new_tri_props(COLOR_WHITE, mat_diffuse);
-    add_triangle_scene(scene, top_1);
+    add_scene_elem_scene(scene, build_scene_elem_triangle(top_1));
 
     // top-2
     Triangle top_2 = build_triangle(vec3(0, 0, 3), vec3(0, 3, 3), vec3(3, 3, 3));
     top_2.props = new_tri_props(COLOR_WHITE, mat_diffuse);
-    add_triangle_scene(scene, top_2);
+    add_scene_elem_scene(scene, build_scene_elem_triangle(top_2));
 
     // back-1
     Triangle back_1 = build_triangle(vec3(0, 0, 0), vec3(0, 3, 0), vec3(0, 3, 3));
     back_1.props = new_tri_props(COLOR_WHITE, mat_diffuse);
-    add_triangle_scene(scene, back_1);
+    add_scene_elem_scene(scene, build_scene_elem_triangle(back_1));
 
     // back-2
     Triangle back_2 = build_triangle(vec3(0, 3, 3), vec3(0, 0, 3), vec3(0, 0, 0));
     back_2.props = new_tri_props(COLOR_WHITE, mat_diffuse);
-    add_triangle_scene(scene, back_2);
+    add_scene_elem_scene(scene, build_scene_elem_triangle(back_2));
 
   // alpha-tri (yellow emissive)
   Color yellow = COLOR_YELLOW;
   Triangle alpha_tri = build_triangle(vec3(1, 0, 0), vec3(0, 1, 0), vec3(0, 0, 1));
   alpha_tri.props = new_tri_props(yellow, mat_emissive);
-  add_triangle_scene(scene, alpha_tri);
+    add_scene_elem_scene(scene, build_scene_elem_triangle(alpha_tri));
 
   // light-1
   Triangle light_1 = build_triangle(vec3(1, 1, 2.9f), vec3(2, 1, 2.9f), vec3(2, 2, 2.9f));
   light_1.props = new_tri_props(COLOR_WHITE, mat_emissive);
-  add_triangle_scene(scene, light_1);
+    add_scene_elem_scene(scene, build_scene_elem_triangle(light_1));
 
   // light-2
   Triangle light_2 = build_triangle(vec3(2, 2, 2.9f), vec3(1, 2, 2.9f), vec3(1, 1, 2.9f));
   light_2.props = new_tri_props(COLOR_WHITE, mat_emissive);
-  add_triangle_scene(scene, light_2);
+    add_scene_elem_scene(scene, build_scene_elem_triangle(light_2));
 }
 
 /* =============================================================================

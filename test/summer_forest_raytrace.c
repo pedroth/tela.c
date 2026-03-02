@@ -210,7 +210,9 @@ int main(void) {
 
     // Build scene
     Scene scene = new_kscene(20);
-    add_triangles_scene(&scene, get_triangles_mesh(&mesh));
+    Array mesh_elems = triangles_to_scene_elems(get_triangles_mesh(&mesh));
+    add_scene_elems_scene(&scene, mesh_elems);
+    free_array(&mesh_elems);
     scene.vtable->rebuild_scene(&scene); // force build before rendering
     // Application state
     App app = {

@@ -37,7 +37,7 @@ typedef struct {
   Window *window;
   Camera *camera;
   Scene *scene;
-  Array *spheres;     // Array of Sphere (owned by scene)
+  Array *elems;       // Array of SceneElem (owned by scene)
   PixelData *pixels;  // per-sphere metadata
   u32 num_pixels;
 } App;
@@ -59,11 +59,12 @@ static Vec2 g_mouse_pos = {0};
  */
 static void move_to_grid(f32 tau, f32 dt, void *ctx) {
   App *app = (App *)ctx;
-  Array *spheres = app->spheres;
+  Array *elems = app->elems;
   f32 t = tau / ANIM_DURATION; // normalize to [0, 1]
 
-  for (u32 k = 0; k < spheres->length; k++) {
-    Sphere *s = (Sphere *)get_array_element(spheres, k);
+  for (u32 k = 0; k < elems->length; k++) {
+    SceneElem *elem = (SceneElem *)get_array_element(elems, k);
+    Sphere *s = &elem->as.sphere;
     Vec3 target = app->pixels[k].init_pos;
     Vec3 speed = sub_vec3(target, s->position);
     s->position = add_vec3(s->position, scale_vec3(speed, t));
@@ -76,11 +77,12 @@ static void move_to_grid(f32 tau, f32 dt, void *ctx) {
  */
 static void move_to_color(f32 tau, f32 dt, void *ctx) {
   App *app = (App *)ctx;
-  Array *spheres = app->spheres;
+  Array *elems = app->elems;
   f32 t = tau / ANIM_DURATION; // normalize to [0, 1]
 
-  for (u32 k = 0; k < spheres->length; k++) {
-    Sphere *s = (Sphere *)get_array_element(spheres, k);
+  for (u32 k = 0; k < elems->length; k++) {
+    SceneElem *elem = (SceneElem *)get_array_element(elems, k);
+    Sphere *s = &elem->as.sphere;
     Vec3 target = app->pixels[k].color_pos;
     Vec3 speed = sub_vec3(target, s->position);
     s->position = add_vec3(s->position, scale_vec3(speed, t));
@@ -190,10 +192,10 @@ int main(void) {
   u32 img_w = img->width;
   u32 img_h = img->height;
   u32 num_pixels = img_w * img_h;
+  Scene scene = new_naive_scene();
 
-  // Build per-pixel data and spheres
+  // Build per-pixel data
   PixelData *pixels = (PixelData *)malloc(num_pixels * sizeof(PixelData));
-  Array spheres = new_array(num_pixels, sizeof(Sphere));
 
   for (u32 k = 0; k < num_pixels; k++) {
     u32 i = k / img_w;
@@ -221,12 +223,8 @@ int main(void) {
     props->material = NULL;
     sphere.props = props;
 
-    push_array(&spheres, &sphere);
+    add_scene_elem_scene(&scene, build_scene_elem_sphere(sphere));
   }
-
-  // Build scene
-  Scene scene = new_naive_scene();
-  add_spheres_scene(&scene, spheres);
 
   // Create window and canvas
   Tela *tela = new_tela(WIDTH, HEIGHT);
@@ -242,7 +240,7 @@ int main(void) {
       .window = window,
       .camera = &camera,
       .scene = &scene,
-      .spheres = get_spheres_scene(&scene),
+        .elems = get_scene_elems_scene(&scene),
       .pixels = pixels,
       .num_pixels = num_pixels,
   };

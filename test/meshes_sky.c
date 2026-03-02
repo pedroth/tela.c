@@ -201,10 +201,12 @@ static void load_mesh(App* app, i32 index) {
   map_triangles_materials_mesh(&mesh, diffuse_material_mapper, NULL);
 
   /* Rebuild scene: floor + new mesh */
-  clear_triangles_scene(app->scene);
-  add_triangle_scene(app->scene, app->floor_tris[0]);
-  add_triangle_scene(app->scene, app->floor_tris[1]);
-  add_triangles_scene(app->scene, get_triangles_mesh(&mesh));
+  clear_scene_elems_scene(app->scene);
+  add_scene_elem_scene(app->scene, build_scene_elem_triangle(app->floor_tris[0]));
+  add_scene_elem_scene(app->scene, build_scene_elem_triangle(app->floor_tris[1]));
+  Array mesh_elems = triangles_to_scene_elems(get_triangles_mesh(&mesh));
+  add_scene_elems_scene(app->scene, mesh_elems);
+  free_array(&mesh_elems);
   app->scene->vtable->rebuild_scene(app->scene);
 
   /* Reset progressive accumulation */

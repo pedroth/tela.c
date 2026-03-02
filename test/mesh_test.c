@@ -99,8 +99,10 @@ static void load_mesh(App* app, i32 index) {
         add_texture_mesh(&mesh, io_read_image(MESH_TABLE[index].texture_path));
     }
 
-    clear_triangles_scene(app->scene);
-    add_triangles_scene(app->scene, get_triangles_mesh(&mesh));
+    clear_scene_elems_scene(app->scene);
+    Array mesh_elems = triangles_to_scene_elems(get_triangles_mesh(&mesh));
+    add_scene_elems_scene(app->scene, mesh_elems);
+    free_array(&mesh_elems);
 
     app->current_mesh = index;
 }

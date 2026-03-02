@@ -953,8 +953,17 @@ typedef struct {
 
 typedef struct {
   Vec3 positions[2];
+  f32 radius;
   void* props;
 } Line;
+
+Line build_line(Vec3 p1, Vec3 p2) {
+  Line line;
+  line.positions[0] = p1;
+  line.positions[1] = p2;
+  line.radius = 0.1f;
+  return line;
+}
 
 //========================================================================================
 /*                                                                                      *
@@ -1115,8 +1124,11 @@ Vec3 normal_to_point_sphere(Sphere* sphere, Vec3 p) {
 typedef enum {
   TRIANGLE,
   SPHERE,
+  LINE_GEOMETRY,
   AABB_GEOMETRY
 } GeometryType;
+
+typedef struct SceneElem SceneElem;
 
 typedef struct {
   Vec3 init;
@@ -1133,6 +1145,7 @@ typedef struct {
   bool hit;
   f32 t;
   Vec3 position;
+  SceneElem* scene_elem;
   Triangle* triangle;
   Sphere* sphere;
   AABB* aabb;
@@ -1144,12 +1157,12 @@ SceneHit intersect_with_ray_aabb(Ray ray, const AABB* box) {
   hit.t = INFINITY;
   hit.hit = false;
 
-  f32 epsilon = 1e-3f;
+  f32 epsilon = 1e-9f;
   f32 tmin = -INFINITY;
   f32 tmax = INFINITY;
   if (box->is_empty) return hit;
   // Pad AABB slightly to compensate for f32 precision loss in slab test
-  f32 pad = 1e-4f;
+  f32 pad = 1e-9f;
   f32 min_array[3] = { box->min.x - pad, box->min.y - pad, box->min.z - pad };
   f32 max_array[3] = { box->max.x + pad, box->max.y + pad, box->max.z + pad };
   f32 r_init[3] = { ray.init.x, ray.init.y, ray.init.z };
@@ -1178,7 +1191,7 @@ SceneHit intersect_with_ray_triangle(Triangle* triangle, Ray ray) {
   hit.hit = false;
   hit.t = INFINITY;
   if (triangle->radius == 0.0f) {
-    const f32 epsilon = 1e-12f;
+    const f32 epsilon = 1e-9f;
     const Vec3 v = ray.dir;
     const Vec3 p = sub_vec3(ray.init, triangle->positions[0]);
     Vec3 tangents[2] = {
@@ -1188,14 +1201,15 @@ SceneHit intersect_with_ray_triangle(Triangle* triangle, Ray ray) {
     Vec3 n = cross_vec3(tangents[0], tangents[1]);
     normalize_vec3(n, &n);
     const f32 t = -dot_vec3(n, p) / dot_vec3(n, v);
-    if (t <= -epsilon) return hit;
+    if (t <= epsilon) return hit;
     const Vec3 x = trace_ray(ray, t);
     for (u32 i = 0; i < 3; i++) {
       const Vec3 xi = triangle->positions[i];
       const Vec3 u = sub_vec3(x, xi);
-      const Vec3 ni = cross_vec3(n, sub_vec3(triangle->positions[(i + 1) % 3], xi));
+      const Vec3 edge_i = sub_vec3(triangle->positions[(i + 1) % 3], xi);
+      const Vec3 ni = cross_vec3(n, edge_i);
       const f32 dot = dot_vec3(ni, u);
-      if (dot <= -epsilon) return hit;
+      if (dot <= epsilon) return hit;
     }
     hit.hit = true;
     hit.t = t - epsilon;   /* t value offset for ordering (matches JS) */
@@ -1229,17 +1243,6 @@ SceneHit intersect_with_ray_triangle(Triangle* triangle, Ray ray) {
   return hit;
 }
 
-bool is_inside_triangle(Triangle* triangle, Vec3 p) {
-  Vec3 tangents[2] = {
-    sub_vec3(triangle->positions[1], triangle->positions[0]),
-    sub_vec3(triangle->positions[2], triangle->positions[0])
-  };
-  Vec3 normal = cross_vec3(tangents[0], tangents[1]);
-  if (!normalize_vec3(normal, &normal)) {
-    return false;  // Degenerate triangle
-  }
-  return dot_vec3(normal, sub_vec3(p, triangle->positions[0])) > 0;
-}
 
 f32 intersect_sphere_aux(Sphere* sphere, Ray ray) {
   Vec3 init = ray.init;
@@ -1275,9 +1278,13 @@ SceneHit intersect_with_ray_sphere(Sphere* sphere, Ray ray) {
   return hit;
 }
 
-bool is_inside_sphere(Sphere* sphere, Vec3 p) {
-  return distance_to_point_sphere(sphere, p) < 0;
+SceneHit intersect_with_ray_line(Line* line, Ray ray) {
+  SceneHit hit;
+  hit.hit = false;
+  hit.t = INFINITY;
+  return hit;
 }
+
 
 //========================================================================================
 /*                                                                                      *
@@ -1285,41 +1292,215 @@ bool is_inside_sphere(Sphere* sphere, Vec3 p) {
  *                                                                                      */
  //========================================================================================
 
+typedef struct {
+  AABB(*get_bounding_box)(SceneElem* elem);
+  Vec3(*normal_to_point)(SceneElem* elem, Vec3 point);
+  f32(*distance_to_point)(SceneElem* elem, Vec3 point);
+  SceneHit(*intersect_with_ray)(SceneElem* elem, Ray ray);
+} SceneElemVTable;
+
+struct SceneElem {
+  const SceneElemVTable* vtable;
+  GeometryType geometry_type;
+  union {
+    Triangle triangle;
+    Sphere sphere;
+    Line line;
+  } as;
+};
+
+static AABB _scene_elem_triangle_box(SceneElem* elem) {
+  return get_bounding_box_triangle(&elem->as.triangle);
+}
+
+static Vec3 _scene_elem_triangle_normal(SceneElem* elem, Vec3 point) {
+  return normal_to_point_triangle(&elem->as.triangle, point);
+}
+
+static f32 _scene_elem_triangle_distance(SceneElem* elem, Vec3 point) {
+  return distance_to_point_triangle(&elem->as.triangle, point);
+}
+
+static SceneHit _scene_elem_triangle_intersect(SceneElem* elem, Ray ray) {
+  SceneHit hit = intersect_with_ray_triangle(&elem->as.triangle, ray);
+  if (hit.hit) {
+    hit.scene_elem = elem;
+    hit.triangle = &elem->as.triangle;
+  }
+  return hit;
+}
+
+static AABB _scene_elem_sphere_box(SceneElem* elem) {
+  return get_bounding_box_sphere(&elem->as.sphere);
+}
+
+static Vec3 _scene_elem_sphere_normal(SceneElem* elem, Vec3 point) {
+  return normal_to_point_sphere(&elem->as.sphere, point);
+}
+
+static f32 _scene_elem_sphere_distance(SceneElem* elem, Vec3 point) {
+  return distance_to_point_sphere(&elem->as.sphere, point);
+}
+
+static SceneHit _scene_elem_sphere_intersect(SceneElem* elem, Ray ray) {
+  SceneHit hit = intersect_with_ray_sphere(&elem->as.sphere, ray);
+  if (hit.hit) {
+    hit.scene_elem = elem;
+    hit.sphere = &elem->as.sphere;
+  }
+  return hit;
+}
+
+static AABB _scene_elem_line_box(SceneElem* elem) {
+  Line* line = &elem->as.line;
+  Vec3 radius = vec3(line->radius, line->radius, line->radius);
+  Vec3 min = op_vec3(line->positions[0], line->positions[1], fminf);
+  Vec3 max = op_vec3(line->positions[0], line->positions[1], fmaxf);
+  return build_aabb(sub_vec3(min, radius), add_vec3(max, radius));
+}
+
+static Vec3 _scene_elem_line_normal(SceneElem* elem, Vec3 point) {
+  const f32 epsilon = 1e-6f;
+  f32 f = elem->vtable->distance_to_point(elem, point);
+  Vec3 grad = vec3(
+    elem->vtable->distance_to_point(elem, add_vec3(point, vec3(epsilon, 0, 0))) - f,
+    elem->vtable->distance_to_point(elem, add_vec3(point, vec3(0, epsilon, 0))) - f,
+    elem->vtable->distance_to_point(elem, add_vec3(point, vec3(0, 0, epsilon))) - f
+  );
+  normalize_vec3(grad, &grad);
+  return grad;
+}
+
+static f32 _scene_elem_line_distance(SceneElem* elem, Vec3 point) {
+  Line* line = &elem->as.line;
+  Vec3 a = line->positions[0];
+  Vec3 b = line->positions[1];
+  Vec3 ab = sub_vec3(b, a);
+  f32 denom = dot_vec3(ab, ab);
+  f32 t = denom == 0.0f ? 0.0f : dot_vec3(sub_vec3(point, a), ab) / denom;
+  t = clamp(t, 0.0f, 1.0f);
+  Vec3 closest = add_vec3(a, scale_vec3(ab, t));
+  return length_vec3(sub_vec3(point, closest)) - line->radius;
+}
+
+static SceneHit _scene_elem_line_intersect(SceneElem* elem, Ray ray) {
+  SceneHit hit = intersect_with_ray_line(&elem->as.line, ray);
+  if (hit.hit) {
+    hit.scene_elem = elem;
+  }
+  return hit;
+}
+
+static const SceneElemVTable TRIANGLE_SCENE_ELEM_VTABLE = {
+  .get_bounding_box = _scene_elem_triangle_box,
+  .normal_to_point = _scene_elem_triangle_normal,
+  .distance_to_point = _scene_elem_triangle_distance,
+  .intersect_with_ray = _scene_elem_triangle_intersect,
+};
+
+static const SceneElemVTable SPHERE_SCENE_ELEM_VTABLE = {
+  .get_bounding_box = _scene_elem_sphere_box,
+  .normal_to_point = _scene_elem_sphere_normal,
+  .distance_to_point = _scene_elem_sphere_distance,
+  .intersect_with_ray = _scene_elem_sphere_intersect,
+};
+
+static const SceneElemVTable LINE_SCENE_ELEM_VTABLE = {
+  .get_bounding_box = _scene_elem_line_box,
+  .normal_to_point = _scene_elem_line_normal,
+  .distance_to_point = _scene_elem_line_distance,
+  .intersect_with_ray = _scene_elem_line_intersect,
+};
+
+static inline SceneElem build_scene_elem_triangle(Triangle triangle) {
+  SceneElem elem;
+  elem.vtable = &TRIANGLE_SCENE_ELEM_VTABLE;
+  elem.geometry_type = TRIANGLE;
+  elem.as.triangle = triangle;
+  return elem;
+}
+
+static inline SceneElem build_scene_elem_sphere(Sphere sphere) {
+  SceneElem elem;
+  elem.vtable = &SPHERE_SCENE_ELEM_VTABLE;
+  elem.geometry_type = SPHERE;
+  elem.as.sphere = sphere;
+  return elem;
+}
+
+static inline SceneElem build_scene_elem_line(Line line) {
+  SceneElem elem;
+  elem.vtable = &LINE_SCENE_ELEM_VTABLE;
+  elem.geometry_type = LINE_GEOMETRY;
+  elem.as.line = line;
+  return elem;
+}
+
+static inline AABB get_bounding_box_scene_elem(SceneElem* elem) {
+  return elem->vtable->get_bounding_box(elem);
+}
+
+static inline Vec3 normal_to_point_scene_elem(SceneElem* elem, Vec3 point) {
+  return elem->vtable->normal_to_point(elem, point);
+}
+
+static inline f32 distance_to_point_scene_elem(SceneElem* elem, Vec3 point) {
+  return elem->vtable->distance_to_point(elem, point);
+}
+
+static inline SceneHit intersect_with_ray_scene_elem(SceneElem* elem, Ray ray) {
+  return elem->vtable->intersect_with_ray(elem, ray);
+}
+
 /* Forward declaration */
 typedef struct Scene Scene;
 
 /* Scene virtual table — every scene implementation provides these */
 typedef struct {
-  void     (*add_triangle)(Scene* self, Triangle triangle);
-  void     (*add_sphere)(Scene* self, Sphere sphere);
-  void     (*add_triangles)(Scene* self, Array triangles);
-  void     (*add_spheres)(Scene* self, Array spheres);
-  void     (*clear_triangles)(Scene* self);
-  void     (*clear_spheres)(Scene* self);
+  void     (*add_elem)(Scene* self, SceneElem elem);
+  void     (*add_elems)(Scene* self, Array elems);
+  void     (*clear_elems)(Scene* self);
+  void    (*clear_scene)(Scene* self);
   SceneHit(*intersect)(Scene* self, Ray ray);
-  Array* (*get_triangles)(Scene* self);
-  Array* (*get_spheres)(Scene* self);
+  Array* (*get_elems)(Scene* self);
   void     (*free_scene)(Scene* self);
   Scene* (*rebuild_scene)(Scene* self);
 } SceneVTable;
 
 /* Generic Scene — holds a vtable pointer and opaque data */
-typedef struct Scene {
+struct Scene {
   const SceneVTable* vtable;
   void* data;
-} Scene;
+};
 
 /* Generic Scene API */
-static inline void add_triangle_scene(Scene* s, Triangle t) { s->vtable->add_triangle(s, t); }
-static inline void add_sphere_scene(Scene* s, Sphere sp) { s->vtable->add_sphere(s, sp); }
-static inline void add_triangles_scene(Scene* s, Array triangles) { s->vtable->add_triangles(s, triangles); }
-static inline void add_spheres_scene(Scene* s, Array spheres) { s->vtable->add_spheres(s, spheres); }
-static inline void clear_triangles_scene(Scene* s) { s->vtable->clear_triangles(s); }
-static inline void clear_spheres_scene(Scene* s) { s->vtable->clear_spheres(s); }
+static inline void add_scene_elem_scene(Scene* s, SceneElem elem) { s->vtable->add_elem(s, elem); }
+static inline void add_scene_elems_scene(Scene* s, Array elems) { s->vtable->add_elems(s, elems); }
+static inline void clear_scene_elems_scene(Scene* s) { s->vtable->clear_elems(s); }
+static inline void clear_scene(Scene* s) { s->vtable->clear_scene(s); }
 static inline SceneHit intersect_scene(Scene* s, Ray ray) { return s->vtable->intersect(s, ray); }
-static inline Array* get_triangles_scene(Scene* s) { return s->vtable->get_triangles(s); }
-static inline Array* get_spheres_scene(Scene* s) { return s->vtable->get_spheres(s); }
+static inline Array* get_scene_elems_scene(Scene* s) { return s->vtable->get_elems(s); }
 static inline void free_scene(Scene* s) { s->vtable->free_scene(s); }
+
+static inline Array triangles_to_scene_elems(Array triangles) {
+  Array elems = new_array(triangles.length > 0 ? triangles.length : 4, sizeof(SceneElem));
+  for (u32 i = 0; i < triangles.length; i++) {
+    Triangle* triangle = (Triangle*)get_array_element(&triangles, i);
+    SceneElem elem = build_scene_elem_triangle(*triangle);
+    push_array(&elems, &elem);
+  }
+  return elems;
+}
+
+static inline Array lines_to_scene_elems(Array lines) {
+  Array elems = new_array(lines.length > 0 ? lines.length : 4, sizeof(SceneElem));
+  for (u32 i = 0; i < lines.length; i++) {
+    Line* line = (Line*)get_array_element(&lines, i);
+    SceneElem elem = build_scene_elem_line(*line);
+    push_array(&elems, &elem);
+  }
+  return elems;
+}
 
 //========================================================================================
 /*                                                                                      *
@@ -1328,70 +1509,38 @@ static inline void free_scene(Scene* s) { s->vtable->free_scene(s); }
  //========================================================================================
 
 typedef struct {
-  Array triangles;
-  Array spheres;
+  Array elems;
 } NaiveScene;
 
-NaiveScene add_triangle_naive_scene(NaiveScene* scene, Triangle triangle) {
-  if (scene->triangles.element_size == 0) {
-    scene->triangles = new_array(4, sizeof(Triangle));
+NaiveScene add_scene_elem_naive_scene(NaiveScene* scene, SceneElem elem) {
+  if (scene->elems.element_size == 0) {
+    scene->elems = new_array(4, sizeof(SceneElem));
   }
-  push_array(&scene->triangles, &triangle);
+  push_array(&scene->elems, &elem);
   return *scene;
 }
 
-NaiveScene add_sphere_naive_scene(NaiveScene* scene, Sphere sphere) {
-  if (scene->spheres.element_size == 0) {
-    scene->spheres = new_array(4, sizeof(Sphere));
-  }
-  push_array(&scene->spheres, &sphere);
-  return *scene;
-}
-
-NaiveScene add_spheres_naive_scene(NaiveScene* scene, Array spheres) {
-  for (u32 i = 0; i < spheres.length; i++) {
-    Sphere* sph = (Sphere*)get_array_element(&spheres, i);
-    add_sphere_naive_scene(scene, *sph);
+NaiveScene add_scene_elems_naive_scene(NaiveScene* scene, Array elems) {
+  for (u32 i = 0; i < elems.length; i++) {
+    SceneElem* elem = (SceneElem*)get_array_element(&elems, i);
+    add_scene_elem_naive_scene(scene, *elem);
   }
   return *scene;
 }
 
-NaiveScene add_triangles_naive_scene(NaiveScene* scene, Array triangles) {
-  for (u32 i = 0; i < triangles.length; i++) {
-    Triangle* tri = (Triangle*)get_array_element(&triangles, i);
-    add_triangle_naive_scene(scene, *tri);
-  }
+NaiveScene clear_scene_elems_naive_scene(NaiveScene* scene) {
+  clear_array(&scene->elems);
   return *scene;
 }
-
-NaiveScene clear_spheres_naive_scene(NaiveScene* scene) {
-  clear_array(&scene->spheres);
-  return *scene;
-}
-
-
-NaiveScene clear_triangles_naive_scene(NaiveScene* scene) {
-  clear_array(&scene->triangles);
-  return *scene;
-}
-
 
 SceneHit intersect_naive_scene(NaiveScene* scene, Ray ray) {
   SceneHit closest_hit;
   closest_hit.t = INFINITY;
   closest_hit.hit = false;
 
-  for (u32 i = 0; i < scene->triangles.length; i++) {
-    Triangle* tri = (Triangle*)get_array_element(&scene->triangles, i);
-    SceneHit hit = intersect_with_ray_triangle(tri, ray);
-    if (hit.t < closest_hit.t) {
-      closest_hit = hit;
-    }
-  }
-
-  for (u32 i = 0; i < scene->spheres.length; i++) {
-    Sphere* sph = (Sphere*)get_array_element(&scene->spheres, i);
-    SceneHit hit = intersect_with_ray_sphere(sph, ray);
+  for (u32 i = 0; i < scene->elems.length; i++) {
+    SceneElem* elem = (SceneElem*)get_array_element(&scene->elems, i);
+    SceneHit hit = intersect_with_ray_scene_elem(elem, ray);
     if (hit.t < closest_hit.t) {
       closest_hit = hit;
     }
@@ -1401,37 +1550,27 @@ SceneHit intersect_naive_scene(NaiveScene* scene, Ray ray) {
 }
 
 /* --- NaiveScene vtable wrappers --- */
-static void _naive_add_triangle(Scene* self, Triangle t) {
-  add_triangle_naive_scene((NaiveScene*)self->data, t);
+static void _naive_add_elem(Scene* self, SceneElem elem) {
+  add_scene_elem_naive_scene((NaiveScene*)self->data, elem);
 }
-static void _naive_add_sphere(Scene* self, Sphere sp) {
-  add_sphere_naive_scene((NaiveScene*)self->data, sp);
+static void _naive_add_elems(Scene* self, Array elems) {
+  add_scene_elems_naive_scene((NaiveScene*)self->data, elems);
 }
-static void _naive_add_triangles(Scene* self, Array triangles) {
-  add_triangles_naive_scene((NaiveScene*)self->data, triangles);
+static void _naive_clear_elems(Scene* self) {
+  clear_scene_elems_naive_scene((NaiveScene*)self->data);
 }
-static void _naive_add_spheres(Scene* self, Array spheres) {
-  add_spheres_naive_scene((NaiveScene*)self->data, spheres);
-}
-static void _naive_clear_triangles(Scene* self) {
-  clear_triangles_naive_scene((NaiveScene*)self->data);
-}
-static void _naive_clear_spheres(Scene* self) {
-  clear_spheres_naive_scene((NaiveScene*)self->data);
+static void _naive_clear_scene(Scene* self) {
+  clear_scene_elems_naive_scene((NaiveScene*)self->data);
 }
 static SceneHit _naive_intersect(Scene* self, Ray ray) {
   return intersect_naive_scene((NaiveScene*)self->data, ray);
 }
-static Array* _naive_get_triangles(Scene* self) {
-  return &((NaiveScene*)self->data)->triangles;
-}
-static Array* _naive_get_spheres(Scene* self) {
-  return &((NaiveScene*)self->data)->spheres;
+static Array* _naive_get_elems(Scene* self) {
+  return &((NaiveScene*)self->data)->elems;
 }
 static void _naive_free_scene(Scene* self) {
   NaiveScene* ns = (NaiveScene*)self->data;
-  if (ns->triangles.data) free_array(&ns->triangles);
-  if (ns->spheres.data) free_array(&ns->spheres);
+  if (ns->elems.data) free_array(&ns->elems);
   free(ns);
   self->data = NULL;
 }
@@ -1442,15 +1581,12 @@ static Scene* _naive_rebuild_scene(Scene* self) {
 }
 
 static const SceneVTable NAIVE_SCENE_VTABLE = {
-  .add_triangle = _naive_add_triangle,
-  .add_sphere = _naive_add_sphere,
-  .add_triangles = _naive_add_triangles,
-  .add_spheres = _naive_add_spheres,
-  .clear_triangles = _naive_clear_triangles,
-  .clear_spheres = _naive_clear_spheres,
+  .add_elem = _naive_add_elem,
+  .add_elems = _naive_add_elems,
+  .clear_elems = _naive_clear_elems,
+  .clear_scene = _naive_clear_scene,
   .intersect = _naive_intersect,
-  .get_triangles = _naive_get_triangles,
-  .get_spheres = _naive_get_spheres,
+  .get_elems = _naive_get_elems,
   .free_scene = _naive_free_scene,
   .rebuild_scene = _naive_rebuild_scene
 };
@@ -1475,8 +1611,7 @@ typedef struct NodeKScene {
       struct NodeKScene* right;
     };
     struct {
-      Array triangles; // only valid if is_leaf is true
-      Array spheres;   // only valid if is_leaf is true
+      Array elems; // only valid if is_leaf is true
     };
   };
 } NodeKScene;
@@ -1488,8 +1623,7 @@ static NodeKScene* new_node_k_scene(u32 k) {
   node->box = EMPTY_AABB;
   node->is_leaf = true;
   node->num_of_primitives = 0;
-  node->triangles = new_array(4, sizeof(Triangle));
-  node->spheres = new_array(4, sizeof(Sphere));
+  node->elems = new_array(4, sizeof(SceneElem));
   return node;
 }
 
@@ -1506,8 +1640,7 @@ static NodeKScene* join_node_k_scene(NodeKScene* scene, NodeKScene* node_or_leaf
 static void free_node_k_scene(NodeKScene* node) {
   if (!node) return;
   if (node->is_leaf) {
-    if (node->triangles.data) free_array(&node->triangles);
-    if (node->spheres.data) free_array(&node->spheres);
+    if (node->elems.data) free_array(&node->elems);
   }
   else {
     free_node_k_scene(node->left);
@@ -1521,8 +1654,7 @@ static void free_node_k_scene(NodeKScene* node) {
  */
 typedef struct {
   Vec3 center;
-  bool is_triangle; // true = triangle, false = sphere
-  u32 index;        // index into the leaf's triangles or spheres array
+  u32 index;
 } PrimRef;
 
 /**
@@ -1607,14 +1739,10 @@ static void split_node_k_scene(NodeKScene* node, u32 k) {
   PrimRef* refs = (PrimRef*)malloc(total * sizeof(PrimRef));
   u32 idx = 0;
 
-  for (u32 i = 0; i < node->triangles.length; i++) {
-    Triangle* tri = (Triangle*)get_array_element(&node->triangles, i);
-    AABB tri_box = get_bounding_box_triangle(tri);
-    refs[idx++] = (PrimRef){ .center = tri_box.center, .is_triangle = true, .index = i };
-  }
-  for (u32 i = 0; i < node->spheres.length; i++) {
-    Sphere* sph = (Sphere*)get_array_element(&node->spheres, i);
-    refs[idx++] = (PrimRef){ .center = sph->position, .is_triangle = false, .index = i };
+  for (u32 i = 0; i < node->elems.length; i++) {
+    SceneElem* elem = (SceneElem*)get_array_element(&node->elems, i);
+    AABB box = get_bounding_box_scene_elem(elem);
+    refs[idx++] = (PrimRef){ .center = box.center, .index = i };
   }
 
   // Cluster into two groups
@@ -1629,42 +1757,25 @@ static void split_node_k_scene(NodeKScene* node, u32 k) {
   // Populate left
   for (u32 i = 0; i < group_a.length; i++) {
     PrimRef* ref = (PrimRef*)get_array_element(&group_a, i);
-    if (ref->is_triangle) {
-      Triangle* tri = (Triangle*)get_array_element(&node->triangles, ref->index);
-      push_array(&left->triangles, tri);
-      AABB tri_box = get_bounding_box_triangle(tri);
-      left->box = union_aabb(&left->box, &tri_box);
-    }
-    else {
-      Sphere* sph = (Sphere*)get_array_element(&node->spheres, ref->index);
-      push_array(&left->spheres, sph);
-      AABB sph_box = get_bounding_box_sphere(sph);
-      left->box = union_aabb(&left->box, &sph_box);
-    }
+    SceneElem* elem = (SceneElem*)get_array_element(&node->elems, ref->index);
+    push_array(&left->elems, elem);
+    AABB box = get_bounding_box_scene_elem(elem);
+    left->box = union_aabb(&left->box, &box);
     left->num_of_primitives++;
   }
 
   // Populate right
   for (u32 i = 0; i < group_b.length; i++) {
     PrimRef* ref = (PrimRef*)get_array_element(&group_b, i);
-    if (ref->is_triangle) {
-      Triangle* tri = (Triangle*)get_array_element(&node->triangles, ref->index);
-      push_array(&right->triangles, tri);
-      AABB tri_box = get_bounding_box_triangle(tri);
-      right->box = union_aabb(&right->box, &tri_box);
-    }
-    else {
-      Sphere* sph = (Sphere*)get_array_element(&node->spheres, ref->index);
-      push_array(&right->spheres, sph);
-      AABB sph_box = get_bounding_box_sphere(sph);
-      right->box = union_aabb(&right->box, &sph_box);
-    }
+    SceneElem* elem = (SceneElem*)get_array_element(&node->elems, ref->index);
+    push_array(&right->elems, elem);
+    AABB box = get_bounding_box_scene_elem(elem);
+    right->box = union_aabb(&right->box, &box);
     right->num_of_primitives++;
   }
 
   // Free old leaf arrays before overwriting the union
-  if (node->triangles.data) free_array(&node->triangles);
-  if (node->spheres.data) free_array(&node->spheres);
+  if (node->elems.data) free_array(&node->elems);
 
   // Convert to internal node
   node->is_leaf = false;
@@ -1677,16 +1788,16 @@ static void split_node_k_scene(NodeKScene* node, u32 k) {
 }
 
 /**
- * Add a triangle to a node (recursive, splits when leaf exceeds k).
+ * Add a primitive to a node (recursive, splits when leaf exceeds k).
  * Port of JS Node.add().
  */
-static void add_triangle_node_k_scene(NodeKScene* node, Triangle triangle, u32 k) {
+static void add_scene_elem_node_k_scene(NodeKScene* node, SceneElem elem, u32 k) {
   node->num_of_primitives++;
-  AABB tri_box = get_bounding_box_triangle(&triangle);
-  node->box = union_aabb(&node->box, &tri_box);
+  AABB box = get_bounding_box_scene_elem(&elem);
+  node->box = union_aabb(&node->box, &box);
 
   if (node->is_leaf) {
-    push_array(&node->triangles, &triangle);
+    push_array(&node->elems, &elem);
 
     if (node->num_of_primitives > k) {
       split_node_k_scene(node, k);
@@ -1694,40 +1805,13 @@ static void add_triangle_node_k_scene(NodeKScene* node, Triangle triangle, u32 k
   }
   else {
     // Insert into closer child
-    f32 dist_left = box_distance_aabb(&node->left->box, &tri_box);
-    f32 dist_right = box_distance_aabb(&node->right->box, &tri_box);
+    f32 dist_left = box_distance_aabb(&node->left->box, &box);
+    f32 dist_right = box_distance_aabb(&node->right->box, &box);
     if (dist_left <= dist_right) {
-      add_triangle_node_k_scene(node->left, triangle, k);
+      add_scene_elem_node_k_scene(node->left, elem, k);
     }
     else {
-      add_triangle_node_k_scene(node->right, triangle, k);
-    }
-  }
-}
-
-/**
- * Add a sphere to a node (recursive, splits when leaf exceeds k).
- */
-static void add_sphere_node_k_scene(NodeKScene* node, Sphere sphere, u32 k) {
-  node->num_of_primitives++;
-  AABB sph_box = get_bounding_box_sphere(&sphere);
-  node->box = union_aabb(&node->box, &sph_box);
-
-  if (node->is_leaf) {
-    push_array(&node->spheres, &sphere);
-
-    if (node->num_of_primitives > k) {
-      split_node_k_scene(node, k);
-    }
-  }
-  else {
-    f32 dist_left = box_distance_aabb(&node->left->box, &sph_box);
-    f32 dist_right = box_distance_aabb(&node->right->box, &sph_box);
-    if (dist_left <= dist_right) {
-      add_sphere_node_k_scene(node->left, sphere, k);
-    }
-    else {
-      add_sphere_node_k_scene(node->right, sphere, k);
+      add_scene_elem_node_k_scene(node->right, elem, k);
     }
   }
 }
@@ -1738,17 +1822,10 @@ static void add_sphere_node_k_scene(NodeKScene* node, Sphere sphere, u32 k) {
 static SceneHit leaf_intersect_node_k_scene(NodeKScene* node, Ray ray) {
   SceneHit closest = { .hit = false, .t = INFINITY };
 
-  if (node->triangles.data) {
-    for (u32 i = 0; i < node->triangles.length; i++) {
-      Triangle* tri = (Triangle*)get_array_element(&node->triangles, i);
-      SceneHit hit = intersect_with_ray_triangle(tri, ray);
-      if (hit.hit && hit.t < closest.t) closest = hit;
-    }
-  }
-  if (node->spheres.data) {
-    for (u32 i = 0; i < node->spheres.length; i++) {
-      Sphere* sph = (Sphere*)get_array_element(&node->spheres, i);
-      SceneHit hit = intersect_with_ray_sphere(sph, ray);
+  if (node->elems.data) {
+    for (u32 i = 0; i < node->elems.length; i++) {
+      SceneElem* elem = (SceneElem*)get_array_element(&node->elems, i);
+      SceneHit hit = intersect_with_ray_scene_elem(elem, ray);
       if (hit.hit && hit.t < closest.t) closest = hit;
     }
   }
@@ -1792,55 +1869,32 @@ static SceneHit intersect_node_k_scene(NodeKScene* node, Ray ray) {
 /* --- KScene --- */
 
 typedef struct {
-  Array triangles;
-  Array spheres;
+  Array elems;
   u32 k; // max number of primitives per leaf
   NodeKScene* root;
 } KScene;
 
 /* --- KScene implementation functions --- */
 
-static void add_triangle_kscene(KScene* ks, Triangle triangle) {
-  if (ks->triangles.element_size == 0) {
-    ks->triangles = new_array(4, sizeof(Triangle));
+static void add_scene_elem_kscene(KScene* ks, SceneElem elem) {
+  if (ks->elems.element_size == 0) {
+    ks->elems = new_array(4, sizeof(SceneElem));
   }
-  push_array(&ks->triangles, &triangle);
+  push_array(&ks->elems, &elem);
 
   if (!ks->root) ks->root = new_node_k_scene(ks->k);
-  add_triangle_node_k_scene(ks->root, triangle, ks->k);
+  add_scene_elem_node_k_scene(ks->root, elem, ks->k);
 }
 
-static void add_sphere_kscene(KScene* ks, Sphere sphere) {
-  if (ks->spheres.element_size == 0) {
-    ks->spheres = new_array(4, sizeof(Sphere));
-  }
-  push_array(&ks->spheres, &sphere);
-
-  if (!ks->root) ks->root = new_node_k_scene(ks->k);
-  add_sphere_node_k_scene(ks->root, sphere, ks->k);
-}
-
-static void add_triangles_kscene(KScene* ks, Array triangles) {
-  for (u32 i = 0; i < triangles.length; i++) {
-    Triangle* tri = (Triangle*)get_array_element(&triangles, i);
-    add_triangle_kscene(ks, *tri);
+static void add_scene_elems_kscene(KScene* ks, Array elems) {
+  for (u32 i = 0; i < elems.length; i++) {
+    SceneElem* elem = (SceneElem*)get_array_element(&elems, i);
+    add_scene_elem_kscene(ks, *elem);
   }
 }
 
-static void add_spheres_kscene(KScene* ks, Array spheres) {
-  for (u32 i = 0; i < spheres.length; i++) {
-    Sphere* sph = (Sphere*)get_array_element(&spheres, i);
-    add_sphere_kscene(ks, *sph);
-  }
-}
-
-static void clear_triangles_kscene(KScene* ks) {
-  if (ks->triangles.data) clear_array(&ks->triangles);
-  if (ks->root) { free_node_k_scene(ks->root); ks->root = NULL; }
-}
-
-static void clear_spheres_kscene(KScene* ks) {
-  if (ks->spheres.data) clear_array(&ks->spheres);
+static void clear_scene_elems_kscene(KScene* ks) {
+  if (ks->elems.data) clear_array(&ks->elems);
   if (ks->root) { free_node_k_scene(ks->root); ks->root = NULL; }
 }
 
@@ -1849,17 +1903,12 @@ static SceneHit intersect_kscene(KScene* ks, Ray ray) {
   return intersect_node_k_scene(ks->root, ray);
 }
 
-static Array* get_triangles_kscene(KScene* ks) {
-  return &ks->triangles;
-}
-
-static Array* get_spheres_kscene(KScene* ks) {
-  return &ks->spheres;
+static Array* get_scene_elems_kscene(KScene* ks) {
+  return &ks->elems;
 }
 
 static void free_kscene(KScene* ks) {
-  if (ks->triangles.data) free_array(&ks->triangles);
-  if (ks->spheres.data) free_array(&ks->spheres);
+  if (ks->elems.data) free_array(&ks->elems);
   if (ks->root) { free_node_k_scene(ks->root); ks->root = NULL; }
 }
 
@@ -1892,16 +1941,9 @@ static AABB _compute_group_box(Array* group, KScene* ks) {
   AABB box = EMPTY_AABB;
   for (u32 i = 0; i < group->length; i++) {
     PrimRef* ref = (PrimRef*)get_array_element(group, i);
-    if (ref->is_triangle) {
-      Triangle* tri = (Triangle*)get_array_element(&ks->triangles, ref->index);
-      AABB tri_box = get_bounding_box_triangle(tri);
-      box = union_aabb(&box, &tri_box);
-    }
-    else {
-      Sphere* sph = (Sphere*)get_array_element(&ks->spheres, ref->index);
-      AABB sph_box = get_bounding_box_sphere(sph);
-      box = union_aabb(&box, &sph_box);
-    }
+    SceneElem* elem = (SceneElem*)get_array_element(&ks->elems, ref->index);
+    AABB elem_box = get_bounding_box_scene_elem(elem);
+    box = union_aabb(&box, &elem_box);
   }
   return box;
 }
@@ -1917,7 +1959,7 @@ static AABB _compute_group_box(Array* group, KScene* ks) {
  *  4. Bottom-up merge: repeatedly join the closest pair of nodes.
  */
 static KScene rebuild_kscene(KScene* ks) {
-  u32 total = ks->triangles.length + ks->spheres.length;
+  u32 total = ks->elems.length;
   if (total == 0) return *ks;
 
   // Free old tree
@@ -1930,18 +1972,11 @@ static KScene rebuild_kscene(KScene* ks) {
   AABB overall_box = EMPTY_AABB;
   Array all_refs = new_array(total, sizeof(PrimRef));
 
-  for (u32 i = 0; i < ks->triangles.length; i++) {
-    Triangle* tri = (Triangle*)get_array_element(&ks->triangles, i);
-    AABB tri_box = get_bounding_box_triangle(tri);
-    overall_box = union_aabb(&overall_box, &tri_box);
-    PrimRef ref = { .center = tri_box.center, .is_triangle = true, .index = i };
-    push_array(&all_refs, &ref);
-  }
-  for (u32 i = 0; i < ks->spheres.length; i++) {
-    Sphere* sph = (Sphere*)get_array_element(&ks->spheres, i);
-    AABB sph_box = get_bounding_box_sphere(sph);
-    overall_box = union_aabb(&overall_box, &sph_box);
-    PrimRef ref = { .center = sph->position, .is_triangle = false, .index = i };
+  for (u32 i = 0; i < ks->elems.length; i++) {
+    SceneElem* elem = (SceneElem*)get_array_element(&ks->elems, i);
+    AABB elem_box = get_bounding_box_scene_elem(elem);
+    overall_box = union_aabb(&overall_box, &elem_box);
+    PrimRef ref = { .center = elem_box.center, .index = i };
     push_array(&all_refs, &ref);
   }
 
@@ -1991,18 +2026,10 @@ static KScene rebuild_kscene(KScene* ks) {
     NodeKScene* node = new_node_k_scene(ks->k);
     for (u32 i = 0; i < group->length; i++) {
       PrimRef* ref = (PrimRef*)get_array_element(group, i);
-      if (ref->is_triangle) {
-        Triangle* tri = (Triangle*)get_array_element(&ks->triangles, ref->index);
-        push_array(&node->triangles, tri);
-        AABB tri_box = get_bounding_box_triangle(tri);
-        node->box = union_aabb(&node->box, &tri_box);
-      }
-      else {
-        Sphere* sph = (Sphere*)get_array_element(&ks->spheres, ref->index);
-        push_array(&node->spheres, sph);
-        AABB sph_box = get_bounding_box_sphere(sph);
-        node->box = union_aabb(&node->box, &sph_box);
-      }
+      SceneElem* elem = (SceneElem*)get_array_element(&ks->elems, ref->index);
+      push_array(&node->elems, elem);
+      AABB elem_box = get_bounding_box_scene_elem(elem);
+      node->box = union_aabb(&node->box, &elem_box);
       node->num_of_primitives++;
     }
     node_stack[node_count++] = node;
@@ -2053,32 +2080,23 @@ static KScene rebuild_kscene(KScene* ks) {
 
 /* --- KScene vtable wrappers --- */
 
-static void _kscene_add_triangle(Scene* self, Triangle t) {
-  add_triangle_kscene((KScene*)self->data, t);
+static void _kscene_add_elem(Scene* self, SceneElem elem) {
+  add_scene_elem_kscene((KScene*)self->data, elem);
 }
-static void _kscene_add_sphere(Scene* self, Sphere sp) {
-  add_sphere_kscene((KScene*)self->data, sp);
+static void _kscene_add_elems(Scene* self, Array elems) {
+  add_scene_elems_kscene((KScene*)self->data, elems);
 }
-static void _kscene_add_triangles(Scene* self, Array triangles) {
-  add_triangles_kscene((KScene*)self->data, triangles);
+static void _kscene_clear_elems(Scene* self) {
+  clear_scene_elems_kscene((KScene*)self->data);
 }
-static void _kscene_add_spheres(Scene* self, Array spheres) {
-  add_spheres_kscene((KScene*)self->data, spheres);
-}
-static void _kscene_clear_triangles(Scene* self) {
-  clear_triangles_kscene((KScene*)self->data);
-}
-static void _kscene_clear_spheres(Scene* self) {
-  clear_spheres_kscene((KScene*)self->data);
+static void _kscene_clear_scene(Scene* self) {
+  clear_scene_elems_kscene((KScene*)self->data);
 }
 static SceneHit _kscene_intersect(Scene* self, Ray ray) {
   return intersect_kscene((KScene*)self->data, ray);
 }
-static Array* _kscene_get_triangles(Scene* self) {
-  return get_triangles_kscene((KScene*)self->data);
-}
-static Array* _kscene_get_spheres(Scene* self) {
-  return get_spheres_kscene((KScene*)self->data);
+static Array* _kscene_get_elems(Scene* self) {
+  return get_scene_elems_kscene((KScene*)self->data);
 }
 static void _kscene_free_scene(Scene* self) {
   KScene* ks = (KScene*)self->data;
@@ -2094,15 +2112,12 @@ static Scene* _kscene_rebuild_scene(Scene* self) {
 }
 
 static const SceneVTable KSCENE_VTABLE = {
-  .add_triangle = _kscene_add_triangle,
-  .add_sphere = _kscene_add_sphere,
-  .add_triangles = _kscene_add_triangles,
-  .add_spheres = _kscene_add_spheres,
-  .clear_triangles = _kscene_clear_triangles,
-  .clear_spheres = _kscene_clear_spheres,
+  .add_elem = _kscene_add_elem,
+  .add_elems = _kscene_add_elems,
+  .clear_elems = _kscene_clear_elems,
+  .clear_scene = _kscene_clear_scene,
   .intersect = _kscene_intersect,
-  .get_triangles = _kscene_get_triangles,
-  .get_spheres = _kscene_get_spheres,
+  .get_elems = _kscene_get_elems,
   .free_scene = _kscene_free_scene,
   .rebuild_scene = _kscene_rebuild_scene,
 };
@@ -2115,6 +2130,7 @@ Scene new_kscene(u32 k) {
   ks->k = k;
   return (Scene) { .vtable = &KSCENE_VTABLE, .data = ks };
 }
+
 
 //========================================================================================
 /*                                                                                      *
@@ -3604,7 +3620,7 @@ void raster_triangle(RasterTriangleInput* input) {
   u32 outFrustum[3];
   u32 outFrustumCount = 0;
   for (u32 i = 0; i < 3; i++) {
-    if (points_in_cam_coords[i].z < 0 ) {
+    if (points_in_cam_coords[i].z < 0) {
       outFrustum[outFrustumCount++] = i;
     }
     else {
@@ -3768,27 +3784,29 @@ Tela* raster_scene(Scene* scene, RasterParams params) {
   u32 buffer_length = w * h;
   f32 z_buffer[buffer_length];
   for (u32 i = 0; i < buffer_length; i++) { z_buffer[i] = INFINITY; }
-  Array* triangles = get_triangles_scene(scene);
-  for (u32 i = 0; i < triangles->length; i++) {
-    Triangle* triangle = (Triangle*)get_array_element(triangles, i);
-    raster_triangle(&(RasterTriangleInput) {
-      .triangle = triangle,
-        .camera = camera,
-        .tela = tela,
-        .params = &params,
-        .zBuffer = z_buffer
-    });
-  }
-  Array* spheres = get_spheres_scene(scene);
-  for (u32 i = 0; i < spheres->length; i++) {
-    Sphere* sphere = (Sphere*)get_array_element(spheres, i);
-    raster_sphere(&(RasterSphereInput) {
-      .sphere = sphere,
-        .camera = camera,
-        .tela = tela,
-        .params = &params,
-        .zBuffer = z_buffer
-    });
+  Array* elems = get_scene_elems_scene(scene);
+  for (u32 i = 0; i < elems->length; i++) {
+    SceneElem* elem = (SceneElem*)get_array_element(elems, i);
+    if (elem->geometry_type == TRIANGLE) {
+      Triangle* triangle = &elem->as.triangle;
+      raster_triangle(&(RasterTriangleInput) {
+        .triangle = triangle,
+          .camera = camera,
+          .tela = tela,
+          .params = &params,
+          .zBuffer = z_buffer
+      });
+    }
+    else if (elem->geometry_type == SPHERE) {
+      Sphere* sphere = &elem->as.sphere;
+      raster_sphere(&(RasterSphereInput) {
+        .sphere = sphere,
+          .camera = camera,
+          .tela = tela,
+          .params = &params,
+          .zBuffer = z_buffer
+      });
+    }
   }
   return tela;
 }

@@ -173,7 +173,7 @@ int main(void) {
         "./assets/rocks.obj",
     };
     // Load mesh
-    u32 mesh_index = 7;
+    u32 mesh_index = 0;
     String obj = io_read_file(obj_files[mesh_index]);
     Mesh mesh = read_obj_mesh(obj, "mesh");
 
@@ -189,7 +189,12 @@ int main(void) {
 
     // Build scene from spheres
     Scene scene = new_naive_scene();
-    add_spheres_scene(&scene, get_spheres_mesh(&mesh, SPHERE_RADIUS));
+    Array mesh_spheres = get_spheres_mesh(&mesh, SPHERE_RADIUS);
+        for (u32 i = 0; i < mesh_spheres.length; i++) {
+            Sphere* sphere = (Sphere*)get_array_element(&mesh_spheres, i);
+            add_scene_elem_scene(&scene, build_scene_elem_sphere(*sphere));
+        }
+    free_array(&mesh_spheres);
 
     App app = {
         .tela = tela,

@@ -140,12 +140,12 @@ int main(void) {
     };
 
     Scene scene = new_naive_scene();
-    add_triangle_scene(
+    add_scene_elem_scene(
         &scene,
-        (Triangle) {
-        .positions = { vec3(1, 0, 0), vec3(0, 1, 0), vec3(0, 0, 1) },
-            .props = &tri_props
-        }
+        build_scene_elem_triangle((Triangle) {
+          .positions = { vec3(1, 0, 0), vec3(0, 1, 0), vec3(0, 0, 1) },
+          .props = &tri_props
+        })
     );
 
     // Application state

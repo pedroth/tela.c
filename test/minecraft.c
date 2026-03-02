@@ -172,7 +172,9 @@ int main(void) {
 
     // Build scene
     Scene scene = new_naive_scene();
-    add_triangles_scene(&scene, get_triangles_mesh(&mesh));
+    Array mesh_elems = triangles_to_scene_elems(get_triangles_mesh(&mesh));
+    add_scene_elems_scene(&scene, mesh_elems);
+    free_array(&mesh_elems);
 
     // Application state
     App app = {
