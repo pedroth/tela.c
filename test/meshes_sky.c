@@ -175,8 +175,7 @@ static void load_mesh(App* app, i32 index) {
   if (index < 0 || (u32)index >= MESH_COUNT) return;
 
   /* Read and parse OBJ */
-  // String obj = io_read_file(MESH_TABLE[index].mesh_path);
-  String obj = io_read_file(MESH_TABLE[7].mesh_path);
+  String obj = io_read_file(MESH_TABLE[index].mesh_path);
   Mesh   mesh = read_obj_mesh(obj, "mesh");
 
   /* Normalize to fit inside a unit cube, then place at scene center */
@@ -193,8 +192,7 @@ static void load_mesh(App* app, i32 index) {
 
   /* Optional texture */
   if (MESH_TABLE[index].texture_path != NULL) {
-    // add_texture_mesh(&mesh, io_read_image(MESH_TABLE[index].texture_path));
-    add_texture_mesh(&mesh, io_read_image(MESH_TABLE[7].texture_path));
+    add_texture_mesh(&mesh, io_read_image(MESH_TABLE[index].texture_path));
   }
 
   /* Assign diffuse material to every triangle */
