@@ -2188,22 +2188,31 @@ static Vec3 normal_to_point_kscene(KScene* ks, Vec3 point, f32 (*my_min)(f32, f3
     SceneElem** elem_ptr = (SceneElem**)get_array_element(&near_elems, i);
     SceneElem* elem = *elem_ptr;
     f32 d = distance_to_point_scene_elem(elem, point);
-    if (fabsf(d) < 1e-6f) continue;
     Vec3 n = normal_to_point_scene_elem(elem, point);
-    f32 w = 1.0f / d;
+    if (d < 0.0f) n = scale_vec3(n, -1.0f);
+    f32 safe_d = (fabsf(d) < 1e-4f) ? (d < 0.0f ? -1e-4f : 1e-4f) : d;
+    f32 w = 1.0f / safe_d;
     normal = add_vec3(normal, scale_vec3(n, w));
     weight += w;
   }
 
   if (near_elems.data) free_array(&near_elems);
 
-  if (weight != 0.0f && length_vec3(normal) > 0.0f) {
+  if (fabsf(weight) > 1e-10f && length_vec3(normal) > 0.0f) {
     Vec3 out = scale_vec3(normal, 1.0f / weight);
     if (normalize_vec3(out, &out)) return out;
   }
 
-  NaiveScene ns = { .elems = ks->elems };
-  return normal_to_point_naive_scene(&ns, point, NULL);
+  const f32 epsilon = 1e-3f;
+  f32 f  = distance_to_point_kscene(ks, point, my_min);
+  Vec3 grad = vec3(
+    distance_to_point_kscene(ks, add_vec3(point, vec3(epsilon, 0, 0)), my_min) - f,
+    distance_to_point_kscene(ks, add_vec3(point, vec3(0, epsilon, 0)), my_min) - f,
+    distance_to_point_kscene(ks, add_vec3(point, vec3(0, 0, epsilon)), my_min) - f
+  );
+  Vec3 out = vec3(0, 0, 1);
+  normalize_vec3(grad, &out);
+  return out;
 }
 
 static f32 distance_on_ray_kscene(KScene* ks, Ray ray, f32 (*my_min)(f32, f32)) {
