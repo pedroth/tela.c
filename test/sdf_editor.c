@@ -2,6 +2,8 @@
 
 static const u32 WIDTH = 640;
 static const u32 HEIGHT = 480;
+static const f32 BALL_RADIUS = 0.25f;
+static const f32 MIN_PLACEMENT_CLEARANCE = 0.0001f;
 
 typedef struct {
 	Tela* tela;
@@ -36,7 +38,11 @@ static void add_ball_from_screen(App* app, i32 x, i32 y) {
 	if (fabsf(denom) > 1e-8f) {
 		const f32 t = -dot_vec3(normal, ray.init) / denom;
 		const Vec3 p = trace_ray(ray, t);
-		Sphere sphere = build_sphere(p, 0.25f);
+		// const f32 occupied_distance = distance_to_point_scene(&app->scene, p, fminf);
+		// if (occupied_distance < MIN_PLACEMENT_CLEARANCE) {
+		// 	return;
+		// }
+		Sphere sphere = build_sphere(p, BALL_RADIUS);
 		SceneElem elem = build_scene_elem_sphere(sphere);
 		add_scene_elem_scene(&app->scene, elem);
 		app->ball_id += 1;
