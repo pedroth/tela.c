@@ -1492,6 +1492,16 @@ static inline Array triangles_to_scene_elems(Array triangles) {
   return elems;
 }
 
+static inline Array spheres_to_scene_elems(Array spheres) {
+  Array elems = new_array(spheres.length > 0 ? spheres.length : 4, sizeof(SceneElem));
+  for (u32 i = 0; i < spheres.length; i++) {
+    Sphere* sphere = (Sphere*)get_array_element(&spheres, i);
+    SceneElem elem = build_scene_elem_sphere(*sphere);
+    push_array(&elems, &elem);
+  }
+  return elems;
+}
+
 static inline Array lines_to_scene_elems(Array lines) {
   Array elems = new_array(lines.length > 0 ? lines.length : 4, sizeof(SceneElem));
   for (u32 i = 0; i < lines.length; i++) {
@@ -3620,7 +3630,7 @@ void raster_triangle(RasterTriangleInput* input) {
   u32 outFrustum[3];
   u32 outFrustumCount = 0;
   for (u32 i = 0; i < 3; i++) {
-    if (points_in_cam_coords[i].z < 0) {
+    if (points_in_cam_coords[i].z < distanceToPlane) {
       outFrustum[outFrustumCount++] = i;
     }
     else {

@@ -190,11 +190,10 @@ int main(void) {
     // Build scene from spheres
     Scene scene = new_naive_scene();
     Array mesh_spheres = get_spheres_mesh(&mesh, SPHERE_RADIUS);
-        for (u32 i = 0; i < mesh_spheres.length; i++) {
-            Sphere* sphere = (Sphere*)get_array_element(&mesh_spheres, i);
-            add_scene_elem_scene(&scene, build_scene_elem_sphere(*sphere));
-        }
+    Array mesh_elems = spheres_to_scene_elems(mesh_spheres);
+    add_scene_elems_scene(&scene, mesh_elems);
     free_array(&mesh_spheres);
+    free_array(&mesh_elems);
 
     App app = {
         .tela = tela,
