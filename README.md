@@ -27,6 +27,11 @@ It is a port of [tela.js](https://github.com/pedroth/tela.js), made with the hel
 
 Install sdl2 in your system, download and include `src/index.c` in your file, then compile it using _clang_ or any C compiler, linking the SDL2 library and math library. 
 
+> To install SDL2 on Ubuntu:
+>```bash
+>sudo apt-get install libsdl2-dev
+>```
+
 // minor c example to create a window and render something on it using tela.c:
 
 ```c
@@ -38,6 +43,16 @@ Install sdl2 in your system, download and include `src/index.c` in your file, th
 
 Then compile it using:
 ```bash
+gcc -O3 -fopenmp -o <app_name> test/<app_name>.c -lSDL2 -lm
+```
+
+Example:
+```bash
+gcc -O3 -fopenmp -o app test/summer_forest_raytrace.c -lSDL2 -lm
+```
+
+<!-- 
+```bash
 clang -o my_app my_app.c -lSDL2 -lm
 ```
 
@@ -48,7 +63,7 @@ clang -O3 -o my_app my_app.c -lSDL2 -lm
 or 
 ```bash
 clang -O3 -march=native -ffast-math -o my_app my_app.c -lSDL2 -lm
-```
+``` -->
 
 
 ## Generate images and videos
@@ -76,7 +91,6 @@ ffmpeg -version
 
 - [Keenan's 3D Model Repository](https://www.cs.cmu.edu/~kmcrane/Projects/ModelRepository/)
 - [The models resource](https://www.models-resource.com/)
-- [otaviogood fonts](https://github.com/otaviogood/shader_fontgen)
 - [tela.js](https://github.com/pedroth/tela.js)
 
 

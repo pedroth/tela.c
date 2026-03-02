@@ -957,6 +957,10 @@ typedef struct {
   void* props;
 } Line;
 
+typedef struct {
+  Color colors[2];
+} LineProps;
+
 Line build_line(Vec3 p1, Vec3 p2) {
   Line line;
   line.positions[0] = p1;
@@ -1462,6 +1466,10 @@ typedef struct {
   void     (*clear_elems)(Scene* self);
   void    (*clear_scene)(Scene* self);
   SceneHit(*intersect)(Scene* self, Ray ray);
+  Vec3   (*normal_to_point)(Scene* self, Vec3 point, f32 (*my_min)(f32, f32));
+  f32    (*distance_to_point)(Scene* self, Vec3 point, f32 (*my_min)(f32, f32));
+  f32    (*distance_on_ray)(Scene* self, Ray ray, f32 (*my_min)(f32, f32));
+  void    (*debug)(Scene* self, void* props);
   Array* (*get_elems)(Scene* self);
   void     (*free_scene)(Scene* self);
   Scene* (*rebuild_scene)(Scene* self);
@@ -1479,8 +1487,23 @@ static inline void add_scene_elems_scene(Scene* s, Array elems) { s->vtable->add
 static inline void clear_scene_elems_scene(Scene* s) { s->vtable->clear_elems(s); }
 static inline void clear_scene(Scene* s) { s->vtable->clear_scene(s); }
 static inline SceneHit intersect_scene(Scene* s, Ray ray) { return s->vtable->intersect(s, ray); }
+static inline Vec3 normal_to_point_scene(Scene* s, Vec3 point, f32 (*my_min)(f32, f32)) { return s->vtable->normal_to_point(s, point, my_min); }
+static inline f32 distance_to_point_scene(Scene* s, Vec3 point, f32 (*my_min)(f32, f32)) { return s->vtable->distance_to_point(s, point, my_min); }
+static inline f32 distance_on_ray_scene(Scene* s, Ray ray, f32 (*my_min)(f32, f32)) { return s->vtable->distance_on_ray(s, ray, my_min); }
+static inline void debug_scene(Scene* s, void* props) { s->vtable->debug(s, props); }
 static inline Array* get_scene_elems_scene(Scene* s) { return s->vtable->get_elems(s); }
 static inline void free_scene(Scene* s) { s->vtable->free_scene(s); }
+
+static inline f32 smooth_min_k_scene(f32 a, f32 b, f32 k) {
+  const f32 m = fminf(a, b);
+  const f32 ea = expf(-k * (a - m));
+  const f32 eb = expf(-k * (b - m));
+  return m - logf(ea + eb) / k;
+}
+
+static inline f32 smooth_min_scene_default(f32 a, f32 b) {
+  return smooth_min_k_scene(a, b, 50.0f);
+}
 
 static inline Array triangles_to_scene_elems(Array triangles) {
   Array elems = new_array(triangles.length > 0 ? triangles.length : 4, sizeof(SceneElem));
@@ -1510,6 +1533,80 @@ static inline Array lines_to_scene_elems(Array lines) {
     push_array(&elems, &elem);
   }
   return elems;
+}
+
+//========================================================================================
+/*                                                                                      *
+ *                                       UTILS3D                                        *
+ *                                                                                      */
+ //========================================================================================
+
+const Vec3 UNIT_BOX_VERTEX[8] = {
+  { 0.0f, 0.0f, 0.0f },
+  { 1.0f, 0.0f, 0.0f },
+  { 1.0f, 1.0f, 0.0f },
+  { 0.0f, 1.0f, 0.0f },
+  { 0.0f, 0.0f, 1.0f },
+  { 1.0f, 0.0f, 1.0f },
+  { 1.0f, 1.0f, 1.0f },
+  { 0.0f, 1.0f, 1.0f },
+};
+
+const u32 UNIT_BOX_LINES[12][2] = {
+  { 0, 1 },
+  { 1, 2 },
+  { 2, 3 },
+  { 3, 0 },
+  { 4, 5 },
+  { 5, 6 },
+  { 6, 7 },
+  { 7, 4 },
+  { 0, 4 },
+  { 1, 5 },
+  { 3, 7 },
+  { 2, 6 },
+};
+
+const u32 UNIT_BOX_FACES[12][3] = {
+  { 0, 1, 2 },
+  { 2, 3, 0 },
+  { 4, 5, 6 },
+  { 6, 7, 4 },
+  { 0, 1, 4 },
+  { 4, 5, 1 },
+  { 2, 3, 6 },
+  { 6, 7, 3 },
+  { 0, 3, 7 },
+  { 7, 4, 0 },
+  { 1, 2, 6 },
+  { 6, 5, 1 },
+};
+
+Scene* draw_box(Scene* debug_scene, AABB box, Color color) {
+  if (box.is_empty) return debug_scene;
+
+  Vec3 vertices[8];
+  for (u32 i = 0; i < 8; i++) {
+    vertices[i] = vec3(
+      UNIT_BOX_VERTEX[i].x * box.diagonal.x + box.min.x,
+      UNIT_BOX_VERTEX[i].y * box.diagonal.y + box.min.y,
+      UNIT_BOX_VERTEX[i].z * box.diagonal.z + box.min.z
+    );
+  }
+
+  for (u32 k = 0; k < 12; k++) {
+    const u32 i = UNIT_BOX_LINES[k][0];
+    const u32 j = UNIT_BOX_LINES[k][1];
+    LineProps* line_props = (LineProps*)malloc(sizeof(LineProps));
+    if (!line_props) continue;
+    line_props->colors[0] = color;
+    line_props->colors[1] = color;
+
+    Line line = build_line(vertices[i], vertices[j]);
+    line.props = line_props;
+    add_scene_elem_scene(debug_scene, build_scene_elem_line(line));
+  }
+  return debug_scene;
 }
 
 //========================================================================================
@@ -1559,6 +1656,35 @@ SceneHit intersect_naive_scene(NaiveScene* scene, Ray ray) {
   return closest_hit;
 }
 
+f32 distance_to_point_naive_scene(NaiveScene* scene, Vec3 point, f32 (*my_min)(f32, f32)) {
+  f32 (*combine)(f32, f32) = my_min ? my_min : fminf;
+  f32 distance = INFINITY;
+  for (u32 i = 0; i < scene->elems.length; i++) {
+    SceneElem* elem = (SceneElem*)get_array_element(&scene->elems, i);
+    distance = combine(distance, distance_to_point_scene_elem(elem, point));
+  }
+  return distance;
+}
+
+Vec3 normal_to_point_naive_scene(NaiveScene* scene, Vec3 point, f32 (*my_min)(f32, f32)) {
+  const f32 epsilon = 1e-3f;
+  f32 f = distance_to_point_naive_scene(scene, point, my_min);
+  Vec3 grad = vec3(
+    distance_to_point_naive_scene(scene, add_vec3(point, vec3(epsilon, 0, 0)), my_min) - f,
+    distance_to_point_naive_scene(scene, add_vec3(point, vec3(0, epsilon, 0)), my_min) - f,
+    distance_to_point_naive_scene(scene, add_vec3(point, vec3(0, 0, epsilon)), my_min) - f
+  );
+  Vec3 normal = vec3(0, 0, 1);
+  if (!normalize_vec3(grad, &normal)) {
+    return vec3(0, 0, 1);
+  }
+  return f < 0 ? scale_vec3(normal, -1.0f) : normal;
+}
+
+f32 distance_on_ray_naive_scene(NaiveScene* scene, Ray ray, f32 (*my_min)(f32, f32)) {
+  return distance_to_point_naive_scene(scene, ray.init, my_min);
+}
+
 /* --- NaiveScene vtable wrappers --- */
 static void _naive_add_elem(Scene* self, SceneElem elem) {
   add_scene_elem_naive_scene((NaiveScene*)self->data, elem);
@@ -1574,6 +1700,19 @@ static void _naive_clear_scene(Scene* self) {
 }
 static SceneHit _naive_intersect(Scene* self, Ray ray) {
   return intersect_naive_scene((NaiveScene*)self->data, ray);
+}
+static Vec3 _naive_normal_to_point(Scene* self, Vec3 point, f32 (*my_min)(f32, f32)) {
+  return normal_to_point_naive_scene((NaiveScene*)self->data, point, my_min);
+}
+static f32 _naive_distance_to_point(Scene* self, Vec3 point, f32 (*my_min)(f32, f32)) {
+  return distance_to_point_naive_scene((NaiveScene*)self->data, point, my_min);
+}
+static f32 _naive_distance_on_ray(Scene* self, Ray ray, f32 (*my_min)(f32, f32)) {
+  return distance_on_ray_naive_scene((NaiveScene*)self->data, ray, my_min);
+}
+static void _naive_debug(Scene* self, void* props) {
+  (void)self;
+  (void)props;
 }
 static Array* _naive_get_elems(Scene* self) {
   return &((NaiveScene*)self->data)->elems;
@@ -1596,6 +1735,10 @@ static const SceneVTable NAIVE_SCENE_VTABLE = {
   .clear_elems = _naive_clear_elems,
   .clear_scene = _naive_clear_scene,
   .intersect = _naive_intersect,
+  .normal_to_point = _naive_normal_to_point,
+  .distance_to_point = _naive_distance_to_point,
+  .distance_on_ray = _naive_distance_on_ray,
+  .debug = _naive_debug,
   .get_elems = _naive_get_elems,
   .free_scene = _naive_free_scene,
   .rebuild_scene = _naive_rebuild_scene
@@ -1636,6 +1779,8 @@ static NodeKScene* new_node_k_scene(u32 k) {
   node->elems = new_array(4, sizeof(SceneElem));
   return node;
 }
+
+static void _kscene_debug(Scene* self, void* props);
 
 static NodeKScene* join_node_k_scene(NodeKScene* scene, NodeKScene* node_or_leaf) {
   NodeKScene* new_node = (NodeKScene*)calloc(1, sizeof(NodeKScene));
@@ -1709,8 +1854,15 @@ static void cluster_prims(
         u32 other = (j + 1) % 2;
         u32 rand_idx = (u32)(random_double() * cluster_indices[other].length);
         if (rand_idx >= cluster_indices[other].length) rand_idx = 0;
-        u32* picked = (u32*)get_array_element(&cluster_indices[other], rand_idx);
-        push_array(&cluster_indices[j], picked);
+        u32 picked = *(u32*)get_array_element(&cluster_indices[other], rand_idx);
+        push_array(&cluster_indices[j], &picked);
+        if (cluster_indices[other].length > 1) {
+          u32 last_index = cluster_indices[other].length - 1;
+          if (rand_idx != last_index) {
+            swap_array_elements(&cluster_indices[other], rand_idx, last_index);
+          }
+          cluster_indices[other].length--;
+        }
       }
     }
 
@@ -1745,7 +1897,7 @@ static void cluster_prims(
  */
 static void split_node_k_scene(NodeKScene* node, u32 k) {
   // Collect all primitives with their centers
-  u32 total = node->num_of_primitives;
+  u32 total = node->elems.length;
   PrimRef* refs = (PrimRef*)malloc(total * sizeof(PrimRef));
   u32 idx = 0;
 
@@ -1876,13 +2028,114 @@ static SceneHit intersect_node_k_scene(NodeKScene* node, Ray ray) {
   return first_hit;
 }
 
+static f32 distance_from_leaf_elems_node_k_scene(NodeKScene* node, Vec3 point, f32 (*my_min)(f32, f32)) {
+  if (!node || !node->is_leaf) return INFINITY;
+  f32 (*combine)(f32, f32) = my_min ? my_min : fminf;
+  f32 distance = INFINITY;
+  for (u32 i = 0; i < node->elems.length; i++) {
+    SceneElem* elem = (SceneElem*)get_array_element(&node->elems, i);
+    distance = combine(distance, distance_to_point_scene_elem(elem, point));
+  }
+  return distance;
+}
+
+static SceneElem* get_elem_near_node_k_scene(NodeKScene* node, Vec3 point) {
+  if (!node) return NULL;
+
+  if (node->is_leaf) {
+    if (!node->elems.data || node->elems.length == 0) return NULL;
+    SceneElem* best = (SceneElem*)get_array_element(&node->elems, 0);
+    f32 best_d = distance_to_point_scene_elem(best, point);
+    for (u32 i = 1; i < node->elems.length; i++) {
+      SceneElem* elem = (SceneElem*)get_array_element(&node->elems, i);
+      f32 d = distance_to_point_scene_elem(elem, point);
+      if (d < best_d) {
+        best_d = d;
+        best = elem;
+      }
+    }
+    return best;
+  }
+
+  NodeKScene* left = node->left;
+  NodeKScene* right = node->right;
+  if (!left && !right) return NULL;
+  if (!left) return get_elem_near_node_k_scene(right, point);
+  if (!right) return get_elem_near_node_k_scene(left, point);
+
+  f32 left_center_dist = length_vec3(sub_vec3(left->box.center, point));
+  f32 right_center_dist = length_vec3(sub_vec3(right->box.center, point));
+  NodeKScene* first = left_center_dist <= right_center_dist ? left : right;
+  NodeKScene* second = left_center_dist <= right_center_dist ? right : left;
+
+  SceneElem* first_elem = get_elem_near_node_k_scene(first, point);
+  if (first_elem) return first_elem;
+  return get_elem_near_node_k_scene(second, point);
+}
+
+static f32 distance_to_point_node_k_scene(NodeKScene* node, Vec3 point) {
+  if (!node) return INFINITY;
+  if (node->is_leaf) return distance_from_leaf_elems_node_k_scene(node, point, fminf);
+
+  SceneElem* elem = get_elem_near_node_k_scene(node, point);
+  if (!elem) return INFINITY;
+  return distance_to_point_scene_elem(elem, point);
+}
+
+static f32 distance_on_ray_node_k_scene(NodeKScene* node, Ray ray, f32 (*my_min)(f32, f32)) {
+  if (!node) return INFINITY;
+  if (node->is_leaf) return distance_from_leaf_elems_node_k_scene(node, ray.init, my_min);
+
+  SceneHit left_box_hit = intersect_with_ray_aabb(ray, &node->left->box);
+  SceneHit right_box_hit = intersect_with_ray_aabb(ray, &node->right->box);
+  f32 left_t = left_box_hit.hit ? left_box_hit.t : INFINITY;
+  f32 right_t = right_box_hit.hit ? right_box_hit.t : INFINITY;
+
+  if (!left_box_hit.hit && !right_box_hit.hit) {
+    return distance_to_point_node_k_scene(node, ray.init);
+  }
+
+  NodeKScene* first = (left_t <= right_t) ? node->left : node->right;
+  NodeKScene* second = (left_t > right_t) ? node->left : node->right;
+  f32 second_t = fmaxf(left_t, right_t);
+
+  f32 first_hit = distance_on_ray_node_k_scene(first, ray, my_min);
+  if (first_hit < second_t) return first_hit;
+
+  f32 second_hit = distance_on_ray_node_k_scene(second, ray, my_min);
+  return second_hit <= first_hit ? second_hit : first_hit;
+}
+
+static void collect_elems_in_box_node_k_scene(NodeKScene* node, const AABB* box, Array* out_elems) {
+  if (!node || !box || !out_elems) return;
+  if (!collides_aabb(&node->box, box)) return;
+
+  if (node->is_leaf) {
+    for (u32 i = 0; i < node->elems.length; i++) {
+      SceneElem* elem = (SceneElem*)get_array_element(&node->elems, i);
+      AABB elem_box = get_bounding_box_scene_elem(elem);
+      if (collides_aabb(&elem_box, box)) {
+        push_array(out_elems, &elem);
+      }
+    }
+    return;
+  }
+
+  collect_elems_in_box_node_k_scene(node->left, box, out_elems);
+  collect_elems_in_box_node_k_scene(node->right, box, out_elems);
+}
+
+typedef struct KScene KScene;
+static f32 distance_to_point_kscene(KScene* ks, Vec3 point, f32 (*my_min)(f32, f32));
+static Vec3 normal_to_point_kscene(KScene* ks, Vec3 point, f32 (*my_min)(f32, f32));
+
 /* --- KScene --- */
 
-typedef struct {
+struct KScene {
   Array elems;
   u32 k; // max number of primitives per leaf
   NodeKScene* root;
-} KScene;
+};
 
 /* --- KScene implementation functions --- */
 
@@ -1911,6 +2164,51 @@ static void clear_scene_elems_kscene(KScene* ks) {
 static SceneHit intersect_kscene(KScene* ks, Ray ray) {
   if (!ks->root) return (SceneHit) { .hit = false, .t = INFINITY };
   return intersect_node_k_scene(ks->root, ray);
+}
+
+static f32 distance_to_point_kscene(KScene* ks, Vec3 point, f32 (*my_min)(f32, f32)) {
+  if (!ks->root) return INFINITY;
+  if (ks->root->is_leaf) return distance_from_leaf_elems_node_k_scene(ks->root, point, my_min);
+  return distance_to_point_node_k_scene(ks->root, point);
+}
+
+static Vec3 normal_to_point_kscene(KScene* ks, Vec3 point, f32 (*my_min)(f32, f32)) {
+  if (!ks || !ks->root) return vec3(0, 0, 1);
+
+  Vec3 ones = vec3(1, 1, 1);
+  ones = scale_vec3(ones, 1.0f / (2.0f * (f32)ks->k));
+  AABB box = build_aabb(sub_vec3(point, ones), add_vec3(point, ones));
+
+  Array near_elems = new_array(8, sizeof(SceneElem*));
+  collect_elems_in_box_node_k_scene(ks->root, &box, &near_elems);
+
+  Vec3 normal = vec3(0, 0, 0);
+  f32 weight = 0.0f;
+  for (u32 i = 0; i < near_elems.length; i++) {
+    SceneElem** elem_ptr = (SceneElem**)get_array_element(&near_elems, i);
+    SceneElem* elem = *elem_ptr;
+    f32 d = distance_to_point_scene_elem(elem, point);
+    if (fabsf(d) < 1e-6f) continue;
+    Vec3 n = normal_to_point_scene_elem(elem, point);
+    f32 w = 1.0f / d;
+    normal = add_vec3(normal, scale_vec3(n, w));
+    weight += w;
+  }
+
+  if (near_elems.data) free_array(&near_elems);
+
+  if (weight != 0.0f && length_vec3(normal) > 0.0f) {
+    Vec3 out = scale_vec3(normal, 1.0f / weight);
+    if (normalize_vec3(out, &out)) return out;
+  }
+
+  NaiveScene ns = { .elems = ks->elems };
+  return normal_to_point_naive_scene(&ns, point, NULL);
+}
+
+static f32 distance_on_ray_kscene(KScene* ks, Ray ray, f32 (*my_min)(f32, f32)) {
+  if (!ks->root) return INFINITY;
+  return distance_on_ray_node_k_scene(ks->root, ray, my_min);
 }
 
 static Array* get_scene_elems_kscene(KScene* ks) {
@@ -2105,6 +2403,15 @@ static void _kscene_clear_scene(Scene* self) {
 static SceneHit _kscene_intersect(Scene* self, Ray ray) {
   return intersect_kscene((KScene*)self->data, ray);
 }
+static Vec3 _kscene_normal_to_point(Scene* self, Vec3 point, f32 (*my_min)(f32, f32)) {
+  return normal_to_point_kscene((KScene*)self->data, point, my_min);
+}
+static f32 _kscene_distance_to_point(Scene* self, Vec3 point, f32 (*my_min)(f32, f32)) {
+  return distance_to_point_kscene((KScene*)self->data, point, my_min);
+}
+static f32 _kscene_distance_on_ray(Scene* self, Ray ray, f32 (*my_min)(f32, f32)) {
+  return distance_on_ray_kscene((KScene*)self->data, ray, my_min);
+}
 static Array* _kscene_get_elems(Scene* self) {
   return get_scene_elems_kscene((KScene*)self->data);
 }
@@ -2127,6 +2434,10 @@ static const SceneVTable KSCENE_VTABLE = {
   .clear_elems = _kscene_clear_elems,
   .clear_scene = _kscene_clear_scene,
   .intersect = _kscene_intersect,
+  .normal_to_point = _kscene_normal_to_point,
+  .distance_to_point = _kscene_distance_to_point,
+  .distance_on_ray = _kscene_distance_on_ray,
+  .debug = _kscene_debug,
   .get_elems = _kscene_get_elems,
   .free_scene = _kscene_free_scene,
   .rebuild_scene = _kscene_rebuild_scene,
@@ -3453,6 +3764,14 @@ typedef struct {
   Tela* tela;
 } RasterParams;
 
+typedef struct {
+  Line* line;
+  Camera* camera;
+  Tela* tela;
+  RasterParams* params;
+  f32* zBuffer;
+} RasterLineInput;
+
 typedef enum {
   METALLIC,
   DIFFUSE,
@@ -3481,6 +3800,125 @@ typedef struct {
   RasterParams* params;
   f32* zBuffer; // size will be tela->width * tela->height
 } RasterTriangleInput;
+
+static inline Vec3 line_camera_plane_intersection(Vec3 out_point, Vec3 in_point, f32 plane_z) {
+  f32 denom = in_point.z - out_point.z;
+  if (fabsf(denom) < 1e-8f) return out_point;
+  f32 t = (plane_z - out_point.z) / denom;
+  return add_vec3(out_point, scale_vec3(sub_vec3(in_point, out_point), t));
+}
+
+static inline bool clip_line_camera_plane(Vec3 points_in_cam_coords[2], f32 plane_z) {
+  u32 in_frustum[2];
+  u32 in_frustum_count = 0;
+  u32 out_frustum[2];
+  u32 out_frustum_count = 0;
+
+  for (u32 i = 0; i < 2; i++) {
+    if (points_in_cam_coords[i].z < plane_z) {
+      out_frustum[out_frustum_count++] = i;
+    }
+    else {
+      in_frustum[in_frustum_count++] = i;
+    }
+  }
+
+  if (out_frustum_count == 2) return true;
+  if (out_frustum_count == 1) {
+    const u32 out_i = out_frustum[0];
+    const u32 in_i = in_frustum[0];
+    points_in_cam_coords[out_i] = line_camera_plane_intersection(
+      points_in_cam_coords[out_i],
+      points_in_cam_coords[in_i],
+      plane_z
+    );
+  }
+  return false;
+}
+
+typedef struct {
+  Vec2 int_points[2];
+  Vec3 points_in_cam_coords[2];
+  Color colors[2];
+  f32* zBuffer;
+  u32 width;
+  Tela* tela;
+} RasterLineShaderContext;
+
+Color raster_line_shader(u32 x, u32 y, Line_2D* line, void* ctx) {
+  (void)line;
+  RasterLineShaderContext* context = (RasterLineShaderContext*)ctx;
+  Vec2 p = sub_vec2(vec2((f32)x, (f32)y), context->int_points[0]);
+  Vec2 v = sub_vec2(context->int_points[1], context->int_points[0]);
+  f32 v_squared = dot_vec2(v, v);
+  if (v_squared < 1e-8f) return (Color) { 0, 0, 0, 0 };
+
+  f32 t = dot_vec2(v, p) / v_squared;
+  f32 z = context->points_in_cam_coords[0].z * (1.0f - t) + context->points_in_cam_coords[1].z * t;
+  Color c = lerp_color(context->colors[0], context->colors[1], t);
+
+  const Vec2 ij = to_grid_tela(context->tela, x, y);
+  const u32 z_buffer_index = (u32)floorf(context->width * ij.x + ij.y);
+  if (z < context->zBuffer[z_buffer_index]) {
+    context->zBuffer[z_buffer_index] = z;
+    return c;
+  }
+  return (Color) { 0, 0, 0, 0 };
+}
+
+void raster_line(RasterLineInput* input) {
+  Line* line = input->line;
+  Camera* camera = input->camera;
+  Tela* tela = input->tela;
+  RasterParams* params = input->params;
+  f32* zBuffer = input->zBuffer;
+
+  const u32 w = tela->width;
+  const u32 h = tela->height;
+  const f32 distance_to_plane = camera->distance_to_plane;
+
+  LineProps* props = (LineProps*)line->props;
+  Color colors[2] = {
+    props ? props->colors[0] : COLOR_WHITE,
+    props ? props->colors[1] : COLOR_WHITE,
+  };
+
+  Vec3 points_in_cam_coords[2];
+  for (u32 i = 0; i < 2; i++) {
+    points_in_cam_coords[i] = to_local_coords_camera(camera, line->positions[i]);
+  }
+
+  if (params->clip_camera_plane && clip_line_camera_plane(points_in_cam_coords, distance_to_plane)) return;
+  if (clip_line_camera_plane(points_in_cam_coords, 0.0f)) return;
+
+  Vec3 projected_points[2];
+  for (u32 i = 0; i < 2; i++) {
+    projected_points[i] = scale_vec3(points_in_cam_coords[i], distance_to_plane / points_in_cam_coords[i].z);
+  }
+
+  Vec2 int_points[2];
+  for (u32 i = 0; i < 2; i++) {
+    f32 x = (f32)w / 2.0f + projected_points[i].x * (f32)w;
+    f32 y = (f32)h / 2.0f + projected_points[i].y * (f32)h;
+    int_points[i] = vec2(floorf(x), floorf(y));
+  }
+
+  Line_2D line_2d = {
+    .positions = { int_points[0], int_points[1] },
+    .props = NULL,
+  };
+
+  RasterLineShaderContext raster_line_shader_context = {
+    .int_points = { int_points[0], int_points[1] },
+    .points_in_cam_coords = { points_in_cam_coords[0], points_in_cam_coords[1] },
+    .colors = { colors[0], colors[1] },
+    .zBuffer = zBuffer,
+    .width = w,
+    .tela = tela,
+  };
+
+  draw_line_tela(tela, &line_2d, raster_line_shader, &raster_line_shader_context);
+}
 
 const f32 dithering_matrix_4x4[16] = {
   0.0f / 16.0f, 8.0f / 16.0f, 2.0f / 16.0f, 10.0f / 16.0f, 12.0f / 16.0f,
@@ -3817,8 +4255,86 @@ Tela* raster_scene(Scene* scene, RasterParams params) {
           .zBuffer = z_buffer
       });
     }
+    else if (elem->geometry_type == LINE_GEOMETRY) {
+      Line* line = &elem->as.line;
+      raster_line(&(RasterLineInput) {
+        .line = line,
+          .camera = camera,
+          .tela = tela,
+          .params = &params,
+          .zBuffer = z_buffer
+      });
+    }
   }
   return tela;
+}
+
+typedef struct {
+  Camera* camera;
+  Tela* tela;
+} SceneDebugProps;
+
+static void _free_debug_line_props(Scene* scene) {
+  Array* elems = get_scene_elems_scene(scene);
+  for (u32 i = 0; i < elems->length; i++) {
+    SceneElem* elem = (SceneElem*)get_array_element(elems, i);
+    if (elem->geometry_type == LINE_GEOMETRY) {
+      Line* line = &elem->as.line;
+      if (line->props) {
+        free(line->props);
+        line->props = NULL;
+      }
+    }
+  }
+}
+
+static inline u32 _compute_kscene_debug_max_levels(const NodeKScene* node, u32 k) {
+  if (!node || k == 0 || node->num_of_primitives == 0) return 1;
+  f32 levels = roundf(log2f((f32)node->num_of_primitives / (f32)k)) + 1.0f;
+  if (levels <= 0.0f) levels = 1.0f;
+  return (u32)levels;
+}
+
+static inline Color _kscene_level_color(u32 level, u32 max_levels) {
+  f32 t = max_levels == 0 ? 0.0f : (f32)level / (f32)max_levels;
+  return add_color(scale_color(COLOR_RED, 1.0f - t), scale_color(COLOR_BLUE, t));
+}
+
+static void _kscene_debug_node(KScene* ks, NodeKScene* node, u32 level, u32 max_levels, Scene* debug_scene) {
+  (void)ks;
+  if (!node) return;
+
+  draw_box(debug_scene, node->box, _kscene_level_color(level, max_levels));
+
+  if (!node->is_leaf && node->left) {
+    _kscene_debug_node(ks, node->left, level + 1, max_levels, debug_scene);
+  }
+  if (!node->is_leaf && node->right) {
+    _kscene_debug_node(ks, node->right, level + 1, max_levels, debug_scene);
+  }
+}
+
+static void _kscene_debug(Scene* self, void* props) {
+  if (!self || !props) return;
+
+  SceneDebugProps* debug_props = (SceneDebugProps*)props;
+  if (!debug_props->camera || !debug_props->tela) return;
+
+  KScene* ks = (KScene*)self->data;
+  if (!ks || !ks->root) return;
+
+  Scene debug_scene_instance = new_naive_scene();
+  const u32 max_levels = _compute_kscene_debug_max_levels(ks->root, ks->k);
+  _kscene_debug_node(ks, ks->root, 0, max_levels, &debug_scene_instance);
+
+  raster_scene(&debug_scene_instance, (RasterParams) {
+    .clear_screen = false,
+    .camera = debug_props->camera,
+    .tela = debug_props->tela,
+  });
+
+  _free_debug_line_props(&debug_scene_instance);
+  free_scene(&debug_scene_instance);
 }
 
 //========================================================================================

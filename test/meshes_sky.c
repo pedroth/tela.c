@@ -250,6 +250,8 @@ static void on_frame(f32 dt, f32 time, void* ctx) {
       1.0f / dt));
 
   paint_window(app->window, app->tela);
+  debug_scene(app->scene, &(SceneDebugProps){.camera = app->camera, .tela = app->tela});
+  paint_window(app->window, app->tela);
 }
 
 static void on_close(Window* window, void* ctx) {
