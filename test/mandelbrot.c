@@ -7,13 +7,17 @@
 
 #include "../src/index.c"
 
+// gcc -O3 -fopenmp -o app test/mandelbrot.c -lSDL2 -lm
+
 /* =============================================================================
  * Constants
  * ========================================================================== */
 
 static const u32 WIDTH = 640;
 static const u32 HEIGHT = 480;
-static const u32 MAX_ITERATIONS = 100;
+
+static const u32 MAX_ITERATIONS_SINGLE = 100;
+static const u32 MAX_ITERATIONS_PARALLEL = 200;
 
 /* =============================================================================
  * Types
@@ -23,6 +27,7 @@ typedef struct {
   Tela *tela;
   Window *window;
   AABB_2D box;
+  bool use_parallel;
 } App;
 
 /* =============================================================================
@@ -47,6 +52,7 @@ static inline Vec2 complex_mul(Vec2 z, Vec2 w) {
 typedef struct {
   Vec2 size;
   AABB_2D box;
+  u32 max_iterations;
 } RenderContext;
 
 static Color mandelbrot_pixel(u32 x, u32 y, void const *ctx) {
@@ -67,7 +73,7 @@ static Color mandelbrot_pixel(u32 x, u32 y, void const *ctx) {
 
   // Iterate z = z^2 + c
   Vec2 z = vec2(0.0f, 0.0f);
-  for (u32 i = 0; i < MAX_ITERATIONS; i++) {
+  for (u32 i = 0; i < rc->max_iterations; i++) {
     z = add_vec2(complex_mul(z, z), p);
   }
 
@@ -80,8 +86,16 @@ static void render(App *app) {
   RenderContext rc = {
       .size = vec2((f32)WIDTH, (f32)HEIGHT),
       .box = app->box,
+      .max_iterations = app->use_parallel ? MAX_ITERATIONS_PARALLEL
+                                          : MAX_ITERATIONS_SINGLE,
   };
-  map_tela(app->tela, mandelbrot_pixel, &rc);
+
+  if (app->use_parallel) {
+    map_tela_parallel(app->tela, mandelbrot_pixel, &rc);
+  } else {
+    map_tela(app->tela, mandelbrot_pixel, &rc);
+  }
+
   paint_window(app->window, app->tela);
 }
 
@@ -93,7 +107,8 @@ static void on_frame(f32 dt, f32 time, void *ctx) {
   App *app = (App *)ctx;
   render(app);
   set_window_title(app->window,
-                   format_string("Mandelbrot Set | FPS: %.1f", 1.0f / dt));
+                   format_string("Mandelbrot Set | Parallel: %s (P) | FPS: %.1f",
+                                 app->use_parallel ? "ON" : "OFF", 1.0f / dt));
 }
 
 static void on_close(Window *window, void *ctx) {
@@ -106,7 +121,7 @@ static void on_close(Window *window, void *ctx) {
  * ========================================================================== */
 
 static void on_mouse_down(Window *window, i32 x, i32 y, u32 button,
-                           void *ctx) {
+                          void *ctx) {
   g_mouse_down = true;
   g_mouse_pos = vec2((f32)x, (f32)y);
 }
@@ -147,6 +162,13 @@ static void on_mouse_scroll(Window *window, i32 delta_y, void *ctx) {
   app->box = build_aabb_2d(sub_vec2(center, half_diag), add_vec2(center, half_diag));
 }
 
+static void on_key_down(Window *window, u32 keycode, void *ctx) {
+  App *app = (App *)ctx;
+  if (keycode == SDLK_p) {
+    app->use_parallel = !app->use_parallel;
+  }
+}
+
 /* =============================================================================
  * Main
  * ========================================================================== */
@@ -159,6 +181,7 @@ int main(void) {
       .tela = tela,
       .window = window,
       .box = build_aabb_2d(vec2(-1.0f, -1.0f), vec2(1.0f, 1.0f)),
+      .use_parallel = true,
   };
 
   Loop *animation = loop(on_frame, &app);
@@ -168,6 +191,7 @@ int main(void) {
   on_mouse_up_window(window, on_mouse_up, &app);
   on_mouse_move_window(window, on_mouse_move, &app);
   on_mouse_scroll_window(window, on_mouse_scroll, &app);
+  on_key_down_window(window, on_key_down, &app);
 
   play_loop(animation);
 

@@ -7,9 +7,7 @@
 
 #include "../src/index.c"
 
-#ifndef M_PI
-#define M_PI 3.14159265358979323846
-#endif
+// gcc -O3 -fopenmp -o app test/sdf_test.c -lSDL2 -lm
 
 /* =============================================================================
  * Constants
@@ -31,6 +29,7 @@ typedef struct {
   Tela *tela;
   Window *window;
   Camera *camera;
+  bool use_parallel;
 } App;
 
 typedef struct {
@@ -87,7 +86,7 @@ static f32 sdf_scene(Vec3 p, f32 time) {
   f32 sphere_radius = 0.65f;
 
   // Morph factor: oscillates between 0 and 1
-  f32 morph = (sinf(2.0f * M_PI * 0.25f * (time - 1.0f)) + 1.0f) * 0.5f;
+  f32 morph = (sinf(2.0f * PI * 0.25f * (time - 1.0f)) + 1.0f) * 0.5f;
 
   f32 torus_dist = sdf_torus(p, torus_major, torus_minor);
   f32 cube_dist = sdf_rounded_cube(p, &box, sphere_pos, sphere_radius);
@@ -168,11 +167,16 @@ static void on_frame(f32 dt, f32 time, void *ctx) {
   SceneContext scene = {.time = time, .light_pos = light_pos};
 
   // Render
-  ray_map_camera(app->camera, app->tela, ray_callback, &scene);
+  if (app->use_parallel) {
+    ray_map_camera_parallel(app->camera, app->tela, ray_callback, &scene);
+  } else {
+    ray_map_camera(app->camera, app->tela, ray_callback, &scene);
+  }
 
   // Display
   set_window_title(app->window,
-                   format_string("SDF Demo | FPS: %.1f", 1.0f / dt));
+                   format_string("SDF Demo | Parallel: %s (P) | FPS: %.1f",
+                                 app->use_parallel ? "ON" : "OFF", 1.0f / dt));
   paint_window(app->window, app->tela);
 }
 
@@ -206,8 +210,8 @@ static void on_mouse_move(Window *window, i32 x, i32 y, void *ctx) {
   Vec2 delta = sub_vec2(new_pos, g_mouse_pos);
 
   Vec3 orbit = get_camera_orbit(app->camera);
-  f32 theta_delta = -2.0f * M_PI * (delta.x / WIDTH);
-  f32 phi_delta = -2.0f * M_PI * (delta.y / HEIGHT);
+  f32 theta_delta = -2.0f * PI * (delta.x / WIDTH);
+  f32 phi_delta = -2.0f * PI * (delta.y / HEIGHT);
 
   set_orbit_camera(app->camera, orbit.x, orbit.y + theta_delta,
                    orbit.z + phi_delta);
@@ -224,11 +228,19 @@ static void on_mouse_scroll(Window *window, i32 delta_y, void *ctx) {
   set_orbit_camera(app->camera, new_radius, orbit.y, orbit.z);
 }
 
+static void on_key_down(Window *window, u32 keycode, void *ctx) {
+  App *app = (App *)ctx;
+  if (keycode == SDLK_p) {
+    app->use_parallel = !app->use_parallel;
+  }
+}
+
 static void register_input_handlers(Window *window, App *app) {
   on_mouse_down_window(window, on_mouse_down, app);
   on_mouse_up_window(window, on_mouse_up, app);
   on_mouse_move_window(window, on_mouse_move, app);
   on_mouse_scroll_window(window, on_mouse_scroll, app);
+  on_key_down_window(window, on_key_down, app);
 }
 
 /* =============================================================================
@@ -248,6 +260,7 @@ int main(void) {
       .tela = tela,
       .window = window,
       .camera = &camera,
+      .use_parallel = true,
   };
 
   // Animation loop

@@ -3,6 +3,8 @@
 // Port from https://www.shadertoy.com/view/mtyGWy
 // Beautified by Claude Opus
 
+// gcc -O3 -fopenmp -o app test/amazing_shader.c -lSDL2 -lm
+
 /* =============================================================================
  * Constants
  * ========================================================================== */
@@ -24,6 +26,7 @@ static const f32 GLOW_FALLOFF = 1.2f;
 typedef struct {
   Tela *tela;
   Window *window;
+  bool use_parallel;
 } App;
 
 /* =============================================================================
@@ -127,11 +130,24 @@ static Color fragment_shader(u32 x, u32 y, const void *context) {
 static void on_frame(f32 dt, f32 time, void *ctx) {
   App *app = (App *)ctx;
 
-  map_tela(app->tela, fragment_shader, &time);
+  if (app->use_parallel) {
+    map_tela_parallel(app->tela, fragment_shader, &time);
+  } else {
+    map_tela(app->tela, fragment_shader, &time);
+  }
 
-  set_window_title(app->window,
-                   format_string("Amazing Shader | FPS: %.1f", 1.0f / dt));
+  set_window_title(
+      app->window,
+      format_string("Amazing Shader | Parallel: %s (P) | FPS: %.1f",
+                    app->use_parallel ? "ON" : "OFF", 1.0f / dt));
   paint_window(app->window, app->tela);
+}
+
+static void on_key_down(Window *window, u32 keycode, void *ctx) {
+  App *app = (App *)ctx;
+  if (keycode == SDLK_p) {
+    app->use_parallel = !app->use_parallel;
+  }
 }
 
 static void on_close(Window *window, void *ctx) {
@@ -152,6 +168,7 @@ int main(void) {
   App app = {
       .tela = tela,
       .window = window,
+      .use_parallel = true,
   };
 
   // Animation loop
@@ -159,6 +176,7 @@ int main(void) {
 
   // Event handlers
   on_close_window(window, on_close, animation);
+  on_key_down_window(window, on_key_down, &app);
 
   // Run (blocks until window closes)
   play_loop(animation);

@@ -8,9 +8,8 @@
 
 #include "../src/index.c"
 
-#ifndef M_PI
-#define M_PI 3.14159265358979323846
-#endif
+// gcc -O3 -fopenmp -o app test/black_hole.c -lSDL2 -lm
+
 
 /* =============================================================================
  * Constants
@@ -39,6 +38,7 @@ typedef struct {
   Tela *background;
   Sphere black_hole;
   f32 time;
+  bool use_parallel;
 } App;
 
 /* =============================================================================
@@ -70,9 +70,9 @@ static f32 sdf_torus(Vec3 p, f32 r, f32 R) {
  */
 static Color sample_background(const Tela *bg, Vec3 dir) {
   // atan2 returns [-pi, pi], map to [0, 1]
-  f32 theta = atan2f(dir.y, dir.x) / (2.0f * M_PI) + 0.5f;
+  f32 theta = atan2f(dir.y, dir.x) / (2.0f * PI) + 0.5f;
   // acos returns [0, pi], map to [0, 1]
-  f32 alpha = acosf(clamp(-dir.z, -1.0f, 1.0f)) / M_PI;
+  f32 alpha = acosf(clamp(-dir.z, -1.0f, 1.0f)) / PI;
 
   u32 u = (u32)(theta * bg->width);
   u32 v = (u32)(alpha * bg->height);
@@ -112,7 +112,7 @@ static Color ray_scene(Ray r, void *ctx) {
     // Check torus hit (accretion disk)
     f32 torus_dist = sdf_torus(position, TORUS_MAJOR_RADIUS, TORUS_MINOR_RADIUS);
     if (torus_dist < TORUS_HIT_EPSILON) {
-      f32 theta = fmodf(atan2f(position.y, position.x) - 2.0f * time, M_PI);
+      f32 theta = fmodf(atan2f(position.y, position.x) - 2.0f * time, PI);
       f32 angle = expf(-0.25f * theta * theta);
       return (Color){0.9f, 0.7f * angle, 0.25f * angle, 1.0f};
     }
@@ -147,11 +147,17 @@ static void on_frame(f32 dt, f32 time, void *ctx) {
   app->time = time;
 
   // Render
-  ray_map_camera(app->camera, app->tela, ray_scene, app);
+  if (app->use_parallel) {
+    ray_map_camera_parallel(app->camera, app->tela, ray_scene, app);
+  } else {
+    ray_map_camera(app->camera, app->tela, ray_scene, app);
+  }
 
   // Display
   set_window_title(app->window,
-                   format_string("Black Hole | FPS: %.1f", 1.0f / dt));
+                   format_string("Black Hole | Parallel: %s (P) | FPS: %.1f",
+                                 app->use_parallel ? "ON" : "OFF",
+                                 1.0f / dt));
   paint_window(app->window, app->tela);
 }
 
@@ -186,8 +192,8 @@ static void on_mouse_move(Window *window, i32 x, i32 y, void *ctx) {
   Vec2 delta = sub_vec2(new_pos, g_mouse_pos);
 
   Vec3 orbit = get_camera_orbit(app->camera);
-  f32 theta_delta = -2.0f * M_PI * (delta.x / WIDTH);
-  f32 phi_delta = -2.0f * M_PI * (delta.y / HEIGHT);
+  f32 theta_delta = -2.0f * PI * (delta.x / WIDTH);
+  f32 phi_delta = -2.0f * PI * (delta.y / HEIGHT);
 
   set_orbit_camera(app->camera, orbit.x, orbit.y + theta_delta,
                    orbit.z + phi_delta);
@@ -204,11 +210,19 @@ static void on_mouse_scroll(Window *window, i32 delta_y, void *ctx) {
   set_orbit_camera(app->camera, new_radius, orbit.y, orbit.z);
 }
 
+static void on_key_down(Window *window, u32 keycode, void *ctx) {
+  App *app = (App *)ctx;
+  if (keycode == SDLK_p) {
+    app->use_parallel = !app->use_parallel;
+  }
+}
+
 static void register_input_handlers(Window *window, App *app) {
   on_mouse_down_window(window, on_mouse_down, app);
   on_mouse_up_window(window, on_mouse_up, app);
   on_mouse_move_window(window, on_mouse_move, app);
   on_mouse_scroll_window(window, on_mouse_scroll, app);
+  on_key_down_window(window, on_key_down, app);
 }
 
 /* =============================================================================
@@ -217,7 +231,7 @@ static void register_input_handlers(Window *window, App *app) {
 
 int main(void) {
   // Create window and canvas
-  Tela *tela = new_tela(WIDTH / 3, HEIGHT / 3);
+  Tela *tela = new_tela(WIDTH, HEIGHT);
   Window *window = new_window(WIDTH, HEIGHT, "Black Hole");
 
   // Load background texture
@@ -236,6 +250,7 @@ int main(void) {
       .camera = &camera,
       .background = background,
       .black_hole = black_hole,
+      .use_parallel = true,
   };
 
   // Animation loop

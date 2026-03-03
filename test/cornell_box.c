@@ -3,18 +3,18 @@
  *
  * A path-traced Cornell box scene with diffuse, metallic, dielectric, and
  * alpha materials. Features interactive orbit camera controls via mouse.
- *
  */
 
 #include "../src/index.c"
 
- /* =============================================================================
-  * Constants
-  * ========================================================================== */
+// gcc -O3 -fopenmp -o app test/cornell_box.c -lSDL2 -lm
 
-static const u32 WIDTH = 640 / 2;
-static const u32 HEIGHT = 480 / 2;
+/* =============================================================================
+ * Constants
+ * ========================================================================== */
 
+static const u32 WIDTH = 640/2;
+static const u32 HEIGHT = 480/2;
 
 /* =============================================================================
  * Types
@@ -25,6 +25,7 @@ typedef struct {
   Window* window;
   Camera* camera;
   Scene* scene;
+  bool use_parallel;
 } App;
 
 /* =============================================================================
@@ -49,7 +50,7 @@ static void on_frame(f32 dt, f32 time, void* ctx) {
   Tela* exposed = app->tela;
 
   RaytraceParams params = {
-    .samples_per_pixel = 1,
+    .samples_per_pixel = app->use_parallel ? 3 : 1,
     .bounces = 15,
     .variance = 0.001f,
     .gamma = 0.5f,
@@ -60,10 +61,15 @@ static void on_frame(f32 dt, f32 time, void* ctx) {
     .exposed_tela = exposed,
   };
 
-  ray_trace_scene(scene, &params);
+  if (app->use_parallel) {
+    ray_trace_scene_parallel(scene, &params);
+  } else {
+    ray_trace_scene(scene, &params);
+  }
 
   set_window_title(app->window,
-    format_string("Cornell Box | FPS: %.2f", 1.0f / dt));
+    format_string("Cornell Box | Parallel: %s (P) | FPS: %.2f",
+                  app->use_parallel ? "ON" : "OFF", 1.0f / dt));
   paint_window(app->window, app->tela);
 }
 
@@ -115,14 +121,21 @@ static void on_mouse_scroll(Window* w, i32 delta_y, void* ctx) {
   exposed->iterations = 1;
 }
 
+static void on_key_down(Window* window, u32 keycode, void* ctx) {
+  App* app = (App*)ctx;
+  if (keycode == SDLK_p) {
+    app->use_parallel = !app->use_parallel;
+    app->tela->iterations = 1;
+  }
+}
+
 static void register_input_handlers(Window* window, App* app) {
   on_mouse_down_window(window, on_mouse_down, app);
   on_mouse_up_window(window, on_mouse_up, app);
   on_mouse_move_window(window, on_mouse_move, app);
   on_mouse_scroll_window(window, on_mouse_scroll, app);
+  on_key_down_window(window, on_key_down, app);
 }
-
-
 
 /* =============================================================================
  * Build Scene
@@ -261,7 +274,7 @@ static void build_cornell_box(Scene* scene) {
 
 int main(void) {
   Tela* tela = new_tela(WIDTH, HEIGHT);
-  Window* window = new_window(WIDTH * 2, HEIGHT * 2, "Cornell Box");
+  Window* window = new_window(WIDTH*2, HEIGHT*2, "Cornell Box");
 
   /* camera looks at center of box, orbiting at distance 3 */
   Camera camera = create_camera(vec3(3.0f, 0.0f, 0.0f), vec3(1.5f, 1.5f, 1.5f), 1.0f);
@@ -275,6 +288,7 @@ int main(void) {
       .window = window,
       .camera = &camera,
       .scene = &scene,
+      .use_parallel = true,
   };
 
   Loop* animation = loop(on_frame, &app);
