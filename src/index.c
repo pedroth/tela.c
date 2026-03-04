@@ -249,6 +249,14 @@ void free_array(Array* array) {
   array->capacity = 0;
 }
 
+void remove_at_array(Array* a, u32 index) {
+  if (index >= a->length) return;
+  char* base = (char*)a->data;
+  u32 es = a->element_size;
+  memmove(base + index * es, base + (index + 1) * es, (a->length - index - 1) * es);
+  a->length--;
+}
+
 i32 arg_min_array(Array* a, f32(*cost_function)(void* element, u32 index, void* ctx), void* ctx) {
   i32 argmin_index = -1;
   f32 cost = __FLT_MAX__;
@@ -750,6 +758,9 @@ static const Color COLOR_RED = { 1.0f, 0.0f, 0.0f, 1.0f };
 static const Color COLOR_GREEN = { 0.0f, 1.0f, 0.0f, 1.0f };
 static const Color COLOR_BLUE = { 0.0f, 0.0f, 1.0f, 1.0f };
 static const Color COLOR_YELLOW = { 1.0f, 1.0f, 0.0f, 1.0f };
+static const Color COLOR_CYAN = { 0.0f, 1.0f, 1.0f, 1.0f };
+static const Color COLOR_PURPLE = { 0.5f, 0.0f, 0.5f, 1.0f };
+static const Color COLOR_MAGENTA = { 1.0f, 0.0f, 1.0f, 1.0f };
 
 //========================================================================================
 /*                                                                                      *
@@ -980,6 +991,91 @@ typedef struct {
   Vec2 positions[3];
   void* props;
 } Triangle_2D;
+
+typedef struct {
+  Vec2 v[3];
+} Tri2D;
+
+/**
+ * Triangulate a simple polygon using ear-clipping.
+ * Returns an Array of Tri2D. The input path should be in CCW winding.
+ */
+static Array triangulate_polygon(const Array* input_path) {
+  Array triangles = new_array(input_path->length, sizeof(Tri2D));
+  if (input_path->length < 3) return triangles;
+
+  // Make a working copy
+  Array path = new_array(input_path->length, sizeof(Vec2));
+  for (u32 i = 0; i < input_path->length; i++) {
+    Vec2 p = *(Vec2*)get_array_element((Array*)input_path, i);
+    push_array(&path, &p);
+  }
+
+  i32 same_path = 1000000;
+  while (path.length > 3 && same_path > 0) {
+    u32 idx = (u32)(rand() % (i32)path.length);
+    i32 n = (i32)path.length;
+    i32 prev_idx = ((((i32)idx - 1) % n) + n) % n;
+    i32 next_idx = ((((i32)idx + 1) % n) + n) % n;
+    Vec2 prev = *(Vec2*)get_array_element(&path, (u32)prev_idx);
+    Vec2 next = *(Vec2*)get_array_element(&path, (u32)next_idx);
+    Vec2 c = *(Vec2*)get_array_element(&path, idx);
+    Vec2 u = sub_vec2(next, c);
+    Vec2 v = sub_vec2(prev, c);
+    f32 u_wedge_v = wedge_vec2(u, v);
+
+    if (u_wedge_v > 0) {
+      same_path--;
+      continue;
+    }
+
+    bool have_points_inside = false;
+    for (u32 j = 0; j < path.length; j++) {
+      if ((i32)j == (i32)idx || (i32)j == prev_idx || (i32)j == next_idx) continue;
+      Vec2 p = sub_vec2(*(Vec2*)get_array_element(&path, j), c);
+      f32 p_wedge_v = wedge_vec2(p, v);
+      f32 u_wedge_p = wedge_vec2(u, p);
+      if (u_wedge_v == 0.0f) continue;
+      f32 alpha = p_wedge_v / u_wedge_v;
+      f32 beta = u_wedge_p / u_wedge_v;
+      if (alpha < 1 && alpha > 0 && beta < 1 && beta > 0) {
+        have_points_inside = true;
+        break;
+      }
+    }
+
+    if (!have_points_inside) {
+      Tri2D tri;
+      if (u_wedge_v > 0) {
+        tri.v[0] = prev; tri.v[1] = c; tri.v[2] = next;
+      } else {
+        tri.v[0] = c; tri.v[1] = prev; tri.v[2] = next;
+      }
+      push_array(&triangles, &tri);
+      remove_at_array(&path, idx);
+    }
+  }
+
+  // Last triangle
+  if (path.length == 3) {
+    Vec2 p0 = *(Vec2*)get_array_element(&path, 0);
+    Vec2 p1 = *(Vec2*)get_array_element(&path, 1);
+    Vec2 p2 = *(Vec2*)get_array_element(&path, 2);
+    Vec2 u = sub_vec2(p1, p0);
+    Vec2 v = sub_vec2(p2, p0);
+    f32 u_wedge_v = wedge_vec2(u, v);
+    Tri2D tri;
+    if (u_wedge_v > 0) {
+      tri.v[0] = p2; tri.v[1] = p0; tri.v[2] = p1;
+    } else {
+      tri.v[0] = p0; tri.v[1] = p2; tri.v[2] = p1;
+    }
+    push_array(&triangles, &tri);
+  }
+
+  free_array(&path);
+  return triangles;
+}
 
 
 //========================================================================================
@@ -3584,6 +3680,53 @@ static inline void free_window(Window* window) {
 typedef struct {
   AABB_2D view_box;
 } Camera_2D;
+
+static inline Camera_2D build_camera_2d(Vec2 min, Vec2 max) {
+  Camera_2D cam;
+  cam.view_box = build_aabb_2d(min, max);
+  return cam;
+}
+
+/**
+ * Convert world coordinates to canvas (pixel) coordinates.
+ * p is in world space, result is in pixel space [0, tela.width] x [0, tela.height].
+ */
+static inline Vec2 to_canvas_coord_camera_2d(const Camera_2D* cam, Vec2 p, const Tela* tela) {
+  Vec2 normalized = div_vec2(sub_vec2(p, cam->view_box.min), cam->view_box.diagonal);
+  return mul_vec2(normalized, vec2((f32)tela->width, (f32)tela->height));
+}
+
+/**
+ * Convert canvas (pixel) coordinates to world coordinates.
+ * x is in pixel space, result is in world space.
+ */
+static inline Vec2 to_world_coord_camera_2d(const Camera_2D* cam, Vec2 x, const Tela* tela) {
+  Vec2 size = vec2((f32)tela->width, (f32)tela->height);
+  return vec2(
+    (x.x / size.x) * cam->view_box.diagonal.x + cam->view_box.min.x,
+    (x.y / size.y) * cam->view_box.diagonal.y + cam->view_box.min.y
+  );
+}
+
+/**
+ * Draw a filled circle on the tela in pixel coordinates.
+ */
+static inline Tela* draw_circle_tela(Tela* tela, Vec2 center, f32 radius, Color color) {
+  i32 r = (i32)ceilf(radius);
+  i32 cx = (i32)floorf(center.x);
+  i32 cy = (i32)floorf(center.y);
+  f32 r_sq = radius * radius;
+  for (i32 dy = -r; dy <= r; dy++) {
+    for (i32 dx = -r; dx <= r; dx++) {
+      if ((f32)(dx * dx + dy * dy) > r_sq) continue;
+      i32 px = cx + dx;
+      i32 py = cy + dy;
+      if (px < 0 || px >= (i32)tela->width || py < 0 || py >= (i32)tela->height) continue;
+      set_pxl_tela(tela, (u32)px, (u32)py, color);
+    }
+  }
+  return tela;
+}
 
 //========================================================================================
 /*                                                                                      *
