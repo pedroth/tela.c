@@ -250,8 +250,8 @@ static void on_frame(f32 dt, f32 time, void* ctx) {
       1.0f / dt));
 
   paint_window(app->window, app->tela);
-  debug_scene(app->scene, &(SceneDebugProps){.camera = app->camera, .tela = app->tela});
-  paint_window(app->window, app->tela);
+  // debug_scene(app->scene, &(SceneDebugProps){.camera = app->camera, .tela = app->tela});
+  // paint_window(app->window, app->tela);
 }
 
 static void on_close(Window* window, void* ctx) {
@@ -264,18 +264,15 @@ static void on_close(Window* window, void* ctx) {
  * ========================================================================== */
 
 static void on_mouse_down(Window* w, i32 x, i32 y, u32 button, void* ctx) {
-  (void)w; (void)button;
   g_mouse_down = true;
   g_mouse_pos = vec2((f32)x, (f32)y);
 }
 
 static void on_mouse_up(Window* w, i32 x, i32 y, u32 button, void* ctx) {
-  (void)w; (void)x; (void)y; (void)button; (void)ctx;
   g_mouse_down = false;
 }
 
 static void on_mouse_move(Window* w, i32 x, i32 y, void* ctx) {
-  (void)w;
   if (!g_mouse_down) return;
 
   Vec2 new_pos = vec2((f32)x, (f32)y);
@@ -340,7 +337,7 @@ int main(void) {
   set_orbit_camera(&camera, 3.0f, 0.0f, 0.0f);
 
   /* Scene */
-  Scene scene = new_kscene(20);
+  Scene scene = new_kscene(10);
 
   App app = {
       .tela = tela,
