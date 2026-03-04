@@ -1150,10 +1150,6 @@ typedef struct {
   f32 t;
   Vec3 position;
   SceneElem* scene_elem;
-  Triangle* triangle;
-  Sphere* sphere;
-  AABB* aabb;
-  GeometryType geometry_type;
 } SceneHit;
 
 SceneHit intersect_with_ray_aabb(Ray ray, const AABB* box) {
@@ -1183,8 +1179,6 @@ SceneHit intersect_with_ray_aabb(Ray ray, const AABB* box) {
     hit.t = tmin - epsilon;
     hit.hit = true;
     hit.position = trace_ray(ray, tmin - epsilon);
-    hit.geometry_type = AABB_GEOMETRY;
-    hit.aabb = (AABB*)box;
     return hit;
   }
   return hit;
@@ -1205,21 +1199,19 @@ SceneHit intersect_with_ray_triangle(Triangle* triangle, Ray ray) {
     Vec3 n = cross_vec3(tangents[0], tangents[1]);
     normalize_vec3(n, &n);
     const f32 t = -dot_vec3(n, p) / dot_vec3(n, v);
-    if (t <= epsilon) return hit;
-    const Vec3 x = trace_ray(ray, t);
+    if (t < 0) return hit;
+    const Vec3 x = trace_ray(ray, t-epsilon);
     for (u32 i = 0; i < 3; i++) {
       const Vec3 xi = triangle->positions[i];
       const Vec3 u = sub_vec3(x, xi);
       const Vec3 edge_i = sub_vec3(triangle->positions[(i + 1) % 3], xi);
       const Vec3 ni = cross_vec3(n, edge_i);
       const f32 dot = dot_vec3(ni, u);
-      if (dot <= epsilon) return hit;
+      if (dot < 0) return hit;
     }
     hit.hit = true;
     hit.t = t - epsilon;   /* t value offset for ordering (matches JS) */
-    hit.geometry_type = TRIANGLE;
-    hit.triangle = triangle;
-    hit.position = x;      /* position at exact surface point t, not t-epsilon */
+    hit.position = x;     
     return hit;
   }
   const u32 max_ite = 20;
@@ -1234,8 +1226,6 @@ SceneHit intersect_with_ray_triangle(Triangle* triangle, Ray ray) {
     if (d < epsilon) {
       hit.hit = true;
       hit.t = t;
-      hit.geometry_type = TRIANGLE;
-      hit.triangle = triangle;
       hit.position = p;
       return hit;
     }
@@ -1276,8 +1266,6 @@ SceneHit intersect_with_ray_sphere(Sphere* sphere, Ray ray) {
 
   hit.hit = true;
   hit.t = t;
-  hit.geometry_type = SPHERE;
-  hit.sphere = sphere;
   hit.position = trace_ray(ray, t - epsilon);
   return hit;
 }
@@ -1310,6 +1298,7 @@ struct SceneElem {
     Triangle triangle;
     Sphere sphere;
     Line line;
+    AABB aabb;
   } as;
 };
 
@@ -1329,7 +1318,6 @@ static SceneHit _scene_elem_triangle_intersect(SceneElem* elem, Ray ray) {
   SceneHit hit = intersect_with_ray_triangle(&elem->as.triangle, ray);
   if (hit.hit) {
     hit.scene_elem = elem;
-    hit.triangle = &elem->as.triangle;
   }
   return hit;
 }
@@ -1350,7 +1338,6 @@ static SceneHit _scene_elem_sphere_intersect(SceneElem* elem, Ray ray) {
   SceneHit hit = intersect_with_ray_sphere(&elem->as.sphere, ray);
   if (hit.hit) {
     hit.scene_elem = elem;
-    hit.sphere = &elem->as.sphere;
   }
   return hit;
 }
@@ -4378,11 +4365,11 @@ typedef struct {
 
 Ray scatter_diffuse(Ray ray, SceneHit hit) {
   Vec3 normal = { 0, 0, 0 };
-  if (hit.geometry_type == TRIANGLE) {
-    normal = normal_to_point_triangle(hit.triangle, hit.position);
+  if (hit.scene_elem->geometry_type == TRIANGLE) {
+    normal = normal_to_point_triangle(&hit.scene_elem->as.triangle, hit.position);
   }
-  else if (hit.geometry_type == SPHERE) {
-    normal = normal_to_point_sphere(hit.sphere, hit.position);
+  else if (hit.scene_elem->geometry_type == SPHERE) {
+    normal = normal_to_point_sphere(&hit.scene_elem->as.sphere, hit.position);
   }
   const Vec3 randomInSphere = random_point_in_sphere();
   // Offset origin slightly along normal to prevent f32 self-intersection
@@ -4415,11 +4402,11 @@ Ray scatter_metallic(Ray ray, SceneHit hit) {
 
   fuzz = fmin(1, fmax(0, fuzz));
   Vec3 normal = { 0, 0, 0 };
-  if (hit.geometry_type == TRIANGLE) {
-    normal = normal_to_point_triangle(hit.triangle, hit.position);
+  if (hit.scene_elem->geometry_type == TRIANGLE) {
+    normal = normal_to_point_triangle(&hit.scene_elem->as.triangle, hit.position);
   }
-  else if (hit.geometry_type == SPHERE) {
-    normal = normal_to_point_sphere(hit.sphere, hit.position);
+  else if (hit.scene_elem->geometry_type == SPHERE) {
+    normal = normal_to_point_sphere(&hit.scene_elem->as.sphere, hit.position);
   }
   Vec3 v = ray.dir;
   Vec3 reflected = sub_vec3(v, scale_vec3(normal, 2 * dot_vec3(v, normal)));
@@ -4471,11 +4458,11 @@ Ray scatter_dielectric(Ray ray, SceneHit hit) {
   if (ray.dir.z != 0) t = p.z / ray.dir.z;
 
   Vec3 normal = { 0, 0, 0 };
-  if (hit.geometry_type == TRIANGLE) {
-    normal = normal_to_point_triangle(hit.triangle, hit.position);
+  if (hit.scene_elem->geometry_type == TRIANGLE) {
+    normal = normal_to_point_triangle(&hit.scene_elem->as.triangle, hit.position);
   }
-  else if (hit.geometry_type == SPHERE) {
-    normal = normal_to_point_sphere(hit.sphere, hit.position);
+  else if (hit.scene_elem->geometry_type == SPHERE) {
+    normal = normal_to_point_sphere(&hit.scene_elem->as.sphere, hit.position);
   }
   Vec3 v_in = ray.dir;
   bool is_outside = dot_vec3(v_in, normal) < 0;
@@ -4511,9 +4498,9 @@ Material build_dielectric_material(f32 index_of_refraction) {
 }
 
 Color get_color_from_hit(SceneHit hit, Ray ray, bool bilinear_texture) {
-  if (hit.geometry_type == TRIANGLE) {
-    RasterTriangleProps* props = (RasterTriangleProps*)hit.triangle->props;
-    Triangle* tri = hit.triangle;
+  if (hit.scene_elem->geometry_type == TRIANGLE) {
+    RasterTriangleProps* props = (RasterTriangleProps*)hit.scene_elem->as.triangle.props;
+    Triangle* tri = &hit.scene_elem->as.triangle;
 
     // Compute barycentric coordinates via tangent-based projection
     Vec3 u1 = sub_vec3(tri->positions[1], tri->positions[0]);
@@ -4554,20 +4541,20 @@ Color get_color_from_hit(SceneHit hit, Ray ray, bool bilinear_texture) {
       scale_color(props->colors[2], beta)
     );
   }
-  if (hit.geometry_type == SPHERE) {
-    RasterSphereProps* props = (RasterSphereProps*)hit.sphere->props;
+  if (hit.scene_elem->geometry_type == SPHERE) {
+    RasterSphereProps* props = (RasterSphereProps*)hit.scene_elem->as.sphere.props;
     return props->color;
   }
   return (Color) { 0, 0, 0, 0 };
 }
 
 Material get_material_from_hit(SceneHit hit) {
-  if (hit.geometry_type == TRIANGLE) {
-    RasterTriangleProps* props = (RasterTriangleProps*)hit.triangle->props;
+  if (hit.scene_elem->geometry_type == TRIANGLE) {
+    RasterTriangleProps* props = (RasterTriangleProps*)hit.scene_elem->as.triangle.props;
     return *props->material;
   }
-  if (hit.geometry_type == SPHERE) {
-    RasterSphereProps* props = (RasterSphereProps*)hit.sphere->props;
+  if (hit.scene_elem->geometry_type == SPHERE) {
+    RasterSphereProps* props = (RasterSphereProps*)hit.scene_elem->as.sphere.props;
     return *props->material;
   }
   return (Material) { 0 };
@@ -4613,7 +4600,7 @@ Color trace_ray_scene(Ray ray, RayTraceLambdaInput* input, u32 bounces) {
     return render_miss_scene(ray, input);
   }
 
-  GeometryType hit_geometry_type = intersection.geometry_type;
+  GeometryType hit_geometry_type = intersection.scene_elem->geometry_type;
   Color albedo = get_color_from_hit(intersection, ray, bilinear_texture);
   Material material = get_material_from_hit(intersection);
 
@@ -4626,10 +4613,10 @@ Color trace_ray_scene(Ray ray, RayTraceLambdaInput* input, u32 bounces) {
   Color scattered_color = trace_ray_scene(scatter_ray, input, bounces - 1);
   Vec3 normal = { 0, 0, 0 };
   if (hit_geometry_type == TRIANGLE) {
-    normal = normal_to_point_triangle(intersection.triangle, intersection.position);
+    normal = normal_to_point_triangle(&intersection.scene_elem->as.triangle, intersection.position);
   }
   else if (hit_geometry_type == SPHERE) {
-    normal = normal_to_point_sphere(intersection.sphere, intersection.position);
+    normal = normal_to_point_sphere(&intersection.scene_elem->as.sphere, intersection.position);
   }
   f32 attenuation = fabs(dot_vec3(normal, scatter_ray.dir));
   Color final_color = mul_color(albedo, scattered_color);
