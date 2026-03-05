@@ -1285,7 +1285,7 @@ SceneHit intersect_with_ray_triangle(Triangle* triangle, Ray ray) {
   hit.hit = false;
   hit.t = INFINITY;
   if (triangle->radius == 0.0f) {
-    const f32 epsilon = 1e-9f;
+    const f32 epsilon = 1e-9;
     const Vec3 v = ray.dir;
     const Vec3 p = sub_vec3(ray.init, triangle->positions[0]);
     Vec3 tangents[2] = {
@@ -1295,8 +1295,8 @@ SceneHit intersect_with_ray_triangle(Triangle* triangle, Ray ray) {
     Vec3 n = cross_vec3(tangents[0], tangents[1]);
     normalize_vec3(n, &n);
     const f32 t = -dot_vec3(n, p) / dot_vec3(n, v);
-    if (t < 0) return hit;
-    const Vec3 x = trace_ray(ray, t-epsilon);
+    if (t < epsilon) return hit;
+    const Vec3 x = trace_ray(ray, t - epsilon);
     for (u32 i = 0; i < 3; i++) {
       const Vec3 xi = triangle->positions[i];
       const Vec3 u = sub_vec3(x, xi);
@@ -1307,7 +1307,7 @@ SceneHit intersect_with_ray_triangle(Triangle* triangle, Ray ray) {
     }
     hit.hit = true;
     hit.t = t - epsilon;   /* t value offset for ordering (matches JS) */
-    hit.position = x;     
+    hit.position = x;
     return hit;
   }
   const u32 max_ite = 20;

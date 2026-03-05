@@ -15,6 +15,31 @@
 static const u32 WIDTH = 640 / 2;
 static const u32 HEIGHT = 480 / 2;
 
+/* =============================================================================
+ * Mesh Table
+ * ========================================================================== */
+
+typedef struct {
+  const char* mesh_path;
+  const char* texture_path; /* NULL if no texture */
+} MeshEntry;
+
+static const MeshEntry MESH_TABLE[] = {
+    { "./assets/spot.obj",       "./assets/spot.png"    },
+    { "./assets/megaman.obj",    "./assets/megaman.png" },
+    { "./assets/bunny_orig.obj", NULL                   },
+    { "./assets/riku.obj",       "./assets/riku.png"    },
+    { "./assets/oil.obj",        "./assets/oil.png"     },
+    { "./assets/earth.obj",        "./assets/earth.jpg"     },
+    { "./assets/moses.obj", NULL },
+    { "./assets/dragonHD.obj", NULL },
+    { "./assets/statue.obj",     "./assets/statue.jpg"  },
+    { "./assets/burger.obj",     "./assets/burger.jpg"  },
+    { "./assets/rocks.obj",     "./assets/rocks.jpg"   },
+    { "./assets/JesusMary.obj", "./assets/JesusMary.jpg" },
+};
+
+static const u32 MESH_COUNT = sizeof(MESH_TABLE) / sizeof(MESH_TABLE[0]);
 
 /* =============================================================================
  * Types
@@ -25,7 +50,13 @@ typedef struct {
   Window* window;
   Camera* camera;
   Scene* scene;
+  i32 current_mesh;
+  i32 pending_mesh;
 } App;
+
+/* Forward declarations */
+static void load_mesh(App* app, i32 index);
+static void build_cornell_box(Scene* scene);
 
 /* =============================================================================
  * Global State
@@ -38,10 +69,6 @@ static Tela* g_background = NULL;
 /* =============================================================================
  * Animation / Render Loop
  * ========================================================================== */
-
-static inline Color default_render_background(Ray ray, void* ctx) {
-  return COLOR_BLACK;
-}
 
 static inline Color render_background(Ray ray, void* ctx) {
   Tela* background = (Tela*)ctx;
@@ -58,6 +85,12 @@ Vec3 dir = ray.dir;
 
 static void on_frame(f32 dt, f32 time, void* ctx) {
   App* app = (App*)ctx;
+
+  /* Handle deferred mesh switch */
+  if (app->pending_mesh != app->current_mesh) {
+    load_mesh(app, app->pending_mesh);
+  }
+
   Scene* scene = app->scene;
   Camera* camera = app->camera;
   Tela* exposed = app->tela;
@@ -78,7 +111,10 @@ static void on_frame(f32 dt, f32 time, void* ctx) {
   ray_trace_scene_parallel(scene, &params);
 
   set_window_title(app->window,
-    format_string("Cornell Box | FPS: %.2f", 1.0f / dt));
+    format_string("Cornell Box | [%d/%d] %s | FPS: %.2f | Left/Right to switch",
+      app->current_mesh + 1, (i32)MESH_COUNT,
+      MESH_TABLE[app->current_mesh].mesh_path,
+      1.0f / dt));
   paint_window(app->window, app->tela);
 }
 
@@ -130,11 +166,21 @@ static void on_mouse_scroll(Window* w, i32 delta_y, void* ctx) {
   exposed->iterations = 1;
 }
 
+static void on_key_down(Window* w, u32 keycode, void* ctx) {
+  App* app = (App*)ctx;
+  if (keycode == SDLK_RIGHT) {
+    app->pending_mesh = (app->current_mesh + 1) % (i32)MESH_COUNT;
+  } else if (keycode == SDLK_LEFT) {
+    app->pending_mesh = ((app->current_mesh - 1) + (i32)MESH_COUNT) % (i32)MESH_COUNT;
+  }
+}
+
 static void register_input_handlers(Window* window, App* app) {
   on_mouse_down_window(window, on_mouse_down, app);
   on_mouse_up_window(window, on_mouse_up, app);
   on_mouse_move_window(window, on_mouse_move, app);
   on_mouse_scroll_window(window, on_mouse_scroll, app);
+  on_key_down_window(window, on_key_down, app);
 }
 
 
@@ -149,15 +195,6 @@ static RasterTriangleProps* new_tri_props(Color c, Material* mat) {
   p->tex_coords[0] = vec2(0, 0);
   p->tex_coords[1] = vec2(1, 0);
   p->tex_coords[2] = vec2(0, 1);
-  p->texture = NULL;
-  p->material = mat;
-  return p;
-}
-
-static RasterSphereProps* new_sph_props(Color c, Material* mat) {
-  RasterSphereProps* p = (RasterSphereProps*)malloc(sizeof(RasterSphereProps));
-  p->color = c;
-  p->tex_coord = vec2(0, 0);
   p->texture = NULL;
   p->material = mat;
   return p;
@@ -241,64 +278,71 @@ static void build_cornell_box(Scene* scene) {
 
 }
 
-typedef struct {
-    Vec3 center;
-    f32 scale_inv;
-} FirstTransformContext;
+/* =============================================================================
+ * Mesh Transform Helpers
+ * ========================================================================== */
 
-Vec3 first_transform(Vec3 v, void* ctx) {
-    Vec3 center = ((FirstTransformContext*)ctx)->center;
-    f32 scale_inv = ((FirstTransformContext*)ctx)->scale_inv;
-    return scale_vec3(sub_vec3(v, center), scale_inv);
+typedef struct { Vec3 center; f32 scale_inv; } NormalizeCtx;
+
+static Vec3 transform_normalize(Vec3 v, void* ctx) {
+  NormalizeCtx* c = (NormalizeCtx*)ctx;
+  return scale_vec3(sub_vec3(v, c->center), c->scale_inv);
 }
 
-Vec3 second_transform(Vec3 v, void* ctx) {
-    return vec3(-v.z, -v.x, v.y);
+static Vec3 transform_rotate(Vec3 v, void* ctx) {
+  return vec3(-v.z, -v.x, v.y);
 }
 
-Vec3 third_transform(Vec3 v, void* ctx) {
-    return add_vec3(v, vec3(1.5f, 1.5f, 1.0f));
+static Vec3 transform_translate(Vec3 v, void* ctx) {
+  return add_vec3(v, vec3(1.5f, 1.5f, 1.0f));
 }
 
-Material material_mapper(Face face, void* ctx) {
+static Color white_color_mapper(Vec3 v, void* ctx) {
+  return COLOR_WHITE;
+}
+
+static Material diffuse_material_mapper(Face face, void* ctx) {
   return build_diffuse_material();
 }
 
-void add_mesh_scene(Scene* scene) {
-  char* obj_files[] = {
-        "./assets/megaman.obj",
-        "./assets/statue.obj",
-        "./assets/JesusMary.obj",
-        "./assets/spot.obj",
-        "./assets/oil.obj",
-        "./assets/riku.obj",
-        "./assets/burger.obj",
-    };
-    char* texture_files[] = {
-        "./assets/megaman.png",
-        "./assets/statue.jpg",
-        "./assets/JesusMary.jpg",
-        "./assets/spot.png",
-        "./assets/oil.png",
-        "./assets/riku.png",
-        "./assets/burger.jpg",
-    };
+static void load_mesh(App* app, i32 index) {
+  if (index < 0 || (u32)index >= MESH_COUNT) return;
 
-    u32 mesh_index = 1;
-    String obj = io_read_file(obj_files[mesh_index]);
-    Mesh mesh = read_obj_mesh(obj, "mesh");
-    AABB box = get_bounding_box_mesh(&mesh);
-    f32 scale_inv = 2.0f / max_comp_vec3(box.diagonal);
-    map_vertices_mesh(&mesh, first_transform, &(FirstTransformContext){ .center = box.center, .scale_inv = scale_inv });
-    map_vertices_mesh(&mesh, second_transform, NULL);
-    map_vertices_mesh(&mesh, third_transform, NULL);
-    add_texture_mesh(&mesh, io_read_image(texture_files[mesh_index]));
+  /* Read and parse OBJ */
+  String obj = io_read_file(MESH_TABLE[index].mesh_path);
+  Mesh mesh = read_obj_mesh(obj, "mesh");
 
-    map_triangles_materials_mesh(&mesh, material_mapper, NULL);
+  /* Normalize to fit inside a unit cube, then place at scene center */
+  AABB box = get_bounding_box_mesh(&mesh);
+  f32 scale_inv = 2.0f / max_comp_vec3(box.diagonal);
+  NormalizeCtx nctx = { .center = box.center, .scale_inv = scale_inv };
 
-    Array mesh_elems = triangles_to_scene_elems(get_triangles_mesh(&mesh));
-    add_scene_elems_scene(scene, mesh_elems);
-    free_array(&mesh_elems);
+  map_vertices_mesh(&mesh, transform_normalize, &nctx);
+  map_vertices_mesh(&mesh, transform_rotate, NULL);
+  map_vertices_mesh(&mesh, transform_translate, NULL);
+
+  /* Set all vertex colors to white */
+  map_colors_mesh(&mesh, white_color_mapper, NULL);
+
+  /* Optional texture */
+  if (MESH_TABLE[index].texture_path != NULL) {
+    add_texture_mesh(&mesh, io_read_image(MESH_TABLE[index].texture_path));
+  }
+
+  /* Assign diffuse material to every triangle */
+  map_triangles_materials_mesh(&mesh, diffuse_material_mapper, NULL);
+
+  /* Rebuild scene: cornell box + new mesh */
+  clear_scene_elems_scene(app->scene);
+  build_cornell_box(app->scene);
+  Array mesh_elems = triangles_to_scene_elems(get_triangles_mesh(&mesh));
+  add_scene_elems_scene(app->scene, mesh_elems);
+  free_array(&mesh_elems);
+  app->scene->vtable->rebuild_scene(app->scene);
+
+  /* Reset progressive accumulation */
+  app->tela->iterations = 1;
+  app->current_mesh = index;
 }
 
 /* =============================================================================
@@ -317,15 +361,17 @@ int main(void) {
 
   Scene scene = new_kscene(20);
   build_cornell_box(&scene);
-  add_mesh_scene(&scene);
-  scene.vtable->rebuild_scene(&scene); // force build before rendering
 
   App app = {
       .tela = tela,
       .window = window,
       .camera = &camera,
       .scene = &scene,
+      .current_mesh = -1,
+      .pending_mesh = 0,
   };
+
+  load_mesh(&app, 0);
 
   Loop* animation = loop(on_frame, &app);
   on_close_window(window, on_close, animation);

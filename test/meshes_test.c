@@ -27,11 +27,14 @@ static const MeshEntry MESH_TABLE[] = {
     { "./assets/spot.obj",         "./assets/spot.png"       },
     { "./assets/oil.obj",          "./assets/oil.png"        },
     { "./assets/riku.obj",         "./assets/riku.png"       },
+    { "./assets/earth.obj",        "./assets/earth.jpg"      },
     { "./assets/statue.obj",       "./assets/statue.jpg"     },
     { "./assets/rocks.obj",        "./assets/rocks.jpg"      },
     { "./assets/burger.obj",       "./assets/burger.jpg"     },
     { "./assets/JesusMary.obj",    "./assets/JesusMary.jpg"  },
     { "./assets/little_tokyo.obj", "./assets/little_tokyo.jpg" },
+    { "./assets/moses.obj", NULL },
+    { "./assets/dragonHD.obj", NULL },
 };
 
 static const u32 MESH_COUNT = sizeof(MESH_TABLE) / sizeof(MESH_TABLE[0]);
