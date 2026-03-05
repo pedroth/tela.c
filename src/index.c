@@ -1295,7 +1295,7 @@ SceneHit intersect_with_ray_triangle(Triangle* triangle, Ray ray) {
     Vec3 n = cross_vec3(tangents[0], tangents[1]);
     normalize_vec3(n, &n);
     const f32 t = -dot_vec3(n, p) / dot_vec3(n, v);
-    if (t < epsilon) return hit;
+    if (t < 0) return hit;
     const Vec3 x = trace_ray(ray, t - epsilon);
     for (u32 i = 0; i < 3; i++) {
       const Vec3 xi = triangle->positions[i];
@@ -4514,11 +4514,11 @@ Ray scatter_diffuse(Ray ray, SceneHit hit) {
   else if (hit.scene_elem->geometry_type == SPHERE) {
     normal = normal_to_point_sphere(&hit.scene_elem->as.sphere, hit.position);
   }
-  const Vec3 randomInSphere = random_point_in_sphere();
+  Vec3 random_sphere_vec = random_point_in_sphere();
   // Offset origin slightly along normal to prevent f32 self-intersection
-  const Vec3 origin = add_vec3(hit.position, scale_vec3(normal, 1e-4f));
-  if (dot_vec3(randomInSphere, normal) >= 0) return build_ray(origin, randomInSphere);
-  return build_ray(origin, scale_vec3(randomInSphere, -1));
+  const Vec3 origin = add_vec3(hit.position, scale_vec3(normal, 1e-2f));
+  if (dot_vec3(random_sphere_vec, normal) >= 0) return build_ray(origin, random_sphere_vec);
+  return build_ray(origin, scale_vec3(random_sphere_vec, -1));
 }
 
 Material build_emissive_material() {
@@ -4761,10 +4761,10 @@ Color trace_ray_scene(Ray ray, RayTraceLambdaInput* input, u32 bounces) {
   else if (hit_geometry_type == SPHERE) {
     normal = normal_to_point_sphere(&intersection.scene_elem->as.sphere, intersection.position);
   }
-  f32 attenuation = fabs(dot_vec3(normal, scatter_ray.dir));
+  f32 attenuation = 1.0f;
+  attenuation = fabs(dot_vec3(normal, scatter_ray.dir));
   Color final_color = mul_color(albedo, scattered_color);
   final_color = scale_color(final_color, attenuation);
-  final_color.alpha = 1.0f;
   return final_color;
 }
 
