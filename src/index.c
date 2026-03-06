@@ -650,7 +650,7 @@ static inline Vec3 cross_vec3(const Vec3 a, const Vec3 b) {
 
 static inline bool normalize_vec3(const Vec3 v, Vec3* out) {
   f32 len = length_vec3(v);
-  if (len < EPSILON) {
+  if (len == 0.0f) {
     return false;
   }
   *out = scale_vec3(v, 1.0f / len);
@@ -1159,9 +1159,7 @@ Vec3 normal_to_point_triangle(Triangle* triangle, Vec3 p) {
     };
     Vec3 normal = cross_vec3(tangents[0], tangents[1]);
     normalize_vec3(normal, &normal);
-    Vec3 r = sub_vec3(p, triangle->positions[0]);
-    f32 d = dot_vec3(normal, r);
-    return d < 1e-3f ? normal : scale_vec3(normal, -1.0f);
+    return normal;
   }
   else {
     // Rounded triangle: numerical gradient of distance function
@@ -4551,11 +4549,14 @@ Ray scatter_metallic(Ray ray, SceneHit hit) {
   else if (hit.scene_elem->geometry_type == SPHERE) {
     normal = normal_to_point_sphere(&hit.scene_elem->as.sphere, hit.position);
   }
+  normalize_vec3(normal, &normal);
   Vec3 v = ray.dir;
   Vec3 reflected = sub_vec3(v, scale_vec3(normal, 2 * dot_vec3(v, normal)));
   reflected = add_vec3(reflected, scale_vec3(random_point_in_sphere(), fuzz));
   normalize_vec3(reflected, &reflected);
-  return build_ray(hit.position, reflected);
+  // Offset origin slightly along normal to prevent f32 self-intersection
+  const Vec3 origin = add_vec3(hit.position, scale_vec3(normal, 1e-2f));
+  return build_ray(origin, reflected);
 }
 
 Material build_metallic_material(f32 fuzz) {
@@ -4600,6 +4601,7 @@ Ray scatter_dielectric(Ray ray, SceneHit hit) {
   if (ray.dir.y != 0) t = p.y / ray.dir.y;
   if (ray.dir.z != 0) t = p.z / ray.dir.z;
 
+  Vec3 v_in = ray.dir;
   Vec3 normal = { 0, 0, 0 };
   if (hit.scene_elem->geometry_type == TRIANGLE) {
     normal = normal_to_point_triangle(&hit.scene_elem->as.triangle, hit.position);
@@ -4607,7 +4609,6 @@ Ray scatter_dielectric(Ray ray, SceneHit hit) {
   else if (hit.scene_elem->geometry_type == SPHERE) {
     normal = normal_to_point_sphere(&hit.scene_elem->as.sphere, hit.position);
   }
-  Vec3 v_in = ray.dir;
   bool is_outside = dot_vec3(v_in, normal) < 0;
   f32 refraction_ration = is_outside ? 1 / index_of_refraction : index_of_refraction;
   Vec3 n = is_outside ? scale_vec3(normal, -1) : normal;
@@ -4761,8 +4762,7 @@ Color trace_ray_scene(Ray ray, RayTraceLambdaInput* input, u32 bounces) {
   else if (hit_geometry_type == SPHERE) {
     normal = normal_to_point_sphere(&intersection.scene_elem->as.sphere, intersection.position);
   }
-  f32 attenuation = 1.0f;
-  attenuation = fabs(dot_vec3(normal, scatter_ray.dir));
+  f32 attenuation = fabs(dot_vec3(normal, scatter_ray.dir));
   Color final_color = mul_color(albedo, scattered_color);
   final_color = scale_color(final_color, attenuation);
   return final_color;

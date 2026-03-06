@@ -37,8 +37,8 @@ static const MeshEntry MESH_TABLE[] = {
     { "./assets/moses.obj", NULL },
     { "./assets/dragonHD.obj", NULL },
     { "./assets/statue.obj",     "./assets/statue.jpg"  },
-    { "./assets/burger.obj",     "./assets/burger.jpg"  },
     { "./assets/rocks.obj",     "./assets/rocks.jpg"   },
+    { "./assets/burger.obj",     "./assets/burger.jpg"  },
     { "./assets/JesusMary.obj", "./assets/JesusMary.jpg" },
 };
 
@@ -71,7 +71,6 @@ static DirectionalLightParams* g_directional_light = NULL;
  * ========================================================================== */
 
 static Color render_sky(Ray ray, void* ctx) {
-  (void)ctx;
   Vec3 dir = ray.dir;
   normalize_vec3(dir, &dir);
 
@@ -120,23 +119,21 @@ static Vec3 transform_normalize(Vec3 v, void* ctx) {
  * Net result for input (x, y, z): (-z, -x, y)
  */
 static Vec3 transform_rotate(Vec3 v, void* ctx) {
-  (void)ctx;
   return vec3(-v.z, -v.x, v.y);
 }
 
 static Vec3 transform_translate(Vec3 v, void* ctx) {
-  (void)ctx;
   return add_vec3(v, vec3(1.5f, 1.5f, 1.0f));
 }
 
 static Color white_color_mapper(Vec3 v, void* ctx) {
-  (void)v; (void)ctx;
   return COLOR_WHITE;
 }
 
 static Material diffuse_material_mapper(Face face, void* ctx) {
-  (void)face; (void)ctx;
-  return build_diffuse_material();
+  return build_dielectric_material(3.1f);
+  // return build_metallic_material(0.1f);
+  // return build_diffuse_material();
 }
 
 /* =============================================================================
@@ -241,7 +238,7 @@ static void on_frame(f32 dt, f32 time, void* ctx) {
       .render_background = render_sky,
       .render_background_context = NULL,
       .exposed_tela = app->tela,
-      .directional_light = g_directional_light,
+      // .directional_light = g_directional_light,
   };
 
   ray_trace_scene_parallel(app->scene, &params);
@@ -347,13 +344,13 @@ int main(void) {
       .window = window,
       .camera = &camera,
       .scene = &scene,
-      .current_mesh = 0,
-      .pending_mesh = 0,
+      .current_mesh = 8,
+      .pending_mesh = 8,
   };
 
   /* Build floor and load initial mesh */
   build_floor(&app);
-  load_mesh(&app, 0);
+  load_mesh(&app, 8);
 
   /* Animation loop */
   Loop* animation = loop(on_frame, &app);
