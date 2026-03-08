@@ -3897,6 +3897,7 @@ typedef struct {
   bool  clear_screen;
   Color  background_color;
   bool  perspective_correct;
+  f32  near_plane_z;
   Camera* camera;
   Tela* tela;
 } RasterParams;
@@ -4008,6 +4009,7 @@ void raster_line(RasterLineInput* input) {
   Camera* camera = input->camera;
   Tela* tela = input->tela;
   RasterParams* params = input->params;
+  f32 near_plane_z = params->near_plane_z;
   f32* zBuffer = input->zBuffer;
 
   const u32 w = tela->width;
@@ -4025,7 +4027,7 @@ void raster_line(RasterLineInput* input) {
     points_in_cam_coords[i] = to_local_coords_camera(camera, line->positions[i]);
   }
 
-  if (params->clip_camera_plane && clip_line_camera_plane(points_in_cam_coords, distance_to_plane)) return;
+  if (params->clip_camera_plane && clip_line_camera_plane(points_in_cam_coords, near_plane_z)) return;
   if (clip_line_camera_plane(points_in_cam_coords, 0.0f)) return;
 
   Vec3 projected_points[2];
@@ -4174,6 +4176,7 @@ void raster_triangle(RasterTriangleInput* input) {
   Camera* camera = input->camera;
   Tela* tela = input->tela;
   RasterParams* params = input->params;
+  f32 near_plane_z = params->near_plane_z;
   f32* zBuffer = input->zBuffer;
 
   u32 w = tela->width;
@@ -4205,7 +4208,7 @@ void raster_triangle(RasterTriangleInput* input) {
   u32 outFrustum[3];
   u32 outFrustumCount = 0;
   for (u32 i = 0; i < 3; i++) {
-    if (points_in_cam_coords[i].z < distanceToPlane) {
+    if (points_in_cam_coords[i].z < near_plane_z) {
       outFrustum[outFrustumCount++] = i;
     }
     else {
@@ -4296,6 +4299,8 @@ void raster_sphere(RasterSphereInput* input) {
   Camera* camera = input->camera;
   Tela* tela = input->tela;
   f32* zBuffer = input->zBuffer;
+  RasterParams* params = input->params;
+  f32 near_plane_z = params->near_plane_z;
 
   const u32 w = tela->width;
   const u32 h = tela->height;
@@ -4311,7 +4316,7 @@ void raster_sphere(RasterSphereInput* input) {
 
   // frustum culling
   f32 z = point_in_cam.z;
-  if (z < distance_to_plane) return;
+  if (z < near_plane_z) return;
 
   // project
   f32 proj_scale = distance_to_plane / z;
@@ -4746,6 +4751,7 @@ Color trace_ray_scene(Ray ray, RayTraceLambdaInput* input, u32 bounces) {
 
   GeometryType hit_geometry_type = intersection.scene_elem->geometry_type;
   Color albedo = get_color_from_hit(intersection, ray, bilinear_texture);
+  f32 alpha = albedo.alpha;
   Material material = get_material_from_hit(intersection);
 
   bool is_emissive = material.emissive;

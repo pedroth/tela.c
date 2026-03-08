@@ -45,6 +45,20 @@ static const MeshEntry MESH_TABLE[] = {
 static const u32 MESH_COUNT = sizeof(MESH_TABLE) / sizeof(MESH_TABLE[0]);
 
 /* =============================================================================
+ * Material Table
+ * ========================================================================== */
+
+static const char* MATERIAL_NAMES[] = {
+  "Diffuse",
+  "Metallic",
+  "Dielectric",
+  "Alpha",
+  "Emissive",
+};
+
+static const u32 MATERIAL_COUNT = sizeof(MATERIAL_NAMES) / sizeof(MATERIAL_NAMES[0]);
+
+/* =============================================================================
  * Types
  * ========================================================================== */
 
@@ -56,6 +70,8 @@ typedef struct {
   Triangle floor_tris[2];
   i32      current_mesh;
   i32      pending_mesh;
+  i32      current_material;
+  i32      pending_material;
 } App;
 
 /* =============================================================================
@@ -130,10 +146,21 @@ static Color white_color_mapper(Vec3 v, void* ctx) {
   return COLOR_WHITE;
 }
 
-static Material diffuse_material_mapper(Face face, void* ctx) {
-  return build_dielectric_material(3.1f);
-  // return build_metallic_material(0.1f);
-  // return build_diffuse_material();
+static Material material_from_index(i32 index) {
+  switch (index) {
+    case 0:  return build_diffuse_material();
+    case 1:  return build_metallic_material(0.1f);
+    case 2:  return build_dielectric_material(1.5f);
+    case 3:  return build_alpha_material(0.5f);
+    case 4:  return build_emissive_material();
+    default: return build_diffuse_material();
+  }
+}
+
+static i32 g_material_index = 0;
+
+static Material current_material_mapper(Face face, void* ctx) {
+  return material_from_index(g_material_index);
 }
 
 /* =============================================================================
@@ -195,8 +222,9 @@ static void load_mesh(App* app, i32 index) {
     add_texture_mesh(&mesh, io_read_image(MESH_TABLE[index].texture_path));
   }
 
-  /* Assign diffuse material to every triangle */
-  map_triangles_materials_mesh(&mesh, diffuse_material_mapper, NULL);
+  /* Assign material to every triangle */
+  g_material_index = app->current_material;
+  map_triangles_materials_mesh(&mesh, current_material_mapper, NULL);
 
   /* Rebuild scene: floor + new mesh */
   clear_scene_elems_scene(app->scene);
@@ -219,8 +247,9 @@ static void load_mesh(App* app, i32 index) {
 static void on_frame(f32 dt, f32 time, void* ctx) {
   App* app = (App*)ctx;
 
-  /* Handle deferred mesh switch */
-  if (app->pending_mesh != app->current_mesh) {
+  /* Handle deferred mesh or material switch */
+  if (app->pending_mesh != app->current_mesh || app->pending_material != app->current_material) {
+    app->current_material = app->pending_material;
     load_mesh(app, app->pending_mesh);
   }
 
@@ -244,7 +273,7 @@ static void on_frame(f32 dt, f32 time, void* ctx) {
   ray_trace_scene_parallel(app->scene, &params);
 
   set_window_title(app->window,
-    format_string("Meshes Sky | [%d/%d] %s | FPS: %.2f | Left/Right to switch",
+    format_string("Sky | [%d/%d]%s | FPS: %.2f | L/R mesh, U/D material",
       app->current_mesh + 1, (i32)MESH_COUNT,
       MESH_TABLE[app->current_mesh].mesh_path,
       1.0f / dt));
@@ -310,6 +339,12 @@ static void on_key_down(Window* w, u32 keycode, void* ctx) {
   else if (keycode == SDLK_LEFT) {
     app->pending_mesh = ((app->current_mesh - 1) + (i32)MESH_COUNT) % (i32)MESH_COUNT;
   }
+  else if (keycode == SDLK_UP) {
+    app->pending_material = (app->current_material + 1) % (i32)MATERIAL_COUNT;
+  }
+  else if (keycode == SDLK_DOWN) {
+    app->pending_material = ((app->current_material - 1) + (i32)MATERIAL_COUNT) % (i32)MATERIAL_COUNT;
+  }
 }
 
 static void register_input_handlers(Window* window, App* app) {
@@ -344,13 +379,15 @@ int main(void) {
       .window = window,
       .camera = &camera,
       .scene = &scene,
-      .current_mesh = 8,
-      .pending_mesh = 8,
+      .current_mesh = 0,
+      .pending_mesh = 0,
+      .current_material = 0,
+      .pending_material = 0,
   };
 
   /* Build floor and load initial mesh */
   build_floor(&app);
-  load_mesh(&app, 8);
+  load_mesh(&app, 0);
 
   /* Animation loop */
   Loop* animation = loop(on_frame, &app);

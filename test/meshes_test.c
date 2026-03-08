@@ -95,7 +95,7 @@ static void load_mesh(App* app, i32 index) {
     Mesh mesh = read_obj_mesh(obj, "mesh");
     AABB box = get_bounding_box_mesh(&mesh);
     f32 scale_inv = 2.0f / max_comp_vec3(box.diagonal);
-    map_vertices_mesh(&mesh, first_transform, &(FirstTransformContext){ .center = box.center, .scale_inv = scale_inv });
+    map_vertices_mesh(&mesh, first_transform, &(FirstTransformContext){.center = box.center, .scale_inv = scale_inv });
     map_vertices_mesh(&mesh, second_transform, NULL);
     map_vertices_mesh(&mesh, third_transform, NULL);
     if (MESH_TABLE[index].texture_path != NULL) {
@@ -131,7 +131,8 @@ static void on_frame(f32 dt, f32 time, void* ctx) {
             .clip_camera_plane = true,
             .clear_screen = true,
             .background_color = (Color){ 0.0f, 0.0f, 0.0f, 1.0f },
-            .perspective_correct = true
+            .perspective_correct = true,
+            .near_plane_z = 0.1f,
     });
 
     // Update window title with FPS
@@ -199,7 +200,8 @@ static void on_key_down(Window* w, u32 keycode, void* ctx) {
     App* app = (App*)ctx;
     if (keycode == SDLK_RIGHT) {
         app->pending_mesh = (app->current_mesh + 1) % (i32)MESH_COUNT;
-    } else if (keycode == SDLK_LEFT) {
+    }
+    else if (keycode == SDLK_LEFT) {
         app->pending_mesh = ((app->current_mesh - 1) + (i32)MESH_COUNT) % (i32)MESH_COUNT;
     }
 }

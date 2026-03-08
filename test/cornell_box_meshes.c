@@ -96,7 +96,7 @@ static void on_frame(f32 dt, f32 time, void* ctx) {
   Tela* exposed = app->tela;
 
   RaytraceParams params = {
-    .samples_per_pixel = 1,
+    .samples_per_pixel = 3,
     .bounces = 10,
     .variance = 0.001f,
     .gamma = 0.5f,
@@ -215,6 +215,11 @@ static void build_cornell_box(Scene* scene) {
   *mat_dielectric_2 = build_dielectric_material(2.0);
   Material* mat_alpha_025 = (Material*)malloc(sizeof(Material));
   *mat_alpha_025 = build_alpha_material(0.25);
+
+  // corner emissive triangle
+  Triangle corner_light = build_triangle(vec3(1, 0, 0), vec3(0, 1, 0), vec3(0, 0, 1));
+  corner_light.props = new_tri_props(COLOR_YELLOW, mat_emissive);
+  add_scene_elem_scene(scene, build_scene_elem_triangle(corner_light));
 
   // left-1
   Triangle left_1 = build_triangle(vec3(3, 0, 3), vec3(3, 0, 0), vec3(0, 0, 0));
