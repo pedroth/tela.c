@@ -15,18 +15,17 @@ It tries to be as close as possible to the original tela.js, but with some minor
 # Table of Contents
 
 - [Quick start](#quick-start)
-- [Dependencies](#dependencies)
 - [Acknowledgements](#acknowledgements)
 - [TODOs](#todos)
 
 # Quick start
 
-## Dependencies
+## Installing Dependencies
 
-- Install SDL2 and FFMPEG in your system
+- Install [SDL2][sdl] and [FFMPEG][ffmpeg] in your system
   - SDL2(UBUNTU): `sudo apt-get install libsdl2-dev`
   - ffmpeg(UBUNTU): `sudo apt-get install ffmpeg`
-- Have a C compiler (like clang or gcc) installed
+- Have a C compiler (like [clang][clang] or [gcc][gcc]) installed
 
 ## Trying the examples
 
@@ -49,19 +48,11 @@ gcc -O3 -fopenmp -ffast-math -o app test/meshes_sky.c -lSDL2 -lm -march=native
 ./app
 ```
 
-# Dependencies
-
-- [`gcc`][gcc] or [`clang`][clang] or any C compiler
-- [`ffmpeg`][ffmpeg]
-- [`SDL2`][sdl]
-
-
 # Acknowledgements
 
 - [Keenan's 3D Model Repository](https://www.cs.cmu.edu/~kmcrane/Projects/ModelRepository/)
 - [The models resource](https://www.models-resource.com/)
 - [tela.js](https://github.com/pedroth/tela.js)
-
 
 
 [ffmpeg]: https://ffmpeg.org/
