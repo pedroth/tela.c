@@ -31,6 +31,7 @@ static const MeshEntry MESH_TABLE[] = {
     { "./assets/spot.obj",       "./assets/spot.png"    },
     { "./assets/megaman.obj",    "./assets/megaman.png" },
     { "./assets/bunny_orig.obj", NULL                   },
+    { "./assets/spyro.obj", "./assets/spyro.png"       },
     { "./assets/riku.obj",       "./assets/riku.png"    },
     { "./assets/oil.obj",        "./assets/oil.png"     },
     { "./assets/earth.obj",        "./assets/earth.jpg"     },
@@ -88,7 +89,7 @@ static DirectionalLightParams* g_directional_light = NULL;
 
 static Color render_sky(Ray ray, void* ctx) {
   Vec3 dir = ray.dir;
-  normalize_vec3(dir, &dir);
+  dir = normalize_vec3(dir);
 
   /* Sky gradient: horizon (light blue) → zenith (dark blue) */
   Color sky_horizon = { 0.5f, 0.7f, 1.0f, 1.0f };
@@ -101,7 +102,7 @@ static Color render_sky(Ray ray, void* ctx) {
 
   /* Sun effect */
   Vec3 sun_dir = vec3(0.7f, 0.3f, 0.5f);
-  normalize_vec3(sun_dir, &sun_dir);
+  sun_dir = normalize_vec3(sun_dir);
 
   f32 sun_dot = fmaxf(0.0f, dot_vec3(dir, sun_dir));
   f32 sun_glow = powf(sun_dot, 200.0f);
@@ -254,7 +255,7 @@ static void on_frame(f32 dt, f32 time, void* ctx) {
   }
 
   Vec3 light_dir = vec3(0.7f, 0.3f, 0.5f);
-  normalize_vec3(light_dir, &light_dir);
+  light_dir = normalize_vec3(light_dir);
 
   RaytraceParams params = {
       .samples_per_pixel = 1,
@@ -361,7 +362,7 @@ static void register_input_handlers(Window* window, App* app) {
 
 int main(void) {
   Vec3 light_dir = vec3(0.7f, 0.3f, 0.5f);
-  normalize_vec3(light_dir, &light_dir);
+  light_dir = normalize_vec3(light_dir);
   g_directional_light = &(DirectionalLightParams) { .direction = light_dir, .sharpness = 200.0f };
 
   Tela* tela = new_tela(WIDTH, HEIGHT);

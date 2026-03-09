@@ -167,7 +167,7 @@ static void register_input_handlers(Window* window, App* app) {
  * ========================================================================== */
 
 Material diffuse_material_mapper(Face face, void* ctx) {
-    return build_diffuse_material();
+    return build_alpha_material(0.1f);
 }
 
 /* =============================================================================
@@ -182,7 +182,7 @@ Vec3 swizzle_vertex(Vec3 v, void* ctx) {
 int main(void) {
     g_background = io_read_image("assets/sky.jpg");
     Vec3 light_dir = vec3(1.0f, 1.0f, 1.0f);
-    normalize_vec3(light_dir, &light_dir);
+    light_dir = normalize_vec3(light_dir);
     g_directional_light = &(DirectionalLightParams) {
         .direction = light_dir,
         .sharpness = 200.0f

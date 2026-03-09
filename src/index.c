@@ -552,13 +552,9 @@ static inline f32 length_vec2(const Vec2 v) {
   return sqrtf(v.x * v.x + v.y * v.y);
 }
 
-static inline bool normalize_vec2(const Vec2 v, Vec2* out) {
+static inline Vec2 normalize_vec2(const Vec2 v) {
   f32 len = length_vec2(v);
-  if (len < EPSILON) {
-    return false;
-  }
-  *out = scale_vec2(v, 1.0f / len);
-  return true;
+  return scale_vec2(v, 1.0f / len);
 }
 
 static inline bool equals_vec2(const Vec2 a, const Vec2 b) {
@@ -648,13 +644,9 @@ static inline Vec3 cross_vec3(const Vec3 a, const Vec3 b) {
   return result;
 }
 
-static inline bool normalize_vec3(const Vec3 v, Vec3* out) {
+static inline Vec3 normalize_vec3(const Vec3 v) {
   f32 len = length_vec3(v);
-  if (len == 0.0f) {
-    return false;
-  }
-  *out = scale_vec3(v, 1.0f / len);
-  return true;
+  return scale_vec3(v, 1.0f / len);
 }
 
 static inline bool equals_vec3(const Vec3 a, const Vec3 b) {
@@ -690,7 +682,7 @@ static inline Vec3 random_point_in_sphere() {
       2.0 * random_double() - 1.0
     );
     if (length_vec3(random) >= 1) continue;
-    normalize_vec3(random, &random_in_sphere);
+    random_in_sphere = normalize_vec3(random);
     break;
   }
   return random_in_sphere;
@@ -1158,7 +1150,7 @@ Vec3 normal_to_point_triangle(Triangle* triangle, Vec3 p) {
       sub_vec3(triangle->positions[2], triangle->positions[0])
     };
     Vec3 normal = cross_vec3(tangents[0], tangents[1]);
-    normalize_vec3(normal, &normal);
+    normal = normalize_vec3(normal);
     return normal;
   }
   else {
@@ -1171,7 +1163,7 @@ Vec3 normal_to_point_triangle(Triangle* triangle, Vec3 p) {
       distance_to_point_triangle(triangle, add_vec3(p, vec3(0, epsilon, 0))) - f,
       distance_to_point_triangle(triangle, add_vec3(p, vec3(0, 0, epsilon))) - f
     );
-    normalize_vec3(grad, &grad);
+    grad = normalize_vec3(grad);
     return scale_vec3(grad, sign);
   }
 }
@@ -1209,7 +1201,7 @@ f32 distance_to_point_sphere(Sphere* sphere, Vec3 p) {
 Vec3 normal_to_point_sphere(Sphere* sphere, Vec3 p) {
   Vec3 r = sub_vec3(p, sphere->position);
   f32 len = length_vec3(r);
-  normalize_vec3(r, &r);
+  r = normalize_vec3(r);
   return len >= sphere->radius ? r : scale_vec3(r, -1.0f);
 }
 
@@ -1291,7 +1283,7 @@ SceneHit intersect_with_ray_triangle(Triangle* triangle, Ray ray) {
       sub_vec3(triangle->positions[2], triangle->positions[0])
     };
     Vec3 n = cross_vec3(tangents[0], tangents[1]);
-    normalize_vec3(n, &n);
+    n = normalize_vec3(n);
     const f32 t = -dot_vec3(n, p) / dot_vec3(n, v);
     if (t < 0) return hit;
     const Vec3 x = trace_ray(ray, t - epsilon);
@@ -1452,7 +1444,7 @@ static Vec3 _scene_elem_line_normal(SceneElem* elem, Vec3 point) {
     elem->vtable->distance_to_point(elem, add_vec3(point, vec3(0, epsilon, 0))) - f,
     elem->vtable->distance_to_point(elem, add_vec3(point, vec3(0, 0, epsilon))) - f
   );
-  normalize_vec3(grad, &grad);
+  grad = normalize_vec3(grad);
   return grad;
 }
 
@@ -1755,10 +1747,7 @@ Vec3 normal_to_point_naive_scene(NaiveScene* scene, Vec3 point, f32 (*my_min)(f3
     distance_to_point_naive_scene(scene, add_vec3(point, vec3(0, epsilon, 0)), my_min) - f,
     distance_to_point_naive_scene(scene, add_vec3(point, vec3(0, 0, epsilon)), my_min) - f
   );
-  Vec3 normal = vec3(0, 0, 1);
-  if (!normalize_vec3(grad, &normal)) {
-    return vec3(0, 0, 1);
-  }
+  Vec3 normal = normalize_vec3(grad);
   return f < 0 ? scale_vec3(normal, -1.0f) : normal;
 }
 
@@ -2281,7 +2270,7 @@ static Vec3 normal_to_point_kscene(KScene* ks, Vec3 point, f32 (*my_min)(f32, f3
 
   if (fabsf(weight) > 1e-10f && length_vec3(normal) > 0.0f) {
     Vec3 out = scale_vec3(normal, 1.0f / weight);
-    if (normalize_vec3(out, &out)) return out;
+    return normalize_vec3(out);
   }
 
   const f32 epsilon = 1e-3f;
@@ -2291,9 +2280,7 @@ static Vec3 normal_to_point_kscene(KScene* ks, Vec3 point, f32 (*my_min)(f32, f3
     distance_to_point_kscene(ks, add_vec3(point, vec3(0, epsilon, 0)), my_min) - f,
     distance_to_point_kscene(ks, add_vec3(point, vec3(0, 0, epsilon)), my_min) - f
   );
-  Vec3 out = vec3(0, 0, 1);
-  normalize_vec3(grad, &out);
-  return out;
+  return normalize_vec3(grad);
 }
 
 static f32 distance_on_ray_kscene(KScene* ks, Ray ray, f32 (*my_min)(f32, f32)) {
@@ -2977,7 +2964,7 @@ Tela* map_exposed_tela(Tela* exposed, Color(*lambda)(u32, u32, void const*), voi
     img[k] = img[k] + (color.red - img[k]) / it;
     img[k + 1] = img[k + 1] + (color.green - img[k + 1]) / it;
     img[k + 2] = img[k + 2] + (color.blue - img[k + 2]) / it;
-    img[k + 3] = img[k + 3] + (color.alpha - img[k + 3]) / it;
+    img[k + 3] = 1.0f; // set alpha to 1 for any non-transparent color
   }
   if (exposed->iterations < UINT32_MAX) exposed->iterations++;
   return exposed;
@@ -3826,8 +3813,7 @@ Color lambda_tela_from_ray(u32 x, u32 y, void const* context) {
     camera->basis[2].y * dirInLocal.z,
     camera->basis[0].z * dirInLocal.x + camera->basis[1].z * dirInLocal.y +
     camera->basis[2].z * dirInLocal.z);
-  Vec3 dir_norm;
-  normalize_vec3(dir, &dir_norm);
+  Vec3 dir_norm = normalize_vec3(dir);
   Color c = lambda_context->lambdaWithRays(build_ray(camera->position, dir_norm),
     lambda_context->lambda_context);
   return c;
@@ -3880,8 +3866,7 @@ Ray ray_from_tela_camera(const Camera* camera, const Tela* tela, u32 x, u32 y) {
     camera->basis[2].y * dirInLocal.z,
     camera->basis[0].z * dirInLocal.x + camera->basis[1].z * dirInLocal.y +
     camera->basis[2].z * dirInLocal.z);
-  Vec3 dir_norm;
-  normalize_vec3(dir, &dir_norm);
+  Vec3 dir_norm = normalize_vec3(dir);
   return build_ray(camera->position, dir_norm);
 };
 
@@ -4199,7 +4184,7 @@ void raster_triangle(RasterTriangleInput* input) {
     Vec3 du = sub_vec3(points_in_cam_coords[1], points_in_cam_coords[0]);
     Vec3 dv = sub_vec3(points_in_cam_coords[2], points_in_cam_coords[0]);
     Vec3 n = cross_vec3(du, dv);
-    normalize_vec3(n, &n);
+    n = normalize_vec3(n);
     if (dot_vec3(n, points_in_cam_coords[0]) <= 0) return;
   }
   //frustum culling
@@ -4554,11 +4539,11 @@ Ray scatter_metallic(Ray ray, SceneHit hit) {
   else if (hit.scene_elem->geometry_type == SPHERE) {
     normal = normal_to_point_sphere(&hit.scene_elem->as.sphere, hit.position);
   }
-  normalize_vec3(normal, &normal);
+  normal = normalize_vec3(normal);
   Vec3 v = ray.dir;
   Vec3 reflected = sub_vec3(v, scale_vec3(normal, 2 * dot_vec3(v, normal)));
   reflected = add_vec3(reflected, scale_vec3(random_point_in_sphere(), fuzz));
-  normalize_vec3(reflected, &reflected);
+  reflected = normalize_vec3(reflected);
   // Offset origin slightly along normal to prevent f32 self-intersection
   const Vec3 origin = add_vec3(hit.position, scale_vec3(normal, 1e-2f));
   return build_ray(origin, reflected);
@@ -4574,8 +4559,7 @@ Material build_metallic_material(f32 fuzz) {
   };
 }
 
-Ray scatter_alpha(Ray ray, SceneHit hit) {
-  f32 alpha = *((f32*)get_material_from_hit(hit).data);
+static inline Ray scatter_alpha_aux(Ray ray, SceneHit hit, f32 alpha) {
   Vec3 point = hit.position;
   if (random_double() <= alpha) return scatter_diffuse(ray, hit);
   Vec3 v = sub_vec3(point, ray.init);
@@ -4584,7 +4568,11 @@ Ray scatter_alpha(Ray ray, SceneHit hit) {
   if (ray.dir.y != 0) t = v.y / ray.dir.y;
   if (ray.dir.z != 0) t = v.z / ray.dir.z;
   return build_ray(trace_ray(ray, t + 1e-2), ray.dir);
+}
 
+Ray scatter_alpha(Ray ray, SceneHit hit) {
+  f32 alpha = *((f32*)get_material_from_hit(hit).data);
+  return scatter_alpha_aux(ray, hit, alpha);
 }
 
 Material build_alpha_material(f32 alpha) {
@@ -4629,7 +4617,7 @@ Ray scatter_dielectric(Ray ray, SceneHit hit) {
   f32 cos_theta_out = sqrt(1 - sin_theta_out * sin_theta_out);
   Vec3 vp = scale_vec3(n, cos_theta_in);
   Vec3 vo = sub_vec3(v_in, vp);
-  normalize_vec3(vo, &vo);
+  vo = normalize_vec3(vo);
 
   Vec3 v_out = add_vec3(scale_vec3(n, cos_theta_out), scale_vec3(vo, sin_theta_out));
 
@@ -4751,7 +4739,7 @@ Color trace_ray_scene(Ray ray, RayTraceLambdaInput* input, u32 bounces) {
 
   GeometryType hit_geometry_type = intersection.scene_elem->geometry_type;
   Color albedo = get_color_from_hit(intersection, ray, bilinear_texture);
-  f32 alpha = albedo.alpha;
+  f32 alpha = fmaxf(albedo.alpha, 0.1f);
   Material material = get_material_from_hit(intersection);
 
   bool is_emissive = material.emissive;
@@ -4759,7 +4747,7 @@ Color trace_ray_scene(Ray ray, RayTraceLambdaInput* input, u32 bounces) {
     return albedo;
   }
 
-  Ray scatter_ray = material.scatter(ray, intersection);
+  Ray scatter_ray = random_double() < alpha ? material.scatter(ray, intersection): build_ray(trace_ray(ray,intersection.t + 1e-2), ray.dir);
   Color scattered_color = trace_ray_scene(scatter_ray, input, bounces - 1);
   Vec3 normal = { 0, 0, 0 };
   if (hit_geometry_type == TRIANGLE) {
@@ -4793,7 +4781,7 @@ Color ray_trace_lambda(Ray ray, void* context) {
     const Vec3 epsilon = scale_vec3(random_point_in_sphere(), variance);
     const Vec3 epsilon_ortho = sub_vec3(epsilon, scale_vec3(ray.dir, dot_vec3(epsilon, ray.dir)));
     Vec3 new_dir = add_vec3(ray.dir, epsilon_ortho);
-    normalize_vec3(new_dir, &new_dir);
+    new_dir = normalize_vec3(new_dir);
     Ray jittered_ray = build_ray(ray.init, new_dir);
     accumulated_color = add_color(accumulated_color, trace_ray_scene(jittered_ray, ray_trace_inputs, bounces));
   }

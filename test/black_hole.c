@@ -130,8 +130,7 @@ static Color ray_scene(Ray r, void *ctx) {
   Color torus_color = {glow, 0.5f * glow, 0.3f * glow, 1.0f};
 
   // Sample background using deflected ray direction
-  Vec3 final_dir = {0};
-  normalize_vec3(velocity, &final_dir);
+  Vec3 final_dir = normalize_vec3(velocity);
   Color bg_color = sample_background(app->background, final_dir);
 
   // Blend torus glow with background

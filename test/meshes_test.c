@@ -33,8 +33,8 @@ static const MeshEntry MESH_TABLE[] = {
     { "./assets/burger.obj",       "./assets/burger.jpg"     },
     { "./assets/JesusMary.obj",    "./assets/JesusMary.jpg"  },
     { "./assets/little_tokyo.obj", "./assets/little_tokyo.jpg" },
-    { "./assets/moses.obj", NULL },
-    { "./assets/dragonHD.obj", NULL },
+    // { "./assets/moses.obj", NULL },
+    // { "./assets/dragonHD.obj", NULL },
 };
 
 static const u32 MESH_COUNT = sizeof(MESH_TABLE) / sizeof(MESH_TABLE[0]);

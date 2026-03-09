@@ -258,10 +258,7 @@ int main(void) {
   f32 phases[NUM_COEFFS];
   for (u32 i = 0; i < NUM_COEFFS; i++) {
     Vec3 rv = sub_vec3(scale_vec3(random_vec3(), 2.0f), vec3(1.0f, 1.0f, 1.0f));
-    Vec3 normalized_rv;
-    if (!normalize_vec3(rv, &normalized_rv)) {
-      normalized_rv = vec3(1.0f, 0.0f, 0.0f);
-    }
+    Vec3 normalized_rv = normalize_vec3(rv);
     coeffs[i] = normalized_rv;
     phases[i] = 2.0f * PI * (f32)random_double();
   }

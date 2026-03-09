@@ -105,8 +105,7 @@ static Vec3 sdf_normal(Vec3 p, f32 time) {
                        sdf_scene(add_vec3(p, vec3(0, eps, 0)), time) - center,
                        sdf_scene(add_vec3(p, vec3(0, 0, eps)), time) - center);
 
-  Vec3 normal = {0};
-  normalize_vec3(gradient, &normal);
+  Vec3 normal = normalize_vec3(gradient);
   return normal;
 }
 
@@ -130,8 +129,7 @@ static Color ray_march(Ray ray, f32 time, Vec3 light_pos) {
     if (dist < RAYMARCH_EPSILON) {
       Vec3 normal = sdf_normal(p, time);
       Vec3 to_light = sub_vec3(light_pos, p);
-      Vec3 light_dir = {0};
-      normalize_vec3(to_light, &light_dir);
+      Vec3 light_dir = normalize_vec3(to_light);
 
       f32 diffuse = fmaxf(0.0f, dot_vec3(normal, light_dir));
       return (Color){diffuse, 0.0f, 0.0f, 1.0f};
