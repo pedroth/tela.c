@@ -1,6 +1,6 @@
 # tela.c
 
-Experimental graphic library from scratch(software-only), with reference implementation of computer graphics algorithms.
+A vibe ported (using claude opus 4.6) library of pedroth's tela.js, a software-only graphic library from scratch, with reference implementation of computer graphics algorithms.
 
 ![](/tela.png)
 
@@ -8,7 +8,9 @@ Experimental graphic library from scratch(software-only), with reference impleme
 
 The purpose of this graphic engine is to be able to generate images in a computational way, with minimal dependencies, such that the readable graphical algorithms shine instead of opaque graphical APIs. The engine should also be capable to create videos and interactive demos or games. 
 
-It is a port of [tela.js](https://github.com/pedroth/tela.js), made with the help of AI(Claude opus, gemini, gpt) and some minor conceptual improvements from original.
+## Port details
+
+It tries to be as close as possible to the original tela.js, but with some minor differences regarding the differences between C and JS, but there are also some minor improvements over the original. 
 
 # Table of Contents
 
@@ -19,72 +21,39 @@ It is a port of [tela.js](https://github.com/pedroth/tela.js), made with the hel
 
 # Quick start
 
-## In the browser (webAssembly)
+## Dependencies
 
+- Install SDL2 and FFMPEG in your system
+  - SDL2(UBUNTU): `sudo apt-get install libsdl2-dev`
+  - ffmpeg(UBUNTU): `sudo apt-get install ffmpeg`
+- Have a C compiler (like clang or gcc) installed
 
+## Trying the examples
 
-## On the desktop
+Just git clone the repo, then compile any of the examples in the `test` as follows:
 
-Install sdl2 in your system, download and include `src/index.c` in your file, then compile it using _clang_ or any C compiler, linking the SDL2 library and math library. 
-
-> To install SDL2 on Ubuntu:
->```bash
->sudo apt-get install libsdl2-dev
->```
-
-// minor c example to create a window and render something on it using tela.c:
-
-```c
-// my_app.c
-#include "index.c"
-
-
-```
-
-Then compile it using:
 ```bash
-gcc -O3 -fopenmp -o <app_name> test/<app_name>.c -lSDL2 -lm
+gcc -O3 -fopenmp -o <executable name> test/<demo name>.c -lSDL2 -lm
+./<executable name>
 ```
 
 Example:
 ```bash
-gcc -O3 -fopenmp -o app test/summer_forest_raytrace.c -lSDL2 -lm
+gcc -O3 -fopenmp -o app test/meshes_sky.c -lSDL2 -lm
+./app
 ```
 
-<!-- 
+For even more performance, you could do:
 ```bash
-clang -o my_app my_app.c -lSDL2 -lm
-```
-
-For optimized compilation:
-```bash
-clang -O3 -o my_app my_app.c -lSDL2 -lm
-```
-or 
-```bash
-clang -O3 -march=native -ffast-math -o my_app my_app.c -lSDL2 -lm
-``` -->
-
-
-## Generate images and videos
-
-### Note on generating videos
-
-To generate videos and images `tela.c` needs [ffmpeg][ffmpeg] in your system, in a way that it is possible to write on the console:
-```bash
-ffmpeg -version 
-
-# it should output something like: fmpeg version 4.4.2-0ubuntu0.22.04.1...
-# maybe with a different OS...
-
+gcc -O3 -fopenmp -ffast-math -o app test/meshes_sky.c -lSDL2 -lm -march=native
+./app
 ```
 
 # Dependencies
 
-- [`clang`][clang] or any C compiler
+- [`gcc`][gcc] or [`clang`][clang] or any C compiler
 - [`ffmpeg`][ffmpeg]
 - [`SDL2`][sdl]
-- [xMake _not really necessary_](https://xmake.io/#/)
 
 
 # Acknowledgements
@@ -96,6 +65,7 @@ ffmpeg -version
 
 
 [ffmpeg]: https://ffmpeg.org/
+[gcc]: https://gcc.gnu.org/
 [clang]: https://clang.llvm.org/
 [sdl]: https://www.libsdl.org/
 
