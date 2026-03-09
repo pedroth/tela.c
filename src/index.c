@@ -5005,17 +5005,14 @@ Color trace_ray_scene(Ray ray, RayTraceLambdaInput* input, u32 bounces) {
     return albedo;
   }
 
-  // Ray scatter_ray = random_double() < alpha ? material.scatter(ray,
-  // intersection): build_ray(trace_ray(ray,intersection.t + 1e-2), ray.dir);
-  // Ray scatter_ray = material.scatter(ray, intersection);
   Ray scatter_ray = { 0 };
-  if (alpha < 1.0f) {
-    scatter_ray = scatter_alpha_aux(ray, intersection, alpha);
-  } else {
+  if (random_double() < alpha) {
+    albedo.alpha = 1.0f;  // Treat as fully opaque for scattering
     scatter_ray = material.scatter(ray, intersection);
+  } else {
+    albedo = COLOR_WHITE;  // Dim the color for rays that pass through
+    scatter_ray = build_ray(trace_ray(ray, intersection.t + 1e-2), ray.dir);
   }
-  alpha < 1.0f ? build_ray(trace_ray(ray, intersection.t + 1e-1), ray.dir)
-               : material.scatter(ray, intersection);
   Color scattered_color = trace_ray_scene(scatter_ray, input, bounces - 1);
   Vec3 normal = { 0, 0, 0 };
   if (hit_geometry_type == TRIANGLE) {
