@@ -17,7 +17,7 @@
 #ifndef TELA_C
 #define TELA_C
 
- /* POSIX features for clock_gettime and rand_r - must be before includes */
+/* POSIX features for clock_gettime and rand_r - must be before includes */
 #ifndef _POSIX_C_SOURCE
 #define _POSIX_C_SOURCE 200112L
 #endif
@@ -38,14 +38,14 @@
 #include <omp.h>
 #endif
 
- /* SDL2 for windowing */
+/* SDL2 for windowing */
 #include <SDL2/SDL.h>
 
 //========================================================================================
 /*                                                                                      *
  *                                         TYPES *
  *                                                                                      */
- //========================================================================================
+//========================================================================================
 
 typedef uint64_t u64;
 typedef uint32_t u32;
@@ -65,13 +65,14 @@ typedef bool bool_t;
 /*                                                                                      *
  *                                        RANDOM *
  *                                                                                      */
- //========================================================================================
+//========================================================================================
 
 static __thread unsigned int _tela_rand_seed = 0;
 static inline void _tela_seed_thread(void) {
   if (_tela_rand_seed == 0) {
 #ifdef _OPENMP
-    _tela_rand_seed = (unsigned int)time(NULL) ^ ((unsigned int)omp_get_thread_num() * 2654435761u);
+    _tela_rand_seed = (unsigned int)time(NULL) ^
+                      ((unsigned int)omp_get_thread_num() * 2654435761u);
 #else
     _tela_rand_seed = (unsigned int)time(NULL);
 #endif
@@ -84,9 +85,9 @@ static inline double random_double(void) {
 
 //========================================================================================
 /*                                                                                      *
- *                                         MATH                                         *
+ *                                         MATH *
  *                                                                                      */
- //========================================================================================
+//========================================================================================
 
 #ifndef PI
 #define PI 3.14159265358979323846
@@ -101,13 +102,19 @@ static inline u32 mod_u32(u32 n, u32 m) {
 }
 
 static inline f32 clamp(f32 x, f32 min, f32 max) {
-  if (x < min) return min;
-  if (x > max) return max;
+  if (x < min)
+    return min;
+  if (x > max)
+    return max;
   return x;
 }
 
-static inline i32 max_i32(i32 a, i32 b) { return a > b ? a : b; }
-static inline i32 min_i32(i32 a, i32 b) { return a < b ? a : b; }
+static inline i32 max_i32(i32 a, i32 b) {
+  return a > b ? a : b;
+}
+static inline i32 min_i32(i32 a, i32 b) {
+  return a < b ? a : b;
+}
 
 static inline f32 lerp_f32(f32 a, f32 b, f32 t) {
   return a + (b - a) * t;
@@ -133,7 +140,7 @@ static inline f32 c_bezier_f32(f32 p1, f32 p2, f32 p3, f32 p4, f32 t) {
 /*                                                                                      *
  *                                         ARRAY *
  *                                                                                      */
- //========================================================================================
+//========================================================================================
 
 typedef struct {
   void* data;
@@ -187,7 +194,9 @@ Array filter_array(Array* a, bool (*func)(void* element, u32 index)) {
   return ans;
 }
 
-Array map_array(Array* a, void (*func)(void* element, u32 index, void* ctx), void* ctx) {
+Array map_array(
+    Array* a, void (*func)(void* element, u32 index, void* ctx), void* ctx
+) {
   Array ans = new_array(a->capacity, a->element_size);
   for (u32 i = 0; i < a->length; i++) {
     void* element = (char*)a->data + (i * a->element_size);
@@ -207,22 +216,26 @@ void* get_array_element(Array* a, u32 index) {
 }
 
 void set_array_element(Array* a, u32 index, const void* element) {
-  if (index >= a->length) return;
+  if (index >= a->length)
+    return;
   char* destination = (char*)a->data + (index * a->element_size);
   memcpy(destination, element, a->element_size);
 }
 
 void swap_array_elements(Array* a, u32 i, u32 j) {
-  if (i >= a->length || j >= a->length || i == j) return;
+  if (i >= a->length || j >= a->length || i == j)
+    return;
   char* ei = (char*)a->data + (i * a->element_size);
   char* ej = (char*)a->data + (j * a->element_size);
   // Use stack buffer for small elements, heap for large
   char buf[64];
-  char* temp = (a->element_size <= sizeof(buf)) ? buf : (char*)malloc(a->element_size);
+  char* temp =
+      (a->element_size <= sizeof(buf)) ? buf : (char*)malloc(a->element_size);
   memcpy(temp, ei, a->element_size);
   memcpy(ei, ej, a->element_size);
   memcpy(ej, temp, a->element_size);
-  if (temp != buf) free(temp);
+  if (temp != buf)
+    free(temp);
 }
 
 void* pop_array(Array* a) {
@@ -250,14 +263,21 @@ void free_array(Array* array) {
 }
 
 void remove_at_array(Array* a, u32 index) {
-  if (index >= a->length) return;
+  if (index >= a->length)
+    return;
   char* base = (char*)a->data;
   u32 es = a->element_size;
-  memmove(base + index * es, base + (index + 1) * es, (a->length - index - 1) * es);
+  memmove(
+      base + index * es, base + (index + 1) * es, (a->length - index - 1) * es
+  );
   a->length--;
 }
 
-i32 arg_min_array(Array* a, f32(*cost_function)(void* element, u32 index, void* ctx), void* ctx) {
+i32 arg_min_array(
+    Array* a,
+    f32 (*cost_function)(void* element, u32 index, void* ctx),
+    void* ctx
+) {
   i32 argmin_index = -1;
   f32 cost = __FLT_MAX__;
   for (u32 i = 0; i < a->length; i++) {
@@ -272,13 +292,13 @@ i32 arg_min_array(Array* a, f32(*cost_function)(void* element, u32 index, void* 
 
 //========================================================================================
 /*                                                                                      *
- *                                        PQUEUE                                        *
+ *                                        PQUEUE *
  *                                                                                      */
- //========================================================================================
+//========================================================================================
 
 typedef struct {
-  Array data; // Array of void* pointers
-  f32(*comparator_function)(void* a, void* b, void* ctx);
+  Array data;  // Array of void* pointers
+  f32 (*comparator_function)(void* a, void* b, void* ctx);
   void* priority_ctx;
 } PQueue;
 
@@ -292,7 +312,6 @@ void* peek_pqueue(PQueue* pq) {
   }
   return get_array_element(&pq->data, 0);
 }
-
 
 static void _heapify_pqueue(PQueue* pq, u32 root_index) {
   u32 left_index = 2 * root_index + 1;
@@ -321,20 +340,23 @@ static void _heapify_pqueue(PQueue* pq, u32 root_index) {
 
 void push_pqueue(PQueue* pq, void* element) {
   push_array(&pq->data, &element);
-  if (pq->data.length <= 1) return;
+  if (pq->data.length <= 1)
+    return;
   u32 i = pq->data.length - 1;
   while (i > 0) {
     u32 parent_index = (i % 2 != 0) ? i / 2 : i / 2 - 1;
     void* parent_val = *(void**)get_array_element(&pq->data, parent_index);
     void* current_val = *(void**)get_array_element(&pq->data, i);
-    if (pq->comparator_function(parent_val, current_val, pq->priority_ctx) <= 0) break;
+    if (pq->comparator_function(parent_val, current_val, pq->priority_ctx) <= 0)
+      break;
     swap_array_elements(&pq->data, parent_index, i);
     i = parent_index;
   }
 }
 
 void* pop_pqueue(PQueue* pq) {
-  if (pq->data.length == 0) return NULL;
+  if (pq->data.length == 0)
+    return NULL;
   void* result = *(void**)get_array_element(&pq->data, 0);
   if (pq->data.length <= 1) {
     pq->data.length = 0;
@@ -348,9 +370,14 @@ void* pop_pqueue(PQueue* pq) {
   return result;
 }
 
-PQueue* of_array_pqueue(Array* elements, f32(*comparator_function)(void* a, void* b, void* ctx), void* priority_ctx) {
+PQueue* of_array_pqueue(
+    Array* elements,
+    f32 (*comparator_function)(void* a, void* b, void* ctx),
+    void* priority_ctx
+) {
   PQueue* pq = (PQueue*)malloc(sizeof(PQueue));
-  pq->data = new_array(elements->length > 0 ? elements->length : 4, sizeof(void*));
+  pq->data =
+      new_array(elements->length > 0 ? elements->length : 4, sizeof(void*));
   pq->comparator_function = comparator_function;
   pq->priority_ctx = priority_ctx;
   for (u32 i = 0; i < elements->length; i++) {
@@ -362,15 +389,15 @@ PQueue* of_array_pqueue(Array* elements, f32(*comparator_function)(void* a, void
 
 //========================================================================================
 /*                                                                                      *
- *                                         ANIMA                                        *
+ *                                         ANIMA *
  *                                                                                      */
- //========================================================================================
+//========================================================================================
 
- /**
-  * A behavior is a timed action: a callback that runs for a given duration.
-  * The callback receives (tau, dt, ctx) where tau is local time within
-  * the behavior [0, duration].
-  */
+/**
+ * A behavior is a timed action: a callback that runs for a given duration.
+ * The callback receives (tau, dt, ctx) where tau is local time within
+ * the behavior [0, duration].
+ */
 typedef struct {
   void (*behavior)(f32 tau, f32 dt, void* ctx);
   f32 duration;
@@ -391,21 +418,23 @@ typedef struct {
  * Uses Array of AnimaEntry internally.
  */
 typedef struct {
-  Array entries; // Array of AnimaEntry
+  Array entries;  // Array of AnimaEntry
 } Anima;
 
 /**
  * Create a behavior (callback + duration pair).
  */
-static inline AnimaBehavior anima_behavior(void (*lambda)(f32, f32, void*), f32 duration) {
-  return (AnimaBehavior) { .behavior = lambda, .duration = duration };
+static inline AnimaBehavior anima_behavior(
+    void (*lambda)(f32, f32, void*), f32 duration
+) {
+  return (AnimaBehavior){ .behavior = lambda, .duration = duration };
 }
 
 /**
  * Create a wait (no-op behavior for a given duration).
  */
 static inline AnimaBehavior anima_wait(f32 duration) {
-  return (AnimaBehavior) { .behavior = NULL, .duration = duration };
+  return (AnimaBehavior){ .behavior = NULL, .duration = duration };
 }
 
 /**
@@ -434,8 +463,11 @@ static inline Anima new_anima(Array behaviors) {
  * Total duration of the animation sequence.
  */
 static inline f32 anima_time(const Anima* a) {
-  if (a->entries.length == 0) return 0.0f;
-  AnimaEntry* last = (AnimaEntry*)get_array_element((Array*)&a->entries, a->entries.length - 1);
+  if (a->entries.length == 0)
+    return 0.0f;
+  AnimaEntry* last = (AnimaEntry*)get_array_element(
+      (Array*)&a->entries, a->entries.length - 1
+  );
   return last->end;
 }
 
@@ -444,7 +476,8 @@ static inline f32 anima_time(const Anima* a) {
  * Finds the active behavior and calls it with local time tau.
  */
 static inline void anima_play(const Anima* a, f32 t, f32 dt, void* ctx) {
-  if (a->entries.length == 0) return;
+  if (a->entries.length == 0)
+    return;
 
   // Find which behavior is active at time t
   f32 s = 0.0f;
@@ -455,7 +488,8 @@ static inline void anima_play(const Anima* a, f32 t, f32 dt, void* ctx) {
     i++;
   }
   u32 index = (i > 0) ? i - 1 : 0;
-  AnimaEntry* entry = (AnimaEntry*)get_array_element((Array*)&a->entries, index);
+  AnimaEntry* entry =
+      (AnimaEntry*)get_array_element((Array*)&a->entries, index);
 
   // Compute local time within this behavior
   f32 tau = t - entry->start;
@@ -477,7 +511,8 @@ static inline void anima_play(const Anima* a, f32 t, f32 dt, void* ctx) {
  * Play the animation in a loop (wraps time around total duration).
  */
 static inline void anima_loop(const Anima* a, f32 t, f32 dt, void* ctx) {
-  if (a->entries.length == 0) return;
+  if (a->entries.length == 0)
+    return;
   f32 max_t = anima_time(a);
   anima_play(a, fmodf(t, max_t), dt, ctx);
 }
@@ -493,7 +528,7 @@ static inline void free_anima(Anima* a) {
 /*                                                                                      *
  *                                         VEC2 *
  *                                                                                      */
- //========================================================================================
+//========================================================================================
 
 #define EPSILON 0.0001f
 
@@ -561,25 +596,27 @@ static inline bool equals_vec2(const Vec2 a, const Vec2 b) {
   return fabsf(a.x - b.x) < EPSILON && fabsf(a.y - b.y) < EPSILON;
 }
 
-static inline Vec2 map_vec2(Vec2 v, f32(*func)(f32)) {
+static inline Vec2 map_vec2(Vec2 v, f32 (*func)(f32)) {
   Vec2 result;
   result.x = func(v.x);
   result.y = func(v.y);
   return result;
 }
 
-static inline Vec2 op_vec2(Vec2 a, Vec2 b, f32(*func)(f32, f32)) {
+static inline Vec2 op_vec2(Vec2 a, Vec2 b, f32 (*func)(f32, f32)) {
   Vec2 result;
   result.x = func(a.x, b.x);
   result.y = func(a.y, b.y);
   return result;
 }
 
-static inline f32 fold_vec2(Vec2 v, f32(*func)(f32, f32), f32 initial) {
+static inline f32 fold_vec2(Vec2 v, f32 (*func)(f32, f32), f32 initial) {
   return func(func(initial, v.x), v.y);
 }
 
-static inline bool isnan_vec2(Vec2 v) { return isnan(v.x) || isnan(v.y); }
+static inline bool isnan_vec2(Vec2 v) {
+  return isnan(v.x) || isnan(v.y);
+}
 
 static inline f32 wedge_vec2(Vec2 a, Vec2 b) {
   return a.x * b.y - a.y * b.x;
@@ -588,7 +625,7 @@ static inline f32 wedge_vec2(Vec2 a, Vec2 b) {
 /*                                                                                      *
  *                                         VEC3 *
  *                                                                                      */
- //========================================================================================
+//========================================================================================
 
 typedef struct {
   f32 x;
@@ -651,10 +688,10 @@ static inline Vec3 normalize_vec3(const Vec3 v) {
 
 static inline bool equals_vec3(const Vec3 a, const Vec3 b) {
   return fabsf(a.x - b.x) < EPSILON && fabsf(a.y - b.y) < EPSILON &&
-    fabsf(a.z - b.z) < EPSILON;
+         fabsf(a.z - b.z) < EPSILON;
 }
 
-static inline Vec3 map_vec3(Vec3 v, f32(*func)(f32)) {
+static inline Vec3 map_vec3(Vec3 v, f32 (*func)(f32)) {
   Vec3 result;
   result.x = func(v.x);
   result.y = func(v.y);
@@ -662,7 +699,7 @@ static inline Vec3 map_vec3(Vec3 v, f32(*func)(f32)) {
   return result;
 }
 
-static inline Vec3 op_vec3(Vec3 a, Vec3 b, f32(*func)(f32, f32)) {
+static inline Vec3 op_vec3(Vec3 a, Vec3 b, f32 (*func)(f32, f32)) {
   Vec3 result;
   result.x = func(a.x, b.x);
   result.y = func(a.y, b.y);
@@ -677,11 +714,12 @@ static inline Vec3 random_point_in_sphere() {
   Vec3 random_in_sphere;
   while (true) {
     Vec3 random = vec3(
-      2.0 * random_double() - 1.0,
-      2.0 * random_double() - 1.0,
-      2.0 * random_double() - 1.0
+        2.0 * random_double() - 1.0,
+        2.0 * random_double() - 1.0,
+        2.0 * random_double() - 1.0
     );
-    if (length_vec3(random) >= 1) continue;
+    if (length_vec3(random) >= 1)
+      continue;
     random_in_sphere = normalize_vec3(random);
     break;
   }
@@ -691,7 +729,7 @@ static inline Vec3 random_point_in_sphere() {
 /*                                                                                      *
  *                                         COLOR *
  *                                                                                      */
- //========================================================================================
+//========================================================================================
 
 typedef struct {
   f32 red;
@@ -702,7 +740,7 @@ typedef struct {
 
 static inline bool equals_color(const Color a, const Color b) {
   return (a.red == b.red) && (a.green == b.green) && (a.blue == b.blue) &&
-    (a.alpha == b.alpha);
+         (a.alpha == b.alpha);
 }
 
 static inline Color random_color() {
@@ -724,24 +762,24 @@ static inline Color lerp_color(Color a, Color b, f32 t) {
 }
 
 static inline Color add_color(Color a, Color b) {
-  return (Color) { a.red + b.red, a.green + b.green, a.blue + b.blue, a.alpha + b.alpha };
+  return (Color
+  ){ a.red + b.red, a.green + b.green, a.blue + b.blue, a.alpha + b.alpha };
 }
 
 static inline Color scale_color(Color c, f32 s) {
-  return (Color) { c.red* s, c.green* s, c.blue* s, c.alpha* s };
+  return (Color){ c.red * s, c.green * s, c.blue * s, c.alpha * s };
 }
 
 static inline Color mul_color(Color a, Color b) {
-  return (Color) { a.red* b.red, a.green* b.green, a.blue* b.blue, a.alpha* b.alpha };
+  return (Color
+  ){ a.red * b.red, a.green * b.green, a.blue * b.blue, a.alpha * b.alpha };
 }
 
 static inline Color gamma_color(Color c, f32 gamma) {
-  return (Color) {
-    powf(fmaxf(c.red, 0.0f), gamma),
-      powf(fmaxf(c.green, 0.0f), gamma),
-      powf(fmaxf(c.blue, 0.0f), gamma),
-      c.alpha
-  };
+  return (Color){ powf(fmaxf(c.red, 0.0f), gamma),
+                  powf(fmaxf(c.green, 0.0f), gamma),
+                  powf(fmaxf(c.blue, 0.0f), gamma),
+                  c.alpha };
 }
 
 static const Color COLOR_BLACK = { 0.0f, 0.0f, 0.0f, 1.0f };
@@ -758,7 +796,7 @@ static const Color COLOR_MAGENTA = { 1.0f, 0.0f, 1.0f, 1.0f };
 /*                                                                                      *
  *                                        AABB_2D *
  *                                                                                      */
- //========================================================================================
+//========================================================================================
 
 typedef struct {
   bool is_empty;
@@ -768,10 +806,13 @@ typedef struct {
   Vec2 diagonal;
 } AABB_2D;
 
-#define EMPTY_AABB_2D                                                          \
-  (AABB_2D) {                                                                  \
-    .is_empty = true, .min = {0, 0}, .max = {0, 0}, .center = {0, 0},          \
-    .diagonal = {0, 0}                                                         \
+#define EMPTY_AABB_2D                                                       \
+  (AABB_2D) {                                                               \
+    .is_empty = true, .min = { 0, 0 }, .max = { 0, 0 }, .center = { 0, 0 }, \
+    .diagonal = {                                                           \
+      0,                                                                    \
+      0                                                                     \
+    }                                                                       \
   }
 
 static inline AABB_2D build_aabb_2d(Vec2 min, Vec2 max) {
@@ -790,21 +831,17 @@ AABB_2D build_aabb_from_vec2(Vec2 point) {
 
 static inline AABB_2D union_aabb_2d(const AABB_2D* a, const AABB_2D* b) {
   if (a->is_empty)
-    return (AABB_2D) {
-    .is_empty = b->is_empty,
-      .min = b->min,
-      .max = b->max,
-      .center = b->center,
-      .diagonal = b->diagonal
-  };
+    return (AABB_2D){ .is_empty = b->is_empty,
+                      .min = b->min,
+                      .max = b->max,
+                      .center = b->center,
+                      .diagonal = b->diagonal };
   if (b->is_empty)
-    return (AABB_2D) {
-    .is_empty = a->is_empty,
-      .min = a->min,
-      .max = a->max,
-      .center = a->center,
-      .diagonal = a->diagonal
-  };
+    return (AABB_2D){ .is_empty = a->is_empty,
+                      .min = a->min,
+                      .max = a->max,
+                      .center = a->center,
+                      .diagonal = a->diagonal };
 
   Vec2 new_min = op_vec2(a->min, b->min, fminf);
   Vec2 new_max = op_vec2(a->max, b->max, fmaxf);
@@ -826,21 +863,23 @@ static inline bool collides_aabb_2d(const AABB_2D* box, const AABB_2D* other) {
   return !inter_aabb_2d(box, other).is_empty;
 }
 
-static inline f32 max_comp_vec2(const Vec2 v) { return fmaxf(v.x, v.y); }
+static inline f32 max_comp_vec2(const Vec2 v) {
+  return fmaxf(v.x, v.y);
+}
 
 static inline f32 distance_aabb_2d(const AABB_2D* box, const Vec2 point) {
   const Vec2 p = sub_vec2(point, box->center);
   const Vec2 r = sub_vec2(box->max, box->center);
   const Vec2 q = sub_vec2(map_vec2(p, fabsf), r);
   return length_vec2(op_vec2(q, vec2(0, 0), fmaxf)) +
-    fminf(0, max_comp_vec2(q));
+         fminf(0, max_comp_vec2(q));
 }
 
 //========================================================================================
 /*                                                                                      *
  *                                         AABB *
  *                                                                                      */
- //========================================================================================
+//========================================================================================
 
 typedef struct {
   bool is_empty;
@@ -850,10 +889,14 @@ typedef struct {
   Vec3 diagonal;
 } AABB;
 
-#define EMPTY_AABB                                                             \
-  (AABB) {                                                                     \
-    .is_empty = true, .min = {0, 0, 0}, .max = {0, 0, 0}, .center = {0, 0, 0}, \
-    .diagonal = {0, 0, 0}                                                      \
+#define EMPTY_AABB                                            \
+  (AABB) {                                                    \
+    .is_empty = true, .min = { 0, 0, 0 }, .max = { 0, 0, 0 }, \
+    .center = { 0, 0, 0 }, .diagonal = {                      \
+      0,                                                      \
+      0,                                                      \
+      0                                                       \
+    }                                                         \
   }
 
 static inline AABB build_aabb(Vec3 min, Vec3 max) {
@@ -862,49 +905,55 @@ static inline AABB build_aabb(Vec3 min, Vec3 max) {
   box.max = vec3(fmaxf(min.x, max.x), fmaxf(min.y, max.y), fmaxf(min.z, max.z));
   box.center = scale_vec3(add_vec3(box.min, box.max), 0.5f);
   box.diagonal =
-    vec3(box.max.x - box.min.x, box.max.y - box.min.y, box.max.z - box.min.z);
+      vec3(box.max.x - box.min.x, box.max.y - box.min.y, box.max.z - box.min.z);
   box.is_empty =
-    box.diagonal.x < 0.0f || box.diagonal.y < 0.0f || box.diagonal.z < 0.0f;
+      box.diagonal.x < 0.0f || box.diagonal.y < 0.0f || box.diagonal.z < 0.0f;
   return box;
 }
 
 static inline AABB union_aabb(const AABB* a, const AABB* b) {
   if (a->is_empty)
-    return (AABB) {
-    .is_empty = b->is_empty,
-      .min = b->min,
-      .max = b->max,
-      .center = b->center,
-      .diagonal = b->diagonal
-  };
+    return (AABB){ .is_empty = b->is_empty,
+                   .min = b->min,
+                   .max = b->max,
+                   .center = b->center,
+                   .diagonal = b->diagonal };
   if (b->is_empty)
-    return (AABB) {
-    .is_empty = a->is_empty,
-      .min = a->min,
-      .max = a->max,
-      .center = a->center,
-      .diagonal = a->diagonal
-  };
+    return (AABB){ .is_empty = a->is_empty,
+                   .min = a->min,
+                   .max = a->max,
+                   .center = a->center,
+                   .diagonal = a->diagonal };
 
-  Vec3 new_min = vec3(fminf(a->min.x, b->min.x), fminf(a->min.y, b->min.y),
-    fminf(a->min.z, b->min.z));
-  Vec3 new_max = vec3(fmaxf(a->max.x, b->max.x), fmaxf(a->max.y, b->max.y),
-    fmaxf(a->max.z, b->max.z));
+  Vec3 new_min = vec3(
+      fminf(a->min.x, b->min.x),
+      fminf(a->min.y, b->min.y),
+      fminf(a->min.z, b->min.z)
+  );
+  Vec3 new_max = vec3(
+      fmaxf(a->max.x, b->max.x),
+      fmaxf(a->max.y, b->max.y),
+      fmaxf(a->max.z, b->max.z)
+  );
   return build_aabb(new_min, new_max);
 }
 
 static inline AABB inter_aabb(const AABB* box, const AABB* other) {
   if (box->is_empty || other->is_empty)
     return EMPTY_AABB;
-  Vec3 new_min =
-    vec3(fmaxf(box->min.x, other->min.x), fmaxf(box->min.y, other->min.y),
-      fmaxf(box->min.z, other->min.z));
-  Vec3 new_max =
-    vec3(fminf(box->max.x, other->max.x), fminf(box->max.y, other->max.y),
-      fminf(box->max.z, other->max.z));
+  Vec3 new_min = vec3(
+      fmaxf(box->min.x, other->min.x),
+      fmaxf(box->min.y, other->min.y),
+      fmaxf(box->min.z, other->min.z)
+  );
+  Vec3 new_max = vec3(
+      fminf(box->max.x, other->max.x),
+      fminf(box->max.y, other->max.y),
+      fminf(box->max.z, other->max.z)
+  );
   const Vec3 new_diag = sub_vec3(new_max, new_min);
   const bool is_all_positive =
-    new_diag.x >= 0 && new_diag.y >= 0 && new_diag.z >= 0;
+      new_diag.x >= 0 && new_diag.y >= 0 && new_diag.z >= 0;
   return is_all_positive ? build_aabb(new_min, new_max) : EMPTY_AABB;
 }
 
@@ -921,19 +970,20 @@ static inline f32 distance_aabb(const AABB* box, const Vec3 point) {
   const Vec3 r = sub_vec3(box->max, box->center);
   const Vec3 q = sub_vec3(map_vec3(p, fabsf), r);
   return length_vec3(op_vec3(q, vec3(0, 0, 0), fmaxf)) +
-    fminf(0, max_comp_vec3(q));
+         fminf(0, max_comp_vec3(q));
 }
 
 static inline f32 box_distance_aabb(AABB* a, AABB* b) {
-  return length_vec3(sub_vec3(a->min, b->min)) + length_vec3(sub_vec3(a->max, b->max));
+  return length_vec3(sub_vec3(a->min, b->min)) +
+         length_vec3(sub_vec3(a->max, b->max));
 }
 
 static inline Vec3 sample_aabb(const AABB* box) {
   Vec3 uvw = random_vec3();
   return vec3(
-    lerp_f32(box->min.x, box->max.x, uvw.x),
-    lerp_f32(box->min.y, box->max.y, uvw.y),
-    lerp_f32(box->min.z, box->max.z, uvw.z)
+      lerp_f32(box->min.x, box->max.x, uvw.x),
+      lerp_f32(box->min.y, box->max.y, uvw.y),
+      lerp_f32(box->min.z, box->max.z, uvw.z)
   );
 }
 
@@ -941,7 +991,7 @@ static inline Vec3 sample_aabb(const AABB* box) {
 /*                                                                                      *
  *                                        LINE_2D *
  *                                                                                      */
- //========================================================================================
+//========================================================================================
 
 typedef struct {
   Vec2 positions[2];
@@ -952,7 +1002,7 @@ typedef struct {
 /*                                                                                      *
  *                                         LINE *
  *                                                                                      */
- //========================================================================================
+//========================================================================================
 
 typedef struct {
   Vec3 positions[2];
@@ -974,10 +1024,9 @@ Line build_line(Vec3 p1, Vec3 p2) {
 
 //========================================================================================
 /*                                                                                      *
- *                                      Triangle_2D                                     *
+ *                                      Triangle_2D *
  *                                                                                      */
- //========================================================================================
-
+//========================================================================================
 
 typedef struct {
   Vec2 positions[3];
@@ -994,7 +1043,8 @@ typedef struct {
  */
 static Array triangulate_polygon(const Array* input_path) {
   Array triangles = new_array(input_path->length, sizeof(Tri2D));
-  if (input_path->length < 3) return triangles;
+  if (input_path->length < 3)
+    return triangles;
 
   // Make a working copy
   Array path = new_array(input_path->length, sizeof(Vec2));
@@ -1023,11 +1073,13 @@ static Array triangulate_polygon(const Array* input_path) {
 
     bool have_points_inside = false;
     for (u32 j = 0; j < path.length; j++) {
-      if ((i32)j == (i32)idx || (i32)j == prev_idx || (i32)j == next_idx) continue;
+      if ((i32)j == (i32)idx || (i32)j == prev_idx || (i32)j == next_idx)
+        continue;
       Vec2 p = sub_vec2(*(Vec2*)get_array_element(&path, j), c);
       f32 p_wedge_v = wedge_vec2(p, v);
       f32 u_wedge_p = wedge_vec2(u, p);
-      if (u_wedge_v == 0.0f) continue;
+      if (u_wedge_v == 0.0f)
+        continue;
       f32 alpha = p_wedge_v / u_wedge_v;
       f32 beta = u_wedge_p / u_wedge_v;
       if (alpha < 1 && alpha > 0 && beta < 1 && beta > 0) {
@@ -1039,9 +1091,13 @@ static Array triangulate_polygon(const Array* input_path) {
     if (!have_points_inside) {
       Tri2D tri;
       if (u_wedge_v > 0) {
-        tri.v[0] = prev; tri.v[1] = c; tri.v[2] = next;
+        tri.v[0] = prev;
+        tri.v[1] = c;
+        tri.v[2] = next;
       } else {
-        tri.v[0] = c; tri.v[1] = prev; tri.v[2] = next;
+        tri.v[0] = c;
+        tri.v[1] = prev;
+        tri.v[2] = next;
       }
       push_array(&triangles, &tri);
       remove_at_array(&path, idx);
@@ -1058,9 +1114,13 @@ static Array triangulate_polygon(const Array* input_path) {
     f32 u_wedge_v = wedge_vec2(u, v);
     Tri2D tri;
     if (u_wedge_v > 0) {
-      tri.v[0] = p2; tri.v[1] = p0; tri.v[2] = p1;
+      tri.v[0] = p2;
+      tri.v[1] = p0;
+      tri.v[2] = p1;
     } else {
-      tri.v[0] = p0; tri.v[1] = p2; tri.v[2] = p1;
+      tri.v[0] = p0;
+      tri.v[1] = p2;
+      tri.v[2] = p1;
     }
     push_array(&triangles, &tri);
   }
@@ -1069,12 +1129,11 @@ static Array triangulate_polygon(const Array* input_path) {
   return triangles;
 }
 
-
 //========================================================================================
 /*                                                                                      *
- *                                       TRIANGLE                                       *
+ *                                       TRIANGLE *
  *                                                                                      */
- //========================================================================================
+//========================================================================================
 
 typedef struct {
   Vec3 positions[3];
@@ -1103,10 +1162,8 @@ AABB get_bounding_box_triangle(Triangle* triangle) {
 
 Vec3 get_bary_coord_triangle(Triangle* triangle, Vec3 p) {
   Vec3* positions = triangle->positions;
-  Vec3 tangents[2] = {
-    sub_vec3(positions[1], positions[0]),
-    sub_vec3(positions[2], positions[0])
-  };
+  Vec3 tangents[2] = { sub_vec3(positions[1], positions[0]),
+                       sub_vec3(positions[2], positions[0]) };
   f32 a = dot_vec3(tangents[0], tangents[0]);
   f32 b = dot_vec3(tangents[0], tangents[1]);
   f32 c = b;
@@ -1133,11 +1190,11 @@ f32 distance_to_point_triangle(Triangle* triangle, Vec3 p) {
   };
 
   alpha = vec3(alpha.x / sum, alpha.y / sum, alpha.z / sum);
-  Vec3 point_on_triangle = add_vec3(triangle->positions[0],
-    add_vec3(
-      scale_vec3(tangents[0], alpha.x),
-      scale_vec3(tangents[1], alpha.y)
-    )
+  Vec3 point_on_triangle = add_vec3(
+      triangle->positions[0],
+      add_vec3(
+          scale_vec3(tangents[0], alpha.x), scale_vec3(tangents[1], alpha.y)
+      )
   );
   return length_vec3(sub_vec3(p, point_on_triangle)) - triangle->radius;
 }
@@ -1152,16 +1209,18 @@ Vec3 normal_to_point_triangle(Triangle* triangle, Vec3 p) {
     Vec3 normal = cross_vec3(tangents[0], tangents[1]);
     normal = normalize_vec3(normal);
     return normal;
-  }
-  else {
+  } else {
     // Rounded triangle: numerical gradient of distance function
     f32 epsilon = 1e-6f;
     f32 f = distance_to_point_triangle(triangle, p);
     f32 sign = (f > 0) - (f < 0);
     Vec3 grad = vec3(
-      distance_to_point_triangle(triangle, add_vec3(p, vec3(epsilon, 0, 0))) - f,
-      distance_to_point_triangle(triangle, add_vec3(p, vec3(0, epsilon, 0))) - f,
-      distance_to_point_triangle(triangle, add_vec3(p, vec3(0, 0, epsilon))) - f
+        distance_to_point_triangle(triangle, add_vec3(p, vec3(epsilon, 0, 0))) -
+            f,
+        distance_to_point_triangle(triangle, add_vec3(p, vec3(0, epsilon, 0))) -
+            f,
+        distance_to_point_triangle(triangle, add_vec3(p, vec3(0, 0, epsilon))) -
+            f
     );
     grad = normalize_vec3(grad);
     return scale_vec3(grad, sign);
@@ -1170,9 +1229,9 @@ Vec3 normal_to_point_triangle(Triangle* triangle, Vec3 p) {
 
 //========================================================================================
 /*                                                                                      *
- *                                        SPHERE                                        *
+ *                                        SPHERE *
  *                                                                                      */
- //========================================================================================
+//========================================================================================
 
 typedef struct {
   Vec3 position;
@@ -1190,7 +1249,9 @@ Sphere build_sphere(Vec3 position, f32 radius) {
 AABB get_bounding_box_sphere(Sphere* sphere) {
   Vec3 r_vec = vec3(sphere->radius, sphere->radius, sphere->radius);
   AABB box;
-  box = build_aabb(sub_vec3(sphere->position, r_vec), add_vec3(sphere->position, r_vec));
+  box = build_aabb(
+      sub_vec3(sphere->position, r_vec), add_vec3(sphere->position, r_vec)
+  );
   return box;
 }
 
@@ -1207,16 +1268,11 @@ Vec3 normal_to_point_sphere(Sphere* sphere, Vec3 p) {
 
 //========================================================================================
 /*                                                                                      *
- *                                       GEOMETRY                                       *
+ *                                       GEOMETRY *
  *                                                                                      */
- //========================================================================================
+//========================================================================================
 
-typedef enum {
-  TRIANGLE,
-  SPHERE,
-  LINE_GEOMETRY,
-  AABB_GEOMETRY
-} GeometryType;
+typedef enum { TRIANGLE, SPHERE, LINE_GEOMETRY, AABB_GEOMETRY } GeometryType;
 
 typedef struct SceneElem SceneElem;
 
@@ -1225,7 +1281,9 @@ typedef struct {
   Vec3 dir;
 } Ray;
 
-static inline Ray build_ray(Vec3 init, Vec3 dir) { return (Ray) { init, dir }; }
+static inline Ray build_ray(Vec3 init, Vec3 dir) {
+  return (Ray){ init, dir };
+}
 
 static inline Vec3 trace_ray(Ray ray, f32 t) {
   return add_vec3(ray.init, scale_vec3(ray.dir, t));
@@ -1246,7 +1304,8 @@ SceneHit intersect_with_ray_aabb(Ray ray, const AABB* box) {
   f32 epsilon = 1e-9f;
   f32 tmin = -INFINITY;
   f32 tmax = INFINITY;
-  if (box->is_empty) return hit;
+  if (box->is_empty)
+    return hit;
   // Pad AABB slightly to compensate for f32 precision loss in slab test
   f32 pad = 1e-9f;
   f32 min_array[3] = { box->min.x - pad, box->min.y - pad, box->min.z - pad };
@@ -1285,7 +1344,8 @@ SceneHit intersect_with_ray_triangle(Triangle* triangle, Ray ray) {
     Vec3 n = cross_vec3(tangents[0], tangents[1]);
     n = normalize_vec3(n);
     const f32 t = -dot_vec3(n, p) / dot_vec3(n, v);
-    if (t < 0) return hit;
+    if (t < 0)
+      return hit;
     const Vec3 x = trace_ray(ray, t - epsilon);
     for (u32 i = 0; i < 3; i++) {
       const Vec3 xi = triangle->positions[i];
@@ -1293,10 +1353,11 @@ SceneHit intersect_with_ray_triangle(Triangle* triangle, Ray ray) {
       const Vec3 edge_i = sub_vec3(triangle->positions[(i + 1) % 3], xi);
       const Vec3 ni = cross_vec3(n, edge_i);
       const f32 dot = dot_vec3(ni, u);
-      if (dot < 0) return hit;
+      if (dot < 0)
+        return hit;
     }
     hit.hit = true;
-    hit.t = t - epsilon;   /* t value offset for ordering (matches JS) */
+    hit.t = t - epsilon; /* t value offset for ordering (matches JS) */
     hit.position = x;
     return hit;
   }
@@ -1323,21 +1384,22 @@ SceneHit intersect_with_ray_triangle(Triangle* triangle, Ray ray) {
   return hit;
 }
 
-
 f32 intersect_sphere_aux(Sphere* sphere, Ray ray) {
   Vec3 init = ray.init;
   Vec3 dir = ray.dir;
   const Vec3 diff = sub_vec3(init, sphere->position);
   const f32 b = 2 * dot_vec3(dir, diff);
   const f32 c = dot_vec3(diff, diff) - sphere->radius * sphere->radius;
-  const f32 discriminant = b * b - 4 * c; // a = 1
-  if (discriminant < 0) return INFINITY;
+  const f32 discriminant = b * b - 4 * c;  // a = 1
+  if (discriminant < 0)
+    return INFINITY;
   const f32 sqrt_disc = sqrtf(discriminant);
   const f32 t1 = (-b - sqrt_disc) / 2;
   const f32 t2 = (-b + sqrt_disc) / 2;
   const f32 t = fminf(t1, t2);
   const f32 tM = fmaxf(t1, t2);
-  if (t1 * t2 < 0) return tM;
+  if (t1 * t2 < 0)
+    return tM;
   return t1 >= 0 && t2 >= 0 ? t : INFINITY;
 }
 
@@ -1348,7 +1410,8 @@ SceneHit intersect_with_ray_sphere(Sphere* sphere, Ray ray) {
   hit.t = INFINITY;
 
   f32 t = intersect_sphere_aux(sphere, ray);
-  if (t == INFINITY) return hit;
+  if (t == INFINITY)
+    return hit;
 
   hit.hit = true;
   hit.t = t;
@@ -1363,18 +1426,17 @@ SceneHit intersect_with_ray_line(Line* line, Ray ray) {
   return hit;
 }
 
-
 //========================================================================================
 /*                                                                                      *
- *                                        SCENE                                         *
+ *                                        SCENE *
  *                                                                                      */
- //========================================================================================
+//========================================================================================
 
 typedef struct {
-  AABB(*get_bounding_box)(SceneElem* elem);
-  Vec3(*normal_to_point)(SceneElem* elem, Vec3 point);
-  f32(*distance_to_point)(SceneElem* elem, Vec3 point);
-  SceneHit(*intersect_with_ray)(SceneElem* elem, Ray ray);
+  AABB (*get_bounding_box)(SceneElem* elem);
+  Vec3 (*normal_to_point)(SceneElem* elem, Vec3 point);
+  f32 (*distance_to_point)(SceneElem* elem, Vec3 point);
+  SceneHit (*intersect_with_ray)(SceneElem* elem, Ray ray);
 } SceneElemVTable;
 
 struct SceneElem {
@@ -1440,9 +1502,15 @@ static Vec3 _scene_elem_line_normal(SceneElem* elem, Vec3 point) {
   const f32 epsilon = 1e-6f;
   f32 f = elem->vtable->distance_to_point(elem, point);
   Vec3 grad = vec3(
-    elem->vtable->distance_to_point(elem, add_vec3(point, vec3(epsilon, 0, 0))) - f,
-    elem->vtable->distance_to_point(elem, add_vec3(point, vec3(0, epsilon, 0))) - f,
-    elem->vtable->distance_to_point(elem, add_vec3(point, vec3(0, 0, epsilon))) - f
+      elem->vtable->distance_to_point(
+          elem, add_vec3(point, vec3(epsilon, 0, 0))
+      ) - f,
+      elem->vtable->distance_to_point(
+          elem, add_vec3(point, vec3(0, epsilon, 0))
+      ) - f,
+      elem->vtable->distance_to_point(
+          elem, add_vec3(point, vec3(0, 0, epsilon))
+      ) - f
   );
   grad = normalize_vec3(grad);
   return grad;
@@ -1534,17 +1602,17 @@ typedef struct Scene Scene;
 
 /* Scene virtual table — every scene implementation provides these */
 typedef struct {
-  void     (*add_elem)(Scene* self, SceneElem elem);
-  void     (*add_elems)(Scene* self, Array elems);
-  void     (*clear_elems)(Scene* self);
-  void    (*clear_scene)(Scene* self);
-  SceneHit(*intersect)(Scene* self, Ray ray);
-  Vec3   (*normal_to_point)(Scene* self, Vec3 point, f32 (*my_min)(f32, f32));
-  f32    (*distance_to_point)(Scene* self, Vec3 point, f32 (*my_min)(f32, f32));
-  f32    (*distance_on_ray)(Scene* self, Ray ray, f32 (*my_min)(f32, f32));
-  void    (*debug)(Scene* self, void* props);
+  void (*add_elem)(Scene* self, SceneElem elem);
+  void (*add_elems)(Scene* self, Array elems);
+  void (*clear_elems)(Scene* self);
+  void (*clear_scene)(Scene* self);
+  SceneHit (*intersect)(Scene* self, Ray ray);
+  Vec3 (*normal_to_point)(Scene* self, Vec3 point, f32 (*my_min)(f32, f32));
+  f32 (*distance_to_point)(Scene* self, Vec3 point, f32 (*my_min)(f32, f32));
+  f32 (*distance_on_ray)(Scene* self, Ray ray, f32 (*my_min)(f32, f32));
+  void (*debug)(Scene* self, void* props);
   Array* (*get_elems)(Scene* self);
-  void     (*free_scene)(Scene* self);
+  void (*free_scene)(Scene* self);
   Scene* (*rebuild_scene)(Scene* self);
 } SceneVTable;
 
@@ -1555,17 +1623,45 @@ struct Scene {
 };
 
 /* Generic Scene API */
-static inline void add_scene_elem_scene(Scene* s, SceneElem elem) { s->vtable->add_elem(s, elem); }
-static inline void add_scene_elems_scene(Scene* s, Array elems) { s->vtable->add_elems(s, elems); }
-static inline void clear_scene_elems_scene(Scene* s) { s->vtable->clear_elems(s); }
-static inline void clear_scene(Scene* s) { s->vtable->clear_scene(s); }
-static inline SceneHit intersect_scene(Scene* s, Ray ray) { return s->vtable->intersect(s, ray); }
-static inline Vec3 normal_to_point_scene(Scene* s, Vec3 point, f32 (*my_min)(f32, f32)) { return s->vtable->normal_to_point(s, point, my_min); }
-static inline f32 distance_to_point_scene(Scene* s, Vec3 point, f32 (*my_min)(f32, f32)) { return s->vtable->distance_to_point(s, point, my_min); }
-static inline f32 distance_on_ray_scene(Scene* s, Ray ray, f32 (*my_min)(f32, f32)) { return s->vtable->distance_on_ray(s, ray, my_min); }
-static inline void debug_scene(Scene* s, void* props) { s->vtable->debug(s, props); }
-static inline Array* get_scene_elems_scene(Scene* s) { return s->vtable->get_elems(s); }
-static inline void free_scene(Scene* s) { s->vtable->free_scene(s); }
+static inline void add_scene_elem_scene(Scene* s, SceneElem elem) {
+  s->vtable->add_elem(s, elem);
+}
+static inline void add_scene_elems_scene(Scene* s, Array elems) {
+  s->vtable->add_elems(s, elems);
+}
+static inline void clear_scene_elems_scene(Scene* s) {
+  s->vtable->clear_elems(s);
+}
+static inline void clear_scene(Scene* s) {
+  s->vtable->clear_scene(s);
+}
+static inline SceneHit intersect_scene(Scene* s, Ray ray) {
+  return s->vtable->intersect(s, ray);
+}
+static inline Vec3 normal_to_point_scene(
+    Scene* s, Vec3 point, f32 (*my_min)(f32, f32)
+) {
+  return s->vtable->normal_to_point(s, point, my_min);
+}
+static inline f32 distance_to_point_scene(
+    Scene* s, Vec3 point, f32 (*my_min)(f32, f32)
+) {
+  return s->vtable->distance_to_point(s, point, my_min);
+}
+static inline f32 distance_on_ray_scene(
+    Scene* s, Ray ray, f32 (*my_min)(f32, f32)
+) {
+  return s->vtable->distance_on_ray(s, ray, my_min);
+}
+static inline void debug_scene(Scene* s, void* props) {
+  s->vtable->debug(s, props);
+}
+static inline Array* get_scene_elems_scene(Scene* s) {
+  return s->vtable->get_elems(s);
+}
+static inline void free_scene(Scene* s) {
+  s->vtable->free_scene(s);
+}
 
 static inline f32 smooth_min_k_scene(f32 a, f32 b, f32 k) {
   const f32 m = fminf(a, b);
@@ -1579,7 +1675,8 @@ static inline f32 smooth_min_scene_default(f32 a, f32 b) {
 }
 
 static inline Array triangles_to_scene_elems(Array triangles) {
-  Array elems = new_array(triangles.length > 0 ? triangles.length : 4, sizeof(SceneElem));
+  Array elems =
+      new_array(triangles.length > 0 ? triangles.length : 4, sizeof(SceneElem));
   for (u32 i = 0; i < triangles.length; i++) {
     Triangle* triangle = (Triangle*)get_array_element(&triangles, i);
     SceneElem elem = build_scene_elem_triangle(*triangle);
@@ -1589,7 +1686,8 @@ static inline Array triangles_to_scene_elems(Array triangles) {
 }
 
 static inline Array spheres_to_scene_elems(Array spheres) {
-  Array elems = new_array(spheres.length > 0 ? spheres.length : 4, sizeof(SceneElem));
+  Array elems =
+      new_array(spheres.length > 0 ? spheres.length : 4, sizeof(SceneElem));
   for (u32 i = 0; i < spheres.length; i++) {
     Sphere* sphere = (Sphere*)get_array_element(&spheres, i);
     SceneElem elem = build_scene_elem_sphere(*sphere);
@@ -1599,7 +1697,8 @@ static inline Array spheres_to_scene_elems(Array spheres) {
 }
 
 static inline Array lines_to_scene_elems(Array lines) {
-  Array elems = new_array(lines.length > 0 ? lines.length : 4, sizeof(SceneElem));
+  Array elems =
+      new_array(lines.length > 0 ? lines.length : 4, sizeof(SceneElem));
   for (u32 i = 0; i < lines.length; i++) {
     Line* line = (Line*)get_array_element(&lines, i);
     SceneElem elem = build_scene_elem_line(*line);
@@ -1610,60 +1709,36 @@ static inline Array lines_to_scene_elems(Array lines) {
 
 //========================================================================================
 /*                                                                                      *
- *                                       UTILS3D                                        *
+ *                                       UTILS3D *
  *                                                                                      */
- //========================================================================================
+//========================================================================================
 
 const Vec3 UNIT_BOX_VERTEX[8] = {
-  { 0.0f, 0.0f, 0.0f },
-  { 1.0f, 0.0f, 0.0f },
-  { 1.0f, 1.0f, 0.0f },
-  { 0.0f, 1.0f, 0.0f },
-  { 0.0f, 0.0f, 1.0f },
-  { 1.0f, 0.0f, 1.0f },
-  { 1.0f, 1.0f, 1.0f },
-  { 0.0f, 1.0f, 1.0f },
+  { 0.0f, 0.0f, 0.0f }, { 1.0f, 0.0f, 0.0f }, { 1.0f, 1.0f, 0.0f },
+  { 0.0f, 1.0f, 0.0f }, { 0.0f, 0.0f, 1.0f }, { 1.0f, 0.0f, 1.0f },
+  { 1.0f, 1.0f, 1.0f }, { 0.0f, 1.0f, 1.0f },
 };
 
 const u32 UNIT_BOX_LINES[12][2] = {
-  { 0, 1 },
-  { 1, 2 },
-  { 2, 3 },
-  { 3, 0 },
-  { 4, 5 },
-  { 5, 6 },
-  { 6, 7 },
-  { 7, 4 },
-  { 0, 4 },
-  { 1, 5 },
-  { 3, 7 },
-  { 2, 6 },
+  { 0, 1 }, { 1, 2 }, { 2, 3 }, { 3, 0 }, { 4, 5 }, { 5, 6 },
+  { 6, 7 }, { 7, 4 }, { 0, 4 }, { 1, 5 }, { 3, 7 }, { 2, 6 },
 };
 
 const u32 UNIT_BOX_FACES[12][3] = {
-  { 0, 1, 2 },
-  { 2, 3, 0 },
-  { 4, 5, 6 },
-  { 6, 7, 4 },
-  { 0, 1, 4 },
-  { 4, 5, 1 },
-  { 2, 3, 6 },
-  { 6, 7, 3 },
-  { 0, 3, 7 },
-  { 7, 4, 0 },
-  { 1, 2, 6 },
-  { 6, 5, 1 },
+  { 0, 1, 2 }, { 2, 3, 0 }, { 4, 5, 6 }, { 6, 7, 4 }, { 0, 1, 4 }, { 4, 5, 1 },
+  { 2, 3, 6 }, { 6, 7, 3 }, { 0, 3, 7 }, { 7, 4, 0 }, { 1, 2, 6 }, { 6, 5, 1 },
 };
 
 Scene* draw_box(Scene* debug_scene, AABB box, Color color) {
-  if (box.is_empty) return debug_scene;
+  if (box.is_empty)
+    return debug_scene;
 
   Vec3 vertices[8];
   for (u32 i = 0; i < 8; i++) {
     vertices[i] = vec3(
-      UNIT_BOX_VERTEX[i].x * box.diagonal.x + box.min.x,
-      UNIT_BOX_VERTEX[i].y * box.diagonal.y + box.min.y,
-      UNIT_BOX_VERTEX[i].z * box.diagonal.z + box.min.z
+        UNIT_BOX_VERTEX[i].x * box.diagonal.x + box.min.x,
+        UNIT_BOX_VERTEX[i].y * box.diagonal.y + box.min.y,
+        UNIT_BOX_VERTEX[i].z * box.diagonal.z + box.min.z
     );
   }
 
@@ -1671,7 +1746,8 @@ Scene* draw_box(Scene* debug_scene, AABB box, Color color) {
     const u32 i = UNIT_BOX_LINES[k][0];
     const u32 j = UNIT_BOX_LINES[k][1];
     LineProps* line_props = (LineProps*)malloc(sizeof(LineProps));
-    if (!line_props) continue;
+    if (!line_props)
+      continue;
     line_props->colors[0] = color;
     line_props->colors[1] = color;
 
@@ -1684,9 +1760,9 @@ Scene* draw_box(Scene* debug_scene, AABB box, Color color) {
 
 //========================================================================================
 /*                                                                                      *
- *                                      NAIVE_SCENE                                     *
+ *                                      NAIVE_SCENE *
  *                                                                                      */
- //========================================================================================
+//========================================================================================
 
 typedef struct {
   Array elems;
@@ -1729,7 +1805,9 @@ SceneHit intersect_naive_scene(NaiveScene* scene, Ray ray) {
   return closest_hit;
 }
 
-f32 distance_to_point_naive_scene(NaiveScene* scene, Vec3 point, f32 (*my_min)(f32, f32)) {
+f32 distance_to_point_naive_scene(
+    NaiveScene* scene, Vec3 point, f32 (*my_min)(f32, f32)
+) {
   f32 (*combine)(f32, f32) = my_min ? my_min : fminf;
   f32 distance = INFINITY;
   for (u32 i = 0; i < scene->elems.length; i++) {
@@ -1739,19 +1817,29 @@ f32 distance_to_point_naive_scene(NaiveScene* scene, Vec3 point, f32 (*my_min)(f
   return distance;
 }
 
-Vec3 normal_to_point_naive_scene(NaiveScene* scene, Vec3 point, f32 (*my_min)(f32, f32)) {
+Vec3 normal_to_point_naive_scene(
+    NaiveScene* scene, Vec3 point, f32 (*my_min)(f32, f32)
+) {
   const f32 epsilon = 1e-3f;
   f32 f = distance_to_point_naive_scene(scene, point, my_min);
   Vec3 grad = vec3(
-    distance_to_point_naive_scene(scene, add_vec3(point, vec3(epsilon, 0, 0)), my_min) - f,
-    distance_to_point_naive_scene(scene, add_vec3(point, vec3(0, epsilon, 0)), my_min) - f,
-    distance_to_point_naive_scene(scene, add_vec3(point, vec3(0, 0, epsilon)), my_min) - f
+      distance_to_point_naive_scene(
+          scene, add_vec3(point, vec3(epsilon, 0, 0)), my_min
+      ) - f,
+      distance_to_point_naive_scene(
+          scene, add_vec3(point, vec3(0, epsilon, 0)), my_min
+      ) - f,
+      distance_to_point_naive_scene(
+          scene, add_vec3(point, vec3(0, 0, epsilon)), my_min
+      ) - f
   );
   Vec3 normal = normalize_vec3(grad);
   return f < 0 ? scale_vec3(normal, -1.0f) : normal;
 }
 
-f32 distance_on_ray_naive_scene(NaiveScene* scene, Ray ray, f32 (*my_min)(f32, f32)) {
+f32 distance_on_ray_naive_scene(
+    NaiveScene* scene, Ray ray, f32 (*my_min)(f32, f32)
+) {
   return distance_to_point_naive_scene(scene, ray.init, my_min);
 }
 
@@ -1771,13 +1859,19 @@ static void _naive_clear_scene(Scene* self) {
 static SceneHit _naive_intersect(Scene* self, Ray ray) {
   return intersect_naive_scene((NaiveScene*)self->data, ray);
 }
-static Vec3 _naive_normal_to_point(Scene* self, Vec3 point, f32 (*my_min)(f32, f32)) {
+static Vec3 _naive_normal_to_point(
+    Scene* self, Vec3 point, f32 (*my_min)(f32, f32)
+) {
   return normal_to_point_naive_scene((NaiveScene*)self->data, point, my_min);
 }
-static f32 _naive_distance_to_point(Scene* self, Vec3 point, f32 (*my_min)(f32, f32)) {
+static f32 _naive_distance_to_point(
+    Scene* self, Vec3 point, f32 (*my_min)(f32, f32)
+) {
   return distance_to_point_naive_scene((NaiveScene*)self->data, point, my_min);
 }
-static f32 _naive_distance_on_ray(Scene* self, Ray ray, f32 (*my_min)(f32, f32)) {
+static f32 _naive_distance_on_ray(
+    Scene* self, Ray ray, f32 (*my_min)(f32, f32)
+) {
   return distance_on_ray_naive_scene((NaiveScene*)self->data, ray, my_min);
 }
 static void _naive_debug(Scene* self, void* props) {
@@ -1789,7 +1883,8 @@ static Array* _naive_get_elems(Scene* self) {
 }
 static void _naive_free_scene(Scene* self) {
   NaiveScene* ns = (NaiveScene*)self->data;
-  if (ns->elems.data) free_array(&ns->elems);
+  if (ns->elems.data)
+    free_array(&ns->elems);
   free(ns);
   self->data = NULL;
 }
@@ -1816,14 +1911,14 @@ static const SceneVTable NAIVE_SCENE_VTABLE = {
 
 Scene new_naive_scene(void) {
   NaiveScene* ns = (NaiveScene*)calloc(1, sizeof(NaiveScene));
-  return (Scene) { .vtable = &NAIVE_SCENE_VTABLE, .data = ns };
+  return (Scene){ .vtable = &NAIVE_SCENE_VTABLE, .data = ns };
 }
 
 //========================================================================================
 /*                                                                                      *
- *                                        KSCENE                                        *
+ *                                        KSCENE *
  *                                                                                      */
- //========================================================================================
+//========================================================================================
 typedef struct NodeKScene {
   AABB box;
   bool is_leaf;
@@ -1834,7 +1929,7 @@ typedef struct NodeKScene {
       struct NodeKScene* right;
     };
     struct {
-      Array elems; // only valid if is_leaf is true
+      Array elems;  // only valid if is_leaf is true
     };
   };
 } NodeKScene;
@@ -1852,22 +1947,26 @@ static NodeKScene* new_node_k_scene(u32 k) {
 
 static void _kscene_debug(Scene* self, void* props);
 
-static NodeKScene* join_node_k_scene(NodeKScene* scene, NodeKScene* node_or_leaf) {
+static NodeKScene* join_node_k_scene(
+    NodeKScene* scene, NodeKScene* node_or_leaf
+) {
   NodeKScene* new_node = (NodeKScene*)calloc(1, sizeof(NodeKScene));
   new_node->is_leaf = false;
   new_node->left = scene;
   new_node->right = node_or_leaf;
   new_node->box = union_aabb(&scene->box, &node_or_leaf->box);
-  new_node->num_of_primitives = scene->num_of_primitives + node_or_leaf->num_of_primitives;
+  new_node->num_of_primitives =
+      scene->num_of_primitives + node_or_leaf->num_of_primitives;
   return new_node;
 }
 
 static void free_node_k_scene(NodeKScene* node) {
-  if (!node) return;
+  if (!node)
+    return;
   if (node->is_leaf) {
-    if (node->elems.data) free_array(&node->elems);
-  }
-  else {
+    if (node->elems.data)
+      free_array(&node->elems);
+  } else {
     free_node_k_scene(node->left);
     free_node_k_scene(node->right);
   }
@@ -1887,11 +1986,14 @@ typedef struct {
  * Splits prim_refs into two groups: group_a and group_b.
  */
 static void cluster_prims(
-  const AABB* box,
-  const PrimRef* refs, u32 count,
-  Array* group_a, Array* group_b
+    const AABB* box,
+    const PrimRef* refs,
+    u32 count,
+    Array* group_a,
+    Array* group_b
 ) {
-  if (count == 0) return;
+  if (count == 0)
+    return;
 
   const u32 ITERATIONS = 10;
 
@@ -1923,8 +2025,10 @@ static void cluster_prims(
       if (cluster_indices[j].length == 0) {
         u32 other = (j + 1) % 2;
         u32 rand_idx = (u32)(random_double() * cluster_indices[other].length);
-        if (rand_idx >= cluster_indices[other].length) rand_idx = 0;
-        u32 picked = *(u32*)get_array_element(&cluster_indices[other], rand_idx);
+        if (rand_idx >= cluster_indices[other].length)
+          rand_idx = 0;
+        u32 picked =
+            *(u32*)get_array_element(&cluster_indices[other], rand_idx);
         push_array(&cluster_indices[j], &picked);
         if (cluster_indices[other].length > 1) {
           u32 last_index = cluster_indices[other].length - 1;
@@ -2007,7 +2111,8 @@ static void split_node_k_scene(NodeKScene* node, u32 k) {
   }
 
   // Free old leaf arrays before overwriting the union
-  if (node->elems.data) free_array(&node->elems);
+  if (node->elems.data)
+    free_array(&node->elems);
 
   // Convert to internal node
   node->is_leaf = false;
@@ -2023,7 +2128,9 @@ static void split_node_k_scene(NodeKScene* node, u32 k) {
  * Add a primitive to a node (recursive, splits when leaf exceeds k).
  * Port of JS Node.add().
  */
-static void add_scene_elem_node_k_scene(NodeKScene* node, SceneElem elem, u32 k) {
+static void add_scene_elem_node_k_scene(
+    NodeKScene* node, SceneElem elem, u32 k
+) {
   node->num_of_primitives++;
   AABB box = get_bounding_box_scene_elem(&elem);
   node->box = union_aabb(&node->box, &box);
@@ -2034,15 +2141,13 @@ static void add_scene_elem_node_k_scene(NodeKScene* node, SceneElem elem, u32 k)
     if (node->num_of_primitives > k) {
       split_node_k_scene(node, k);
     }
-  }
-  else {
+  } else {
     // Insert into closer child
     f32 dist_left = box_distance_aabb(&node->left->box, &box);
     f32 dist_right = box_distance_aabb(&node->right->box, &box);
     if (dist_left <= dist_right) {
       add_scene_elem_node_k_scene(node->left, elem, k);
-    }
-    else {
+    } else {
       add_scene_elem_node_k_scene(node->right, elem, k);
     }
   }
@@ -2058,7 +2163,8 @@ static SceneHit leaf_intersect_node_k_scene(NodeKScene* node, Ray ray) {
     for (u32 i = 0; i < node->elems.length; i++) {
       SceneElem* elem = (SceneElem*)get_array_element(&node->elems, i);
       SceneHit hit = intersect_with_ray_scene_elem(elem, ray);
-      if (hit.hit && hit.t < closest.t) closest = hit;
+      if (hit.hit && hit.t < closest.t)
+        closest = hit;
     }
   }
   return closest;
@@ -2069,7 +2175,8 @@ static SceneHit leaf_intersect_node_k_scene(NodeKScene* node, Ray ray) {
  * Traverses near child first, skips far child when possible.
  */
 static SceneHit intersect_node_k_scene(NodeKScene* node, Ray ray) {
-  if (!node) return (SceneHit) { .hit = false, .t = INFINITY };
+  if (!node)
+    return (SceneHit){ .hit = false, .t = INFINITY };
 
   if (node->is_leaf) {
     return leaf_intersect_node_k_scene(node, ray);
@@ -2079,16 +2186,19 @@ static SceneHit intersect_node_k_scene(NodeKScene* node, Ray ray) {
   SceneHit right_box_hit = intersect_with_ray_aabb(ray, &node->right->box);
 
   if (!left_box_hit.hit && !right_box_hit.hit)
-    return (SceneHit) { .hit = false, .t = INFINITY };
+    return (SceneHit){ .hit = false, .t = INFINITY };
 
-  NodeKScene* first = (left_box_hit.t <= right_box_hit.t) ? node->left : node->right;
-  NodeKScene* second = (left_box_hit.t > right_box_hit.t) ? node->left : node->right;
+  NodeKScene* first =
+      (left_box_hit.t <= right_box_hit.t) ? node->left : node->right;
+  NodeKScene* second =
+      (left_box_hit.t > right_box_hit.t) ? node->left : node->right;
   f32 second_t = fmaxf(left_box_hit.t, right_box_hit.t);
 
   SceneHit first_hit = intersect_node_k_scene(first, ray);
 
   // If first hit is closer than the second AABB entry, skip second
-  if (first_hit.hit && first_hit.t < second_t) return first_hit;
+  if (first_hit.hit && first_hit.t < second_t)
+    return first_hit;
 
   SceneHit second_hit = intersect_node_k_scene(second, ray);
 
@@ -2098,8 +2208,11 @@ static SceneHit intersect_node_k_scene(NodeKScene* node, Ray ray) {
   return first_hit;
 }
 
-static f32 distance_from_leaf_elems_node_k_scene(NodeKScene* node, Vec3 point, f32 (*my_min)(f32, f32)) {
-  if (!node || !node->is_leaf) return INFINITY;
+static f32 distance_from_leaf_elems_node_k_scene(
+    NodeKScene* node, Vec3 point, f32 (*my_min)(f32, f32)
+) {
+  if (!node || !node->is_leaf)
+    return INFINITY;
   f32 (*combine)(f32, f32) = my_min ? my_min : fminf;
   f32 distance = INFINITY;
   for (u32 i = 0; i < node->elems.length; i++) {
@@ -2110,10 +2223,12 @@ static f32 distance_from_leaf_elems_node_k_scene(NodeKScene* node, Vec3 point, f
 }
 
 static SceneElem* get_elem_near_node_k_scene(NodeKScene* node, Vec3 point) {
-  if (!node) return NULL;
+  if (!node)
+    return NULL;
 
   if (node->is_leaf) {
-    if (!node->elems.data || node->elems.length == 0) return NULL;
+    if (!node->elems.data || node->elems.length == 0)
+      return NULL;
     SceneElem* best = (SceneElem*)get_array_element(&node->elems, 0);
     f32 best_d = distance_to_point_scene_elem(best, point);
     for (u32 i = 1; i < node->elems.length; i++) {
@@ -2129,9 +2244,12 @@ static SceneElem* get_elem_near_node_k_scene(NodeKScene* node, Vec3 point) {
 
   NodeKScene* left = node->left;
   NodeKScene* right = node->right;
-  if (!left && !right) return NULL;
-  if (!left) return get_elem_near_node_k_scene(right, point);
-  if (!right) return get_elem_near_node_k_scene(left, point);
+  if (!left && !right)
+    return NULL;
+  if (!left)
+    return get_elem_near_node_k_scene(right, point);
+  if (!right)
+    return get_elem_near_node_k_scene(left, point);
 
   f32 left_center_dist = length_vec3(sub_vec3(left->box.center, point));
   f32 right_center_dist = length_vec3(sub_vec3(right->box.center, point));
@@ -2139,22 +2257,30 @@ static SceneElem* get_elem_near_node_k_scene(NodeKScene* node, Vec3 point) {
   NodeKScene* second = left_center_dist <= right_center_dist ? right : left;
 
   SceneElem* first_elem = get_elem_near_node_k_scene(first, point);
-  if (first_elem) return first_elem;
+  if (first_elem)
+    return first_elem;
   return get_elem_near_node_k_scene(second, point);
 }
 
 static f32 distance_to_point_node_k_scene(NodeKScene* node, Vec3 point) {
-  if (!node) return INFINITY;
-  if (node->is_leaf) return distance_from_leaf_elems_node_k_scene(node, point, fminf);
+  if (!node)
+    return INFINITY;
+  if (node->is_leaf)
+    return distance_from_leaf_elems_node_k_scene(node, point, fminf);
 
   SceneElem* elem = get_elem_near_node_k_scene(node, point);
-  if (!elem) return INFINITY;
+  if (!elem)
+    return INFINITY;
   return distance_to_point_scene_elem(elem, point);
 }
 
-static f32 distance_on_ray_node_k_scene(NodeKScene* node, Ray ray, f32 (*my_min)(f32, f32)) {
-  if (!node) return INFINITY;
-  if (node->is_leaf) return distance_from_leaf_elems_node_k_scene(node, ray.init, my_min);
+static f32 distance_on_ray_node_k_scene(
+    NodeKScene* node, Ray ray, f32 (*my_min)(f32, f32)
+) {
+  if (!node)
+    return INFINITY;
+  if (node->is_leaf)
+    return distance_from_leaf_elems_node_k_scene(node, ray.init, my_min);
 
   SceneHit left_box_hit = intersect_with_ray_aabb(ray, &node->left->box);
   SceneHit right_box_hit = intersect_with_ray_aabb(ray, &node->right->box);
@@ -2170,15 +2296,20 @@ static f32 distance_on_ray_node_k_scene(NodeKScene* node, Ray ray, f32 (*my_min)
   f32 second_t = fmaxf(left_t, right_t);
 
   f32 first_hit = distance_on_ray_node_k_scene(first, ray, my_min);
-  if (first_hit < second_t) return first_hit;
+  if (first_hit < second_t)
+    return first_hit;
 
   f32 second_hit = distance_on_ray_node_k_scene(second, ray, my_min);
   return second_hit <= first_hit ? second_hit : first_hit;
 }
 
-static void collect_elems_in_box_node_k_scene(NodeKScene* node, const AABB* box, Array* out_elems) {
-  if (!node || !box || !out_elems) return;
-  if (!collides_aabb(&node->box, box)) return;
+static void collect_elems_in_box_node_k_scene(
+    NodeKScene* node, const AABB* box, Array* out_elems
+) {
+  if (!node || !box || !out_elems)
+    return;
+  if (!collides_aabb(&node->box, box))
+    return;
 
   if (node->is_leaf) {
     for (u32 i = 0; i < node->elems.length; i++) {
@@ -2196,14 +2327,18 @@ static void collect_elems_in_box_node_k_scene(NodeKScene* node, const AABB* box,
 }
 
 typedef struct KScene KScene;
-static f32 distance_to_point_kscene(KScene* ks, Vec3 point, f32 (*my_min)(f32, f32));
-static Vec3 normal_to_point_kscene(KScene* ks, Vec3 point, f32 (*my_min)(f32, f32));
+static f32 distance_to_point_kscene(
+    KScene* ks, Vec3 point, f32 (*my_min)(f32, f32)
+);
+static Vec3 normal_to_point_kscene(
+    KScene* ks, Vec3 point, f32 (*my_min)(f32, f32)
+);
 
 /* --- KScene --- */
 
 struct KScene {
   Array elems;
-  u32 k; // max number of primitives per leaf
+  u32 k;  // max number of primitives per leaf
   NodeKScene* root;
 };
 
@@ -2215,7 +2350,8 @@ static void add_scene_elem_kscene(KScene* ks, SceneElem elem) {
   }
   push_array(&ks->elems, &elem);
 
-  if (!ks->root) ks->root = new_node_k_scene(ks->k);
+  if (!ks->root)
+    ks->root = new_node_k_scene(ks->k);
   add_scene_elem_node_k_scene(ks->root, elem, ks->k);
 }
 
@@ -2227,23 +2363,35 @@ static void add_scene_elems_kscene(KScene* ks, Array elems) {
 }
 
 static void clear_scene_elems_kscene(KScene* ks) {
-  if (ks->elems.data) clear_array(&ks->elems);
-  if (ks->root) { free_node_k_scene(ks->root); ks->root = NULL; }
+  if (ks->elems.data)
+    clear_array(&ks->elems);
+  if (ks->root) {
+    free_node_k_scene(ks->root);
+    ks->root = NULL;
+  }
 }
 
 static SceneHit intersect_kscene(KScene* ks, Ray ray) {
-  if (!ks->root) return (SceneHit) { .hit = false, .t = INFINITY };
+  if (!ks->root)
+    return (SceneHit){ .hit = false, .t = INFINITY };
   return intersect_node_k_scene(ks->root, ray);
 }
 
-static f32 distance_to_point_kscene(KScene* ks, Vec3 point, f32 (*my_min)(f32, f32)) {
-  if (!ks->root) return INFINITY;
-  if (ks->root->is_leaf) return distance_from_leaf_elems_node_k_scene(ks->root, point, my_min);
+static f32 distance_to_point_kscene(
+    KScene* ks, Vec3 point, f32 (*my_min)(f32, f32)
+) {
+  if (!ks->root)
+    return INFINITY;
+  if (ks->root->is_leaf)
+    return distance_from_leaf_elems_node_k_scene(ks->root, point, my_min);
   return distance_to_point_node_k_scene(ks->root, point);
 }
 
-static Vec3 normal_to_point_kscene(KScene* ks, Vec3 point, f32 (*my_min)(f32, f32)) {
-  if (!ks || !ks->root) return vec3(0, 0, 1);
+static Vec3 normal_to_point_kscene(
+    KScene* ks, Vec3 point, f32 (*my_min)(f32, f32)
+) {
+  if (!ks || !ks->root)
+    return vec3(0, 0, 1);
 
   Vec3 ones = vec3(1, 1, 1);
   ones = scale_vec3(ones, 1.0f / (2.0f * (f32)ks->k));
@@ -2259,14 +2407,16 @@ static Vec3 normal_to_point_kscene(KScene* ks, Vec3 point, f32 (*my_min)(f32, f3
     SceneElem* elem = *elem_ptr;
     f32 d = distance_to_point_scene_elem(elem, point);
     Vec3 n = normal_to_point_scene_elem(elem, point);
-    if (d < 0.0f) n = scale_vec3(n, -1.0f);
+    if (d < 0.0f)
+      n = scale_vec3(n, -1.0f);
     f32 safe_d = (fabsf(d) < 1e-4f) ? (d < 0.0f ? -1e-4f : 1e-4f) : d;
     f32 w = 1.0f / safe_d;
     normal = add_vec3(normal, scale_vec3(n, w));
     weight += w;
   }
 
-  if (near_elems.data) free_array(&near_elems);
+  if (near_elems.data)
+    free_array(&near_elems);
 
   if (fabsf(weight) > 1e-10f && length_vec3(normal) > 0.0f) {
     Vec3 out = scale_vec3(normal, 1.0f / weight);
@@ -2274,17 +2424,26 @@ static Vec3 normal_to_point_kscene(KScene* ks, Vec3 point, f32 (*my_min)(f32, f3
   }
 
   const f32 epsilon = 1e-3f;
-  f32 f  = distance_to_point_kscene(ks, point, my_min);
+  f32 f = distance_to_point_kscene(ks, point, my_min);
   Vec3 grad = vec3(
-    distance_to_point_kscene(ks, add_vec3(point, vec3(epsilon, 0, 0)), my_min) - f,
-    distance_to_point_kscene(ks, add_vec3(point, vec3(0, epsilon, 0)), my_min) - f,
-    distance_to_point_kscene(ks, add_vec3(point, vec3(0, 0, epsilon)), my_min) - f
+      distance_to_point_kscene(
+          ks, add_vec3(point, vec3(epsilon, 0, 0)), my_min
+      ) - f,
+      distance_to_point_kscene(
+          ks, add_vec3(point, vec3(0, epsilon, 0)), my_min
+      ) - f,
+      distance_to_point_kscene(
+          ks, add_vec3(point, vec3(0, 0, epsilon)), my_min
+      ) - f
   );
   return normalize_vec3(grad);
 }
 
-static f32 distance_on_ray_kscene(KScene* ks, Ray ray, f32 (*my_min)(f32, f32)) {
-  if (!ks->root) return INFINITY;
+static f32 distance_on_ray_kscene(
+    KScene* ks, Ray ray, f32 (*my_min)(f32, f32)
+) {
+  if (!ks->root)
+    return INFINITY;
   return distance_on_ray_node_k_scene(ks->root, ray, my_min);
 }
 
@@ -2293,8 +2452,12 @@ static Array* get_scene_elems_kscene(KScene* ks) {
 }
 
 static void free_kscene(KScene* ks) {
-  if (ks->elems.data) free_array(&ks->elems);
-  if (ks->root) { free_node_k_scene(ks->root); ks->root = NULL; }
+  if (ks->elems.data)
+    free_array(&ks->elems);
+  if (ks->root) {
+    free_node_k_scene(ks->root);
+    ks->root = NULL;
+  }
 }
 
 /**
@@ -2314,7 +2477,8 @@ static f32 _rebuild_group_comparator(void* a, void* b, void* ctx) {
 static bool _any_group_exceeds_k(PQueue* pq, u32 k) {
   for (u32 i = 0; i < pq->data.length; i++) {
     Array* group = *(Array**)get_array_element(&pq->data, i);
-    if (group->length > k) return true;
+    if (group->length > k)
+      return true;
   }
   return false;
 }
@@ -2345,7 +2509,8 @@ static AABB _compute_group_box(Array* group, KScene* ks) {
  */
 static KScene rebuild_kscene(KScene* ks) {
   u32 total = ks->elems.length;
-  if (total == 0) return *ks;
+  if (total == 0)
+    return *ks;
 
   // Free old tree
   if (ks->root) {
@@ -2370,7 +2535,9 @@ static KScene rebuild_kscene(KScene* ks) {
   *group_a = new_array(total, sizeof(PrimRef));
   Array* group_b = (Array*)malloc(sizeof(Array));
   *group_b = new_array(total, sizeof(PrimRef));
-  cluster_prims(&overall_box, (PrimRef*)all_refs.data, all_refs.length, group_a, group_b);
+  cluster_prims(
+      &overall_box, (PrimRef*)all_refs.data, all_refs.length, group_a, group_b
+  );
 
   // Step 3: PQueue sorted by group size (largest first via comparator)
   PQueue groups_queue;
@@ -2391,7 +2558,9 @@ static KScene rebuild_kscene(KScene* ks) {
       *left_g = new_array(group->length, sizeof(PrimRef));
       Array* right_g = (Array*)malloc(sizeof(Array));
       *right_g = new_array(group->length, sizeof(PrimRef));
-      cluster_prims(&group_box, (PrimRef*)group->data, group->length, left_g, right_g);
+      cluster_prims(
+          &group_box, (PrimRef*)group->data, group->length, left_g, right_g
+      );
 
       push_pqueue(&groups_queue, left_g);
       push_pqueue(&groups_queue, right_g);
@@ -2403,7 +2572,8 @@ static KScene rebuild_kscene(KScene* ks) {
 
   // Step 5: Create a leaf NodeKScene for each group
   u32 num_groups = groups_queue.data.length;
-  NodeKScene** node_stack = (NodeKScene**)malloc(num_groups * sizeof(NodeKScene*));
+  NodeKScene** node_stack =
+      (NodeKScene**)malloc(num_groups * sizeof(NodeKScene*));
   u32 node_count = 0;
 
   for (u32 g = 0; g < groups_queue.data.length; g++) {
@@ -2480,13 +2650,19 @@ static void _kscene_clear_scene(Scene* self) {
 static SceneHit _kscene_intersect(Scene* self, Ray ray) {
   return intersect_kscene((KScene*)self->data, ray);
 }
-static Vec3 _kscene_normal_to_point(Scene* self, Vec3 point, f32 (*my_min)(f32, f32)) {
+static Vec3 _kscene_normal_to_point(
+    Scene* self, Vec3 point, f32 (*my_min)(f32, f32)
+) {
   return normal_to_point_kscene((KScene*)self->data, point, my_min);
 }
-static f32 _kscene_distance_to_point(Scene* self, Vec3 point, f32 (*my_min)(f32, f32)) {
+static f32 _kscene_distance_to_point(
+    Scene* self, Vec3 point, f32 (*my_min)(f32, f32)
+) {
   return distance_to_point_kscene((KScene*)self->data, point, my_min);
 }
-static f32 _kscene_distance_on_ray(Scene* self, Ray ray, f32 (*my_min)(f32, f32)) {
+static f32 _kscene_distance_on_ray(
+    Scene* self, Ray ray, f32 (*my_min)(f32, f32)
+) {
   return distance_on_ray_kscene((KScene*)self->data, ray, my_min);
 }
 static Array* _kscene_get_elems(Scene* self) {
@@ -2522,19 +2698,18 @@ static const SceneVTable KSCENE_VTABLE = {
 
 Scene new_kscene(u32 k) {
   if (k == 0) {
-    k = 10; // default value
+    k = 10;  // default value
   }
   KScene* ks = (KScene*)calloc(1, sizeof(KScene));
   ks->k = k;
-  return (Scene) { .vtable = &KSCENE_VTABLE, .data = ks };
+  return (Scene){ .vtable = &KSCENE_VTABLE, .data = ks };
 }
-
 
 //========================================================================================
 /*                                                                                      *
  *                                         TELA *
  *                                                                                      */
- //========================================================================================
+//========================================================================================
 
 #define COLOR_CHANNELS 4
 
@@ -2542,9 +2717,9 @@ typedef struct {
   u32 width;
   u32 height;
   u32 channels;
-  f32* image; // RGBA format, row-major order width * height * channels in size
+  f32* image;  // RGBA format, row-major order width * height * channels in size
   AABB_2D box;
-  u32 iterations; // used for exposed tela
+  u32 iterations;  // used for exposed tela
 } Tela;
 
 static inline Tela* new_tela(u32 width, u32 height) {
@@ -2564,9 +2739,9 @@ static inline void free_tela(Tela* tela) {
   free(tela);
 }
 
-static inline Tela* map_tela(Tela* tela,
-  Color(*lambda)(u32, u32, void const*),
-  void const* context) {
+static inline Tela* map_tela(
+    Tela* tela, Color (*lambda)(u32, u32, void const*), void const* context
+) {
   const u32 w = tela->width;
   const u32 h = tela->height;
   const u32 c = tela->channels;
@@ -2588,9 +2763,9 @@ static inline Tela* map_tela(Tela* tela,
   return tela;
 }
 
-static inline Tela* map_tela_parallel(Tela* tela,
-  Color(*lambda)(u32, u32, void const*),
-  void const* context) {
+static inline Tela* map_tela_parallel(
+    Tela* tela, Color (*lambda)(u32, u32, void const*), void const* context
+) {
   const u32 w = tela->width;
   const u32 h = tela->height;
   const u32 c = tela->channels;
@@ -2643,7 +2818,10 @@ static inline Color get_pxl_tela(const Tela* tela, u32 x, u32 y) {
   i = mod_u32(i, h);
   j = mod_u32(j, w);
   u32 index = COLOR_CHANNELS * (w * i + j);
-  return (Color) { tela->image[index], tela->image[index + 1], tela->image[index + 2], tela->image[index + 3] };
+  return (Color){ tela->image[index],
+                  tela->image[index + 1],
+                  tela->image[index + 2],
+                  tela->image[index + 3] };
 }
 
 static inline Tela* set_pxl_tela(Tela* tela, u32 x, u32 y, Color color) {
@@ -2704,10 +2882,10 @@ LineBoxIntersection line_box_intersection(Vec2 start, Vec2 end, AABB_2D box) {
   Vec2 v = sub_vec2(end, start);
   // point and direction of boundary
   Vec2 boundary[4][2] = {
-      {(Vec2) { 0.0f, 0.0f }, (Vec2) { width, 0.0f }},
-      {(Vec2) { width, 0.0f }, (Vec2) { 0.0f, height }},
-      {(Vec2) { width, height }, (Vec2) { -width, 0.0f }},
-      {(Vec2) { 0.0f, height }, (Vec2) { 0.0f, -height }},
+    { (Vec2){ 0.0f, 0.0f }, (Vec2){ width, 0.0f } },
+    { (Vec2){ width, 0.0f }, (Vec2){ 0.0f, height } },
+    { (Vec2){ width, height }, (Vec2){ -width, 0.0f } },
+    { (Vec2){ 0.0f, height }, (Vec2){ 0.0f, -height } },
   };
   LineBoxIntersection intersection_solutions = { 0 };
   for (u32 i = 0; i < 4; i++) {
@@ -2718,15 +2896,14 @@ LineBoxIntersection line_box_intersection(Vec2 start, Vec2 end, AABB_2D box) {
       solve_low_tri_matrix(v, -d.y, sub_vec2(s, start), &solution);
       if (!isnan_vec2(solution)) {
         intersection_solutions.points[intersection_solutions.length++] =
-          solution;
+            solution;
       }
-    }
-    else {
+    } else {
       Vec2 solution = { NAN, NAN };
       solve_up_tri_matrix(v, -d.x, sub_vec2(s, start), &solution);
       if (!isnan_vec2(solution)) {
         intersection_solutions.points[intersection_solutions.length++] =
-          solution;
+            solution;
       }
     }
   }
@@ -2751,22 +2928,22 @@ LineBoxIntersection line_box_intersection(Vec2 start, Vec2 end, AABB_2D box) {
   }
   // it can be shown that at this point there is only one valid intersection
   result.points[0] =
-    add_vec2(start, scale_vec2(v, valid_intersections.points[0].x));
+      add_vec2(start, scale_vec2(v, valid_intersections.points[0].x));
   result.length = 1;
   return result;
 }
 
 bool clip_line(Vec2 p0, Vec2 p1, AABB_2D box, Line_2D* clipped_line) {
   AABB_2D p0_box = { .is_empty = false,
-                    .min = p0,
-                    .max = p0,
-                    .center = p0,
-                    .diagonal = vec2(0, 0) };
+                     .min = p0,
+                     .max = p0,
+                     .center = p0,
+                     .diagonal = vec2(0, 0) };
   AABB_2D p1_box = { .is_empty = false,
-                    .min = p1,
-                    .max = p1,
-                    .center = p1,
-                    .diagonal = vec2(0, 0) };
+                     .min = p1,
+                     .max = p1,
+                     .center = p1,
+                     .diagonal = vec2(0, 0) };
   bool p0_inside = collides_aabb_2d(&box, &p0_box);
   bool p1_inside = collides_aabb_2d(&box, &p1_box);
 
@@ -2805,14 +2982,18 @@ bool clip_line(Vec2 p0, Vec2 p1, AABB_2D box, Line_2D* clipped_line) {
   return true;
 }
 
-static inline Tela* draw_line_tela(Tela* tela, const Line_2D* line,
-  Color(*func)(u32, u32, Line_2D*, void*),
-  void* context) {
-
+static inline Tela* draw_line_tela(
+    Tela* tela,
+    const Line_2D* line,
+    Color (*func)(u32, u32, Line_2D*, void*),
+    void* context
+) {
   u32 w = tela->width;
   u32 h = tela->height;
-  Vec2 p1 = add_vec2(line->positions[0], (Vec2) { 0.5f, 0.5f }); // center of pixel
-  Vec2 p2 = add_vec2(line->positions[1], (Vec2) { 0.5f, 0.5f });   // center of pixel
+  Vec2 p1 =
+      add_vec2(line->positions[0], (Vec2){ 0.5f, 0.5f });  // center of pixel
+  Vec2 p2 =
+      add_vec2(line->positions[1], (Vec2){ 0.5f, 0.5f });  // center of pixel
   Line_2D clipped_line;
   if (!clip_line(p1, p2, tela->box, &clipped_line))
     return tela;
@@ -2853,7 +3034,9 @@ typedef struct {
   f32 orientation;
 } ConvexPrecomputed;
 
-static inline bool is_inside_convex(const ConvexPrecomputed* precomputed, Vec2 point) {
+static inline bool is_inside_convex(
+    const ConvexPrecomputed* precomputed, Vec2 point
+) {
   const u32 m = precomputed->vertex_count;
   const Vec2* vertices = precomputed->vertices;
   const Vec2* normals = precomputed->normals;
@@ -2861,17 +3044,17 @@ static inline bool is_inside_convex(const ConvexPrecomputed* precomputed, Vec2 p
   for (u32 i = 0; i < m; i++) {
     const Vec2 r = sub_vec2(point, vertices[i]);
     const f32 myDot = dot_vec2(r, normals[i]) * orientation;
-    if (myDot < 0) return false;
+    if (myDot < 0)
+      return false;
   }
   return true;
 }
 
-
 static inline Tela* draw_triangle_tela(
-  Tela* tela,
-  const Triangle_2D* triangle,
-  Color(*shader)(u32, u32, const Triangle_2D*, void*),
-  void* context
+    Tela* tela,
+    const Triangle_2D* triangle,
+    Color (*shader)(u32, u32, const Triangle_2D*, void*),
+    void* context
 ) {
   const u32 width = tela->width;
   const u32 height = tela->height;
@@ -2882,7 +3065,8 @@ static inline Tela* draw_triangle_tela(
     boundingBox = union_aabb_2d(&boundingBox, &pointBox);
   }
   const AABB_2D finalBox = inter_aabb_2d(&canvasBox, &boundingBox);
-  if (finalBox.is_empty) return tela;
+  if (finalBox.is_empty)
+    return tela;
   const Vec2 xmin = finalBox.min;
   const Vec2 xmax = finalBox.max;
 
@@ -2892,28 +3076,24 @@ static inline Tela* draw_triangle_tela(
   const Vec2 e1 = sub_vec2(positions[2], positions[1]);
   const Vec2 e2 = sub_vec2(positions[0], positions[2]);
   const ConvexPrecomputed precomputed = {
-    .normals = {
-      (Vec2) {
--e0.y, e0.x
-},
-(Vec2) {
--e1.y, e1.x
-},
-(Vec2) {
--e2.y, e2.x
-},
-},
-.vertices = { positions[0], positions[1], positions[2] },
-.vertex_count = 3,
-.orientation = wedge_vec2(e0, e1) >= 0 ? 1.0f : -1.0f,
+      .normals =
+          {
+              (Vec2){-e0.y, e0.x},
+              (Vec2){-e1.y, e1.x},
+              (Vec2){-e2.y, e2.x},
+          },
+      .vertices = {positions[0], positions[1], positions[2]},
+      .vertex_count = 3,
+      .orientation = wedge_vec2(e0, e1) >= 0 ? 1.0f : -1.0f,
   };
   for (u32 x = xmin.x; x < xmax.x; x++) {
     for (u32 y = xmin.y; y < xmax.y; y++) {
-      if (is_inside_convex(&precomputed, (Vec2) { (f32)x, (f32)y })) {
+      if (is_inside_convex(&precomputed, (Vec2){ (f32)x, (f32)y })) {
         const u32 j = x;
         const u32 i = height - 1 - y;
         const Color color = shader(x, y, triangle, context);
-        if (color.alpha == 0.0f) continue;
+        if (color.alpha == 0.0f)
+          continue;
         const u32 index = COLOR_CHANNELS * (i * width + j);
         tela->image[index] = color.red;
         tela->image[index + 1] = color.green;
@@ -2927,13 +3107,14 @@ static inline Tela* draw_triangle_tela(
 
 //========================================================================================
 /*                                                                                      *
- *                                     EXPOSED_TELA                                     *
+ *                                     EXPOSED_TELA *
  *                                                                                      */
- //========================================================================================
+//========================================================================================
 
 Tela* fill_exposed_tela(Tela* exposed, Color color) {
   const u32 n = exposed->width * exposed->height * COLOR_CHANNELS;
-  if (color.alpha == 0) return exposed;
+  if (color.alpha == 0)
+    return exposed;
   f32* img = exposed->image;
   u32 it = exposed->iterations;
   for (u32 k = 0; k < n; k += 4) {
@@ -2942,11 +3123,14 @@ Tela* fill_exposed_tela(Tela* exposed, Color color) {
     img[k + 2] = img[k + 2] + (color.blue - img[k + 2]) / it;
     img[k + 3] = img[k + 3] + (color.alpha - img[k + 3]) / it;
   }
-  if (exposed->iterations < UINT32_MAX) exposed->iterations++;
+  if (exposed->iterations < UINT32_MAX)
+    exposed->iterations++;
   return exposed;
 }
 
-Tela* map_exposed_tela(Tela* exposed, Color(*lambda)(u32, u32, void const*), void const* context) {
+Tela* map_exposed_tela(
+    Tela* exposed, Color (*lambda)(u32, u32, void const*), void const* context
+) {
   const u32 n = exposed->width * exposed->height * COLOR_CHANNELS;
   const u32 w = exposed->width;
   const u32 h = exposed->height;
@@ -2959,18 +3143,23 @@ Tela* map_exposed_tela(Tela* exposed, Color(*lambda)(u32, u32, void const*), voi
     const u32 x = j;
     const u32 y = h - 1 - i;
     const Color color = lambda(x, y, context);
-    if (color.alpha == 0.0f) continue;
-    if (isnan(color.red) || isnan(color.green) || isnan(color.blue)) continue;
+    if (color.alpha == 0.0f)
+      continue;
+    if (isnan(color.red) || isnan(color.green) || isnan(color.blue))
+      continue;
     img[k] = img[k] + (color.red - img[k]) / it;
     img[k + 1] = img[k + 1] + (color.green - img[k + 1]) / it;
     img[k + 2] = img[k + 2] + (color.blue - img[k + 2]) / it;
-    img[k + 3] = 1.0f; // set alpha to 1 for any non-transparent color
+    img[k + 3] = img[k + 3] + (color.alpha - img[k + 3]) / it;
   }
-  if (exposed->iterations < UINT32_MAX) exposed->iterations++;
+  if (exposed->iterations < UINT32_MAX)
+    exposed->iterations++;
   return exposed;
 }
 
-Tela* map_exposed_tela_parallel(Tela* exposed, Color(*lambda)(u32, u32, void const*), void const* context) {
+Tela* map_exposed_tela_parallel(
+    Tela* exposed, Color (*lambda)(u32, u32, void const*), void const* context
+) {
   const u32 w = exposed->width;
   const u32 h = exposed->height;
   const u32 total_pixels = w * h;
@@ -2984,15 +3173,18 @@ Tela* map_exposed_tela_parallel(Tela* exposed, Color(*lambda)(u32, u32, void con
     const u32 x = j;
     const u32 y = h - 1 - i;
     const Color color = lambda(x, y, context);
-    if (color.alpha == 0.0f) continue;
-    if (isnan(color.red) || isnan(color.green) || isnan(color.blue)) continue;
+    if (color.alpha == 0.0f)
+      continue;
+    if (isnan(color.red) || isnan(color.green) || isnan(color.blue))
+      continue;
     const u32 k = p * 4;
     img[k] = img[k] + (color.red - img[k]) / it;
     img[k + 1] = img[k + 1] + (color.green - img[k + 1]) / it;
     img[k + 2] = img[k + 2] + (color.blue - img[k + 2]) / it;
     img[k + 3] = img[k + 3] + (color.alpha - img[k + 3]) / it;
   }
-  if (exposed->iterations < UINT32_MAX) exposed->iterations++;
+  if (exposed->iterations < UINT32_MAX)
+    exposed->iterations++;
   return exposed;
 }
 
@@ -3008,7 +3200,8 @@ Tela* set_pxl_exposed_tela(Tela* exposed, u32 x, u32 y, Color color) {
   img[index + 1] = img[index + 1] + (color.green - img[index + 1]) / it;
   img[index + 2] = img[index + 2] + (color.blue - img[index + 2]) / it;
   img[index + 3] = img[index + 3] + (color.alpha - img[index + 3]) / it;
-  if (it < UINT32_MAX) it++;
+  if (it < UINT32_MAX)
+    it++;
   return exposed;
 }
 
@@ -3021,19 +3214,17 @@ Color get_pxl_exposed_tela(const Tela* exposed, u32 x, u32 y) {
   i = mod_u32(i, h);
   j = mod_u32(j, w);
   u32 index = COLOR_CHANNELS * (w * i + j);
-  return (Color) {
-    exposed->image[index],
-      exposed->image[index + 1],
-      exposed->image[index + 2],
-      exposed->image[index + 3]
-  };
+  return (Color){ exposed->image[index],
+                  exposed->image[index + 1],
+                  exposed->image[index + 2],
+                  exposed->image[index + 3] };
 };
 
 //========================================================================================
 /*                                                                                      *
  *                                          IO *
  *                                                                                      */
- //========================================================================================
+//========================================================================================
 
 static inline void tela_to_p3(Tela* tela, const char* filename) {
   if (!tela || !tela->image) {
@@ -3083,7 +3274,7 @@ typedef struct {
 static inline String io_read_file(const char* filename) {
   FILE* file = fopen(filename, "rb");
   if (!file) {
-    return (String) { NULL, 0 };
+    return (String){ NULL, 0 };
   }
 
   fseek(file, 0, SEEK_END);
@@ -3093,19 +3284,20 @@ static inline String io_read_file(const char* filename) {
   char* buffer = (char*)malloc(length + 1);
   if (!buffer) {
     fclose(file);
-    return (String) { NULL, 0 };
+    return (String){ NULL, 0 };
   }
 
   size_t bytes_read = fread(buffer, 1, length, file);
   buffer[bytes_read] = '\0';
 
   fclose(file);
-  return (String) { buffer, (u32)length };
+  return (String){ buffer, (u32)length };
 }
 
 // parse P6 type of PPM image file
 Tela* io_parse_ppm(String ppm_data) {
-  if (!ppm_data.data || ppm_data.length == 0) return NULL;
+  if (!ppm_data.data || ppm_data.length == 0)
+    return NULL;
 
   const u8* data = (const u8*)ppm_data.data;
   u32 length = ppm_data.length;
@@ -3114,17 +3306,20 @@ Tela* io_parse_ppm(String ppm_data) {
   // Skip 3 header lines (format, dimensions, max color)
   u32 header_lines = 3;
   while (header_lines > 0 && index < length) {
-    if (data[index] == '\n') header_lines--;
+    if (data[index] == '\n')
+      header_lines--;
     index++;
   }
 
   // Parse width, height, maxColor from the header
   u32 width = 0, height = 0, max_color = 0;
   sscanf((const char*)data, "%*s %u %u %u", &width, &height, &max_color);
-  if (width == 0 || height == 0 || max_color == 0) return NULL;
+  if (width == 0 || height == 0 || max_color == 0)
+    return NULL;
 
   Tela* tela = new_tela(width, height);
-  if (!tela) return NULL;
+  if (!tela)
+    return NULL;
 
   f32 inv_max = 1.0f / (f32)max_color;
 
@@ -3143,14 +3338,16 @@ Tela* io_parse_ppm(String ppm_data) {
 
 // parse P7 PAM (Portable Arbitrary Map) image file
 Tela* io_parse_pam(String pam_data) {
-  if (!pam_data.data || pam_data.length == 0) return NULL;
+  if (!pam_data.data || pam_data.length == 0)
+    return NULL;
 
   const char* data = pam_data.data;
   u32 length = pam_data.length;
   u32 index = 0;
 
   // Verify P7 magic number
-  if (length < 3 || data[0] != 'P' || data[1] != '7') return NULL;
+  if (length < 3 || data[0] != 'P' || data[1] != '7')
+    return NULL;
 
   u32 width = 0, height = 0, depth = 0, max_val = 0;
 
@@ -3158,30 +3355,30 @@ Tela* io_parse_pam(String pam_data) {
   while (index < length) {
     // Find line start and end
     u32 line_start = index;
-    while (index < length && data[index] != '\n') index++;
-    if (index < length) index++; // skip '\n'
+    while (index < length && data[index] != '\n')
+      index++;
+    if (index < length)
+      index++;  // skip '\n'
 
     if (strncmp(data + line_start, "WIDTH ", 6) == 0) {
       sscanf(data + line_start + 6, "%u", &width);
-    }
-    else if (strncmp(data + line_start, "HEIGHT ", 7) == 0) {
+    } else if (strncmp(data + line_start, "HEIGHT ", 7) == 0) {
       sscanf(data + line_start + 7, "%u", &height);
-    }
-    else if (strncmp(data + line_start, "DEPTH ", 6) == 0) {
+    } else if (strncmp(data + line_start, "DEPTH ", 6) == 0) {
       sscanf(data + line_start + 6, "%u", &depth);
-    }
-    else if (strncmp(data + line_start, "MAXVAL ", 7) == 0) {
+    } else if (strncmp(data + line_start, "MAXVAL ", 7) == 0) {
       sscanf(data + line_start + 7, "%u", &max_val);
-    }
-    else if (strncmp(data + line_start, "ENDHDR", 6) == 0) {
+    } else if (strncmp(data + line_start, "ENDHDR", 6) == 0) {
       break;
     }
   }
 
-  if (width == 0 || height == 0 || max_val == 0 || depth == 0) return NULL;
+  if (width == 0 || height == 0 || max_val == 0 || depth == 0)
+    return NULL;
 
   Tela* tela = new_tela(width, height);
-  if (!tela) return NULL;
+  if (!tela)
+    return NULL;
 
   f32 inv_max = 1.0f / (f32)max_val;
   const u8* pixel_data = (const u8*)(data + index);
@@ -3190,13 +3387,19 @@ Tela* io_parse_pam(String pam_data) {
   // Read pixel data (raw bytes after header)
   // Buffer stores pixels in file order (top-to-bottom, row 0 = top of image).
   // The Y-flip happens in get_pxl_tela/to_grid_tela when reading, matching JS.
-  for (u32 k = 0; k < width * height && (k * depth + depth - 1) < remaining; k++) {
+  for (u32 k = 0; k < width * height && (k * depth + depth - 1) < remaining;
+       k++) {
     u32 img_idx = k * COLOR_CHANNELS;
     u32 src_idx = k * depth;
     tela->image[img_idx + 0] = (f32)pixel_data[src_idx + 0] * inv_max;
-    tela->image[img_idx + 1] = (depth > 1) ? (f32)pixel_data[src_idx + 1] * inv_max : (f32)pixel_data[src_idx + 0] * inv_max;
-    tela->image[img_idx + 2] = (depth > 2) ? (f32)pixel_data[src_idx + 2] * inv_max : (f32)pixel_data[src_idx + 0] * inv_max;
-    tela->image[img_idx + 3] = (depth > 3) ? (f32)pixel_data[src_idx + 3] * inv_max : 1.0f;
+    tela->image[img_idx + 1] = (depth > 1)
+                                   ? (f32)pixel_data[src_idx + 1] * inv_max
+                                   : (f32)pixel_data[src_idx + 0] * inv_max;
+    tela->image[img_idx + 2] = (depth > 2)
+                                   ? (f32)pixel_data[src_idx + 2] * inv_max
+                                   : (f32)pixel_data[src_idx + 0] * inv_max;
+    tela->image[img_idx + 3] =
+        (depth > 3) ? (f32)pixel_data[src_idx + 3] * inv_max : 1.0f;
   }
 
   return tela;
@@ -3207,7 +3410,8 @@ Tela* io_read_image(const char* filename) {
   const char* dot = strrchr(filename, '.');
   if (dot && (strcmp(dot, ".ppm") == 0 || strcmp(dot, ".PPM") == 0)) {
     String file_data = io_read_file(filename);
-    if (!file_data.data) return NULL;
+    if (!file_data.data)
+      return NULL;
     Tela* tela = io_parse_ppm(file_data);
     free(file_data.data);
     return tela;
@@ -3215,16 +3419,26 @@ Tela* io_read_image(const char* filename) {
 
   // Convert other formats to PAM using ffmpeg (with alpha), then parse
   char temp_pam[512];
-  snprintf(temp_pam, sizeof(temp_pam), "temp_read_%d.pam", (int)(rand() % 1000000));
+  snprintf(
+      temp_pam, sizeof(temp_pam), "temp_read_%d.pam", (int)(rand() % 1000000)
+  );
 
   char command[1024];
-  snprintf(command, sizeof(command), "ffmpeg -y -i %s -pix_fmt rgba -update 1 %s", filename, temp_pam);
+  snprintf(
+      command,
+      sizeof(command),
+      "ffmpeg -y -i %s -pix_fmt rgba -update 1 %s",
+      filename,
+      temp_pam
+  );
   int ret = system(command);
-  if (ret != 0) return NULL;
+  if (ret != 0)
+    return NULL;
 
   String file_data = io_read_file(temp_pam);
   remove(temp_pam);
-  if (!file_data.data) return NULL;
+  if (!file_data.data)
+    return NULL;
 
   Tela* tela = io_parse_pam(file_data);
   free(file_data.data);
@@ -3235,7 +3449,7 @@ Tela* io_read_image(const char* filename) {
 /*                                                                                      *
  *                                         TIME *
  *                                                                                      */
- //========================================================================================
+//========================================================================================
 
 #ifndef _POSIX_C_SOURCE
 #define _POSIX_C_SOURCE 199309L
@@ -3254,11 +3468,11 @@ static inline u32 get_time_ms(void) {
 /*                                                                                      *
  *                                     STRING UTILS *
  *                                                                                      */
- //========================================================================================
+//========================================================================================
 
 static inline String create_string(const char* data) {
   u32 length = (u32)strlen(data);
-  return (String) { .data = (char*)data, .length = length };
+  return (String){ .data = (char*)data, .length = length };
 }
 
 static inline char* to_cstring(String str) {
@@ -3287,7 +3501,7 @@ static inline char* format_string(const char* fmt, ...) {
 /*                                                                                      *
  *                                         LOOP *
  *                                                                                      */
- //========================================================================================
+//========================================================================================
 
 typedef struct {
   void (*update)(f32, f32, void* context);
@@ -3295,7 +3509,9 @@ typedef struct {
   bool running;
 } Loop;
 
-static inline void stop_loop(Loop* loop) { loop->running = false; }
+static inline void stop_loop(Loop* loop) {
+  loop->running = false;
+}
 
 static inline Loop* loop(void (*update)(f32, f32, void* ctx), void* context) {
   Loop* new_loop = (Loop*)malloc(sizeof(Loop));
@@ -3316,13 +3532,15 @@ static inline void play_loop(Loop* loop) {
   }
 }
 
-static inline void free_loop(Loop* loop) { free(loop); }
+static inline void free_loop(Loop* loop) {
+  free(loop);
+}
 
 //========================================================================================
 /*                                                                                      *
  *                                        WINDOW *
  *                                                                                      */
- //========================================================================================
+//========================================================================================
 
 typedef struct Window Window;
 struct Window {
@@ -3336,12 +3554,14 @@ struct Window {
   void (*on_close_callback)(Window* window, void* context);
   void* on_close_context;
 
-  void (*on_mouse_down_callback)(Window* window, i32 x, i32 y, u32 button,
-    void* context);
+  void (*on_mouse_down_callback)(
+      Window* window, i32 x, i32 y, u32 button, void* context
+  );
   void* on_mouse_down_context;
 
-  void (*on_mouse_up_callback)(Window* window, i32 x, i32 y, u32 button,
-    void* context);
+  void (*on_mouse_up_callback)(
+      Window* window, i32 x, i32 y, u32 button, void* context
+  );
   void* on_mouse_up_context;
 
   void (*on_mouse_move_callback)(Window* window, i32 x, i32 y, void* context);
@@ -3357,8 +3577,9 @@ struct Window {
   void* on_key_up_context;
 };
 
-static inline void transform_mouse_coordinates(Window* window, i32 x, i32 y,
-  i32 out[2]) {
+static inline void transform_mouse_coordinates(
+    Window* window, i32 x, i32 y, i32 out[2]
+) {
   i32 transformed_x = x;
   i32 transformed_y = window->height - 1 - y;
   out[0] = transformed_x;
@@ -3369,89 +3590,68 @@ static inline void process_window_events(Window* window) {
   SDL_Event event;
   while (SDL_PollEvent(&event)) {
     if (event.type == SDL_QUIT ||
-      (event.type == SDL_WINDOWEVENT &&
-        event.window.event == SDL_WINDOWEVENT_CLOSE)) {
+        (event.type == SDL_WINDOWEVENT &&
+         event.window.event == SDL_WINDOWEVENT_CLOSE)) {
       if (window->on_close_callback) {
         window->on_close_callback(window, window->on_close_context);
       }
-    }
-    else if (event.type == SDL_MOUSEBUTTONDOWN) {
+    } else if (event.type == SDL_MOUSEBUTTONDOWN) {
       if (window->on_mouse_down_callback) {
         i32 transformed_coords[2];
         transform_mouse_coordinates(
-          window,
-          event.button.x,
-          event.button.y,
-          transformed_coords
+            window, event.button.x, event.button.y, transformed_coords
         );
         window->on_mouse_down_callback(
-          window,
-          transformed_coords[0],
-          transformed_coords[1],
-          event.button.button,
-          window->on_mouse_down_context
+            window,
+            transformed_coords[0],
+            transformed_coords[1],
+            event.button.button,
+            window->on_mouse_down_context
         );
       }
-    }
-    else if (event.type == SDL_MOUSEBUTTONUP) {
+    } else if (event.type == SDL_MOUSEBUTTONUP) {
       if (window->on_mouse_up_callback) {
         i32 transformed_coords[2];
         transform_mouse_coordinates(
-          window,
-          event.button.x,
-          event.button.y,
-          transformed_coords
+            window, event.button.x, event.button.y, transformed_coords
         );
         window->on_mouse_up_callback(
-          window,
-          transformed_coords[0],
-          transformed_coords[1],
-          event.button.button,
-          window->on_mouse_up_context
+            window,
+            transformed_coords[0],
+            transformed_coords[1],
+            event.button.button,
+            window->on_mouse_up_context
         );
       }
-    }
-    else if (event.type == SDL_MOUSEMOTION) {
+    } else if (event.type == SDL_MOUSEMOTION) {
       if (window->on_mouse_move_callback) {
         i32 transformed_coords[2];
         transform_mouse_coordinates(
-          window,
-          event.motion.x,
-          event.motion.y,
-          transformed_coords
+            window, event.motion.x, event.motion.y, transformed_coords
         );
         window->on_mouse_move_callback(
-          window,
-          transformed_coords[0],
-          transformed_coords[1],
-          window->on_mouse_move_context
+            window,
+            transformed_coords[0],
+            transformed_coords[1],
+            window->on_mouse_move_context
         );
       }
-    }
-    else if (event.type == SDL_MOUSEWHEEL) {
+    } else if (event.type == SDL_MOUSEWHEEL) {
       if (window->on_mouse_scroll_callback) {
         window->on_mouse_scroll_callback(
-          window,
-          -event.wheel.y,
-          window->on_mouse_scroll_context
+            window, -event.wheel.y, window->on_mouse_scroll_context
         );
       }
-    }
-    else if (event.type == SDL_KEYDOWN) {
+    } else if (event.type == SDL_KEYDOWN) {
       if (window->on_key_down_callback) {
         window->on_key_down_callback(
-          window,
-          event.key.keysym.sym,
-          window->on_key_down_context
+            window, event.key.keysym.sym, window->on_key_down_context
         );
       }
-    }
-    else if (event.type == SDL_KEYUP) {
+    } else if (event.type == SDL_KEYUP) {
       if (window->on_key_up_callback) {
         window->on_key_up_callback(
-          window,
-          event.key.keysym.sym,
-          window->on_key_up_context
+            window, event.key.keysym.sym, window->on_key_up_context
         );
       }
     }
@@ -3487,14 +3687,23 @@ static inline Window* new_window(i32 width, i32 height, const char* title) {
     return NULL;
   }
 
-  SDL_Window* sdl_window =
-    SDL_CreateWindow(title, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-      width, height, SDL_WINDOW_SHOWN);
+  SDL_Window* sdl_window = SDL_CreateWindow(
+      title,
+      SDL_WINDOWPOS_CENTERED,
+      SDL_WINDOWPOS_CENTERED,
+      width,
+      height,
+      SDL_WINDOW_SHOWN
+  );
   SDL_Renderer* renderer =
-    SDL_CreateRenderer(sdl_window, -1, SDL_RENDERER_ACCELERATED);
-  SDL_Texture* texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA8888,
-    SDL_TEXTUREACCESS_STREAMING,
-    window->width, window->height);
+      SDL_CreateRenderer(sdl_window, -1, SDL_RENDERER_ACCELERATED);
+  SDL_Texture* texture = SDL_CreateTexture(
+      renderer,
+      SDL_PIXELFORMAT_RGBA8888,
+      SDL_TEXTUREACCESS_STREAMING,
+      window->width,
+      window->height
+  );
   if (!sdl_window || !renderer || !texture) {
     fprintf(stderr, "Window creation failed: %s\n", SDL_GetError());
     SDL_DestroyWindow(sdl_window);
@@ -3538,8 +3747,9 @@ static inline Window* paint_window(Window* window, Tela* tela) {
     window->pixels[window_index] = (r << 24) | (g << 16) | (b << 8) | a;
   }
 
-  SDL_UpdateTexture(window->texture, NULL, window->pixels,
-    window->width * sizeof(u32));
+  SDL_UpdateTexture(
+      window->texture, NULL, window->pixels, window->width * sizeof(u32)
+  );
   SDL_RenderClear(window->renderer);
   SDL_RenderCopy(window->renderer, window->texture, NULL, NULL);
   SDL_RenderPresent(window->renderer);
@@ -3557,9 +3767,9 @@ static inline Window* set_window_title(Window* window, const char* title) {
   return window;
 }
 
-static inline Window* on_close_window(Window* window,
-  void (*callback)(Window*, void*),
-  void* context) {
+static inline Window* on_close_window(
+    Window* window, void (*callback)(Window*, void*), void* context
+) {
   if (!window) {
     return window;
   }
@@ -3568,10 +3778,11 @@ static inline Window* on_close_window(Window* window,
   return window;
 }
 
-static inline Window* on_mouse_down_window(Window* window,
-  void (*callback)(Window*, i32, i32,
-    u32, void*),
-  void* context) {
+static inline Window* on_mouse_down_window(
+    Window* window,
+    void (*callback)(Window*, i32, i32, u32, void*),
+    void* context
+) {
   if (!window) {
     return window;
   }
@@ -3580,10 +3791,11 @@ static inline Window* on_mouse_down_window(Window* window,
   return window;
 }
 
-static inline Window* on_mouse_up_window(Window* window,
-  void (*callback)(Window*, i32, i32,
-    u32, void*),
-  void* context) {
+static inline Window* on_mouse_up_window(
+    Window* window,
+    void (*callback)(Window*, i32, i32, u32, void*),
+    void* context
+) {
   if (!window) {
     return window;
   }
@@ -3592,10 +3804,9 @@ static inline Window* on_mouse_up_window(Window* window,
   return window;
 }
 
-static inline Window* on_mouse_move_window(Window* window,
-  void (*callback)(Window*, i32, i32,
-    void*),
-  void* context) {
+static inline Window* on_mouse_move_window(
+    Window* window, void (*callback)(Window*, i32, i32, void*), void* context
+) {
   if (!window) {
     return window;
   }
@@ -3604,9 +3815,9 @@ static inline Window* on_mouse_move_window(Window* window,
   return window;
 }
 
-static inline Window*
-on_mouse_scroll_window(Window* window, void (*callback)(Window*, i32, void*),
-  void* context) {
+static inline Window* on_mouse_scroll_window(
+    Window* window, void (*callback)(Window*, i32, void*), void* context
+) {
   if (!window) {
     return window;
   }
@@ -3615,9 +3826,9 @@ on_mouse_scroll_window(Window* window, void (*callback)(Window*, i32, void*),
   return window;
 }
 
-static inline Window*
-on_key_down_window(Window* window, void (*callback)(Window*, u32, void*),
-  void* context) {
+static inline Window* on_key_down_window(
+    Window* window, void (*callback)(Window*, u32, void*), void* context
+) {
   if (!window) {
     return window;
   }
@@ -3626,9 +3837,9 @@ on_key_down_window(Window* window, void (*callback)(Window*, u32, void*),
   return window;
 }
 
-static inline Window*
-on_key_up_window(Window* window, void (*callback)(Window*, u32, void*),
-  void* context) {
+static inline Window* on_key_up_window(
+    Window* window, void (*callback)(Window*, u32, void*), void* context
+) {
   if (!window) {
     return window;
   }
@@ -3660,7 +3871,7 @@ static inline void free_window(Window* window) {
 /*                                                                                      *
  *                                       CAMERA_2D *
  *                                                                                      */
- //========================================================================================
+//========================================================================================
 
 typedef struct {
   AABB_2D view_box;
@@ -3674,10 +3885,14 @@ static inline Camera_2D build_camera_2d(Vec2 min, Vec2 max) {
 
 /**
  * Convert world coordinates to canvas (pixel) coordinates.
- * p is in world space, result is in pixel space [0, tela.width] x [0, tela.height].
+ * p is in world space, result is in pixel space [0, tela.width] x [0,
+ * tela.height].
  */
-static inline Vec2 to_canvas_coord_camera_2d(const Camera_2D* cam, Vec2 p, const Tela* tela) {
-  Vec2 normalized = div_vec2(sub_vec2(p, cam->view_box.min), cam->view_box.diagonal);
+static inline Vec2 to_canvas_coord_camera_2d(
+    const Camera_2D* cam, Vec2 p, const Tela* tela
+) {
+  Vec2 normalized =
+      div_vec2(sub_vec2(p, cam->view_box.min), cam->view_box.diagonal);
   return mul_vec2(normalized, vec2((f32)tela->width, (f32)tela->height));
 }
 
@@ -3685,28 +3900,34 @@ static inline Vec2 to_canvas_coord_camera_2d(const Camera_2D* cam, Vec2 p, const
  * Convert canvas (pixel) coordinates to world coordinates.
  * x is in pixel space, result is in world space.
  */
-static inline Vec2 to_world_coord_camera_2d(const Camera_2D* cam, Vec2 x, const Tela* tela) {
+static inline Vec2 to_world_coord_camera_2d(
+    const Camera_2D* cam, Vec2 x, const Tela* tela
+) {
   Vec2 size = vec2((f32)tela->width, (f32)tela->height);
   return vec2(
-    (x.x / size.x) * cam->view_box.diagonal.x + cam->view_box.min.x,
-    (x.y / size.y) * cam->view_box.diagonal.y + cam->view_box.min.y
+      (x.x / size.x) * cam->view_box.diagonal.x + cam->view_box.min.x,
+      (x.y / size.y) * cam->view_box.diagonal.y + cam->view_box.min.y
   );
 }
 
 /**
  * Draw a filled circle on the tela in pixel coordinates.
  */
-static inline Tela* draw_circle_tela(Tela* tela, Vec2 center, f32 radius, Color color) {
+static inline Tela* draw_circle_tela(
+    Tela* tela, Vec2 center, f32 radius, Color color
+) {
   i32 r = (i32)ceilf(radius);
   i32 cx = (i32)floorf(center.x);
   i32 cy = (i32)floorf(center.y);
   f32 r_sq = radius * radius;
   for (i32 dy = -r; dy <= r; dy++) {
     for (i32 dx = -r; dx <= r; dx++) {
-      if ((f32)(dx * dx + dy * dy) > r_sq) continue;
+      if ((f32)(dx * dx + dy * dy) > r_sq)
+        continue;
       i32 px = cx + dx;
       i32 py = cy + dy;
-      if (px < 0 || px >= (i32)tela->width || py < 0 || py >= (i32)tela->height) continue;
+      if (px < 0 || px >= (i32)tela->width || py < 0 || py >= (i32)tela->height)
+        continue;
       set_pxl_tela(tela, (u32)px, (u32)py, color);
     }
   }
@@ -3717,15 +3938,15 @@ static inline Tela* draw_circle_tela(Tela* tela, Vec2 center, f32 radius, Color 
 /*                                                                                      *
  *                                        CAMERA *
  *                                                                                      */
- //========================================================================================
+//========================================================================================
 
 typedef struct {
   Vec3 position;
   Vec3 look_at;
   f32 distance_to_plane;
-  Vec3 orbit_coords;  // radius, theta, phi
-  Vec2 orient_coords; // theta, phi
-  Vec3 basis[3];      // matrix transforming camera space to world space
+  Vec3 orbit_coords;   // radius, theta, phi
+  Vec2 orient_coords;  // theta, phi
+  Vec3 basis[3];       // matrix transforming camera space to world space
 } Camera;
 
 Camera set_orient_camera(Camera* camera, f32 theta, f32 phi) {
@@ -3770,15 +3991,19 @@ Camera set_orbit_camera(Camera* camera, f32 radius, f32 theta, f32 phi) {
   f32 sinP = sinf(phi);
 
   Vec3 sphere_coords =
-    vec3(radius * cosP * cosT, radius * cosP * sinT, radius * sinP);
+      vec3(radius * cosP * cosT, radius * cosP * sinT, radius * sinP);
 
   camera->position = add_vec3(sphere_coords, camera->look_at);
   return *camera;
 }
 
-Vec3 get_camera_orbit(const Camera* camera) { return camera->orbit_coords; }
+Vec3 get_camera_orbit(const Camera* camera) {
+  return camera->orbit_coords;
+}
 
-Vec2 get_camera_orient(const Camera* camera) { return camera->orient_coords; }
+Vec2 get_camera_orient(const Camera* camera) {
+  return camera->orient_coords;
+}
 
 static inline Vec3 to_world_coord_camera(const Camera* camera, Vec3 cam_vec) {
   Vec3 x = vec3(0, 0, 0);
@@ -3793,7 +4018,7 @@ typedef struct {
   Camera* camera;
   Tela* tela;
   void* lambda_context;
-  Color(*lambdaWithRays)(Ray, void*);
+  Color (*lambdaWithRays)(Ray, void*);
 } LambdaRayContext;
 
 Color lambda_tela_from_ray(u32 x, u32 y, void const* context) {
@@ -3804,41 +4029,44 @@ Color lambda_tela_from_ray(u32 x, u32 y, void const* context) {
   f32 invW = 1.0f / w;
   f32 h = (f32)tela->height;
   f32 invH = 1.0f / h;
-  Vec3 dirInLocal = { (x * invW - 0.5), (y * invH - 0.5),
-                     camera->distance_to_plane };
+  Vec3 dirInLocal = { (x * invW - 0.5),
+                      (y * invH - 0.5),
+                      camera->distance_to_plane };
   Vec3 dir = vec3(
-    camera->basis[0].x * dirInLocal.x + camera->basis[1].x * dirInLocal.y +
-    camera->basis[2].x * dirInLocal.z,
-    camera->basis[0].y * dirInLocal.x + camera->basis[1].y * dirInLocal.y +
-    camera->basis[2].y * dirInLocal.z,
-    camera->basis[0].z * dirInLocal.x + camera->basis[1].z * dirInLocal.y +
-    camera->basis[2].z * dirInLocal.z);
+      camera->basis[0].x * dirInLocal.x + camera->basis[1].x * dirInLocal.y +
+          camera->basis[2].x * dirInLocal.z,
+      camera->basis[0].y * dirInLocal.x + camera->basis[1].y * dirInLocal.y +
+          camera->basis[2].y * dirInLocal.z,
+      camera->basis[0].z * dirInLocal.x + camera->basis[1].z * dirInLocal.y +
+          camera->basis[2].z * dirInLocal.z
+  );
   Vec3 dir_norm = normalize_vec3(dir);
-  Color c = lambda_context->lambdaWithRays(build_ray(camera->position, dir_norm),
-    lambda_context->lambda_context);
+  Color c = lambda_context->lambdaWithRays(
+      build_ray(camera->position, dir_norm), lambda_context->lambda_context
+  );
   return c;
 }
 
-Tela* ray_map_camera(Camera* camera, Tela* tela,
-  Color(*ray_scene)(Ray, void*), void* context) {
-
+Tela* ray_map_camera(
+    Camera* camera, Tela* tela, Color (*ray_scene)(Ray, void*), void* context
+) {
   LambdaRayContext lambda_context = {
-      .camera = camera,
-      .tela = tela,
-      .lambda_context = context,
-      .lambdaWithRays = ray_scene,
+    .camera = camera,
+    .tela = tela,
+    .lambda_context = context,
+    .lambdaWithRays = ray_scene,
   };
   return map_tela(tela, lambda_tela_from_ray, &lambda_context);
 }
 
-Tela* ray_map_camera_parallel(Camera* camera, Tela* tela,
-  Color(*ray_scene)(Ray, void*), void* context) {
-
+Tela* ray_map_camera_parallel(
+    Camera* camera, Tela* tela, Color (*ray_scene)(Ray, void*), void* context
+) {
   LambdaRayContext lambda_context = {
-      .camera = camera,
-      .tela = tela,
-      .lambda_context = context,
-      .lambdaWithRays = ray_scene,
+    .camera = camera,
+    .tela = tela,
+    .lambda_context = context,
+    .lambdaWithRays = ray_scene,
   };
   return map_tela_parallel(tela, lambda_tela_from_ray, &lambda_context);
 }
@@ -3846,9 +4074,9 @@ Tela* ray_map_camera_parallel(Camera* camera, Tela* tela,
 Vec3 to_local_coords_camera(const Camera* camera, Vec3 world_coords) {
   Vec3 p = sub_vec3(world_coords, camera->position);
   return vec3(
-    dot_vec3(camera->basis[0], p),
-    dot_vec3(camera->basis[1], p),
-    dot_vec3(camera->basis[2], p)
+      dot_vec3(camera->basis[0], p),
+      dot_vec3(camera->basis[1], p),
+      dot_vec3(camera->basis[2], p)
   );
 }
 
@@ -3857,32 +4085,34 @@ Ray ray_from_tela_camera(const Camera* camera, const Tela* tela, u32 x, u32 y) {
   f32 invW = 1.0f / w;
   f32 h = (f32)tela->height;
   f32 invH = 1.0f / h;
-  Vec3 dirInLocal = { (x * invW - 0.5), (y * invH - 0.5),
-                     camera->distance_to_plane };
+  Vec3 dirInLocal = { (x * invW - 0.5),
+                      (y * invH - 0.5),
+                      camera->distance_to_plane };
   Vec3 dir = vec3(
-    camera->basis[0].x * dirInLocal.x + camera->basis[1].x * dirInLocal.y +
-    camera->basis[2].x * dirInLocal.z,
-    camera->basis[0].y * dirInLocal.x + camera->basis[1].y * dirInLocal.y +
-    camera->basis[2].y * dirInLocal.z,
-    camera->basis[0].z * dirInLocal.x + camera->basis[1].z * dirInLocal.y +
-    camera->basis[2].z * dirInLocal.z);
+      camera->basis[0].x * dirInLocal.x + camera->basis[1].x * dirInLocal.y +
+          camera->basis[2].x * dirInLocal.z,
+      camera->basis[0].y * dirInLocal.x + camera->basis[1].y * dirInLocal.y +
+          camera->basis[2].y * dirInLocal.z,
+      camera->basis[0].z * dirInLocal.x + camera->basis[1].z * dirInLocal.y +
+          camera->basis[2].z * dirInLocal.z
+  );
   Vec3 dir_norm = normalize_vec3(dir);
   return build_ray(camera->position, dir_norm);
 };
 
 //========================================================================================
 /*                                                                                      *
- *                                        RASTER                                        *
+ *                                        RASTER *
  *                                                                                      */
- //========================================================================================
+//========================================================================================
 typedef struct {
   bool cull_backfaces;
   bool bilinear_texture;
   bool clip_camera_plane;
-  bool  clear_screen;
-  Color  background_color;
-  bool  perspective_correct;
-  f32  near_plane_z;
+  bool clear_screen;
+  Color background_color;
+  bool perspective_correct;
+  f32 near_plane_z;
   Camera* camera;
   Tela* tela;
 } RasterParams;
@@ -3905,8 +4135,8 @@ typedef enum {
 
 typedef struct {
   bool emissive;
-  Ray(*scatter)(Ray, SceneHit);
-  void* data; // data of materials
+  Ray (*scatter)(Ray, SceneHit);
+  void* data;  // data of materials
 } Material;
 
 typedef struct {
@@ -3921,17 +4151,22 @@ typedef struct {
   Camera* camera;
   Tela* tela;
   RasterParams* params;
-  f32* zBuffer; // size will be tela->width * tela->height
+  f32* zBuffer;  // size will be tela->width * tela->height
 } RasterTriangleInput;
 
-static inline Vec3 line_camera_plane_intersection(Vec3 out_point, Vec3 in_point, f32 plane_z) {
+static inline Vec3 line_camera_plane_intersection(
+    Vec3 out_point, Vec3 in_point, f32 plane_z
+) {
   f32 denom = in_point.z - out_point.z;
-  if (fabsf(denom) < 1e-8f) return out_point;
+  if (fabsf(denom) < 1e-8f)
+    return out_point;
   f32 t = (plane_z - out_point.z) / denom;
   return add_vec3(out_point, scale_vec3(sub_vec3(in_point, out_point), t));
 }
 
-static inline bool clip_line_camera_plane(Vec3 points_in_cam_coords[2], f32 plane_z) {
+static inline bool clip_line_camera_plane(
+    Vec3 points_in_cam_coords[2], f32 plane_z
+) {
   u32 in_frustum[2];
   u32 in_frustum_count = 0;
   u32 out_frustum[2];
@@ -3940,20 +4175,18 @@ static inline bool clip_line_camera_plane(Vec3 points_in_cam_coords[2], f32 plan
   for (u32 i = 0; i < 2; i++) {
     if (points_in_cam_coords[i].z < plane_z) {
       out_frustum[out_frustum_count++] = i;
-    }
-    else {
+    } else {
       in_frustum[in_frustum_count++] = i;
     }
   }
 
-  if (out_frustum_count == 2) return true;
+  if (out_frustum_count == 2)
+    return true;
   if (out_frustum_count == 1) {
     const u32 out_i = out_frustum[0];
     const u32 in_i = in_frustum[0];
     points_in_cam_coords[out_i] = line_camera_plane_intersection(
-      points_in_cam_coords[out_i],
-      points_in_cam_coords[in_i],
-      plane_z
+        points_in_cam_coords[out_i], points_in_cam_coords[in_i], plane_z
     );
   }
   return false;
@@ -3974,10 +4207,12 @@ Color raster_line_shader(u32 x, u32 y, Line_2D* line, void* ctx) {
   Vec2 p = sub_vec2(vec2((f32)x, (f32)y), context->int_points[0]);
   Vec2 v = sub_vec2(context->int_points[1], context->int_points[0]);
   f32 v_squared = dot_vec2(v, v);
-  if (v_squared < 1e-8f) return (Color) { 0, 0, 0, 0 };
+  if (v_squared < 1e-8f)
+    return (Color){ 0, 0, 0, 0 };
 
   f32 t = dot_vec2(v, p) / v_squared;
-  f32 z = context->points_in_cam_coords[0].z * (1.0f - t) + context->points_in_cam_coords[1].z * t;
+  f32 z = context->points_in_cam_coords[0].z * (1.0f - t) +
+          context->points_in_cam_coords[1].z * t;
   Color c = lerp_color(context->colors[0], context->colors[1], t);
 
   const Vec2 ij = to_grid_tela(context->tela, x, y);
@@ -3986,7 +4221,7 @@ Color raster_line_shader(u32 x, u32 y, Line_2D* line, void* ctx) {
     context->zBuffer[z_buffer_index] = z;
     return c;
   }
-  return (Color) { 0, 0, 0, 0 };
+  return (Color){ 0, 0, 0, 0 };
 }
 
 void raster_line(RasterLineInput* input) {
@@ -4009,15 +4244,21 @@ void raster_line(RasterLineInput* input) {
 
   Vec3 points_in_cam_coords[2];
   for (u32 i = 0; i < 2; i++) {
-    points_in_cam_coords[i] = to_local_coords_camera(camera, line->positions[i]);
+    points_in_cam_coords[i] =
+        to_local_coords_camera(camera, line->positions[i]);
   }
 
-  if (params->clip_camera_plane && clip_line_camera_plane(points_in_cam_coords, near_plane_z)) return;
-  if (clip_line_camera_plane(points_in_cam_coords, 0.0f)) return;
+  if (params->clip_camera_plane &&
+      clip_line_camera_plane(points_in_cam_coords, near_plane_z))
+    return;
+  if (clip_line_camera_plane(points_in_cam_coords, 0.0f))
+    return;
 
   Vec3 projected_points[2];
   for (u32 i = 0; i < 2; i++) {
-    projected_points[i] = scale_vec3(points_in_cam_coords[i], distance_to_plane / points_in_cam_coords[i].z);
+    projected_points[i] = scale_vec3(
+        points_in_cam_coords[i], distance_to_plane / points_in_cam_coords[i].z
+    );
   }
 
   Vec2 int_points[2];
@@ -4034,20 +4275,23 @@ void raster_line(RasterLineInput* input) {
 
   RasterLineShaderContext raster_line_shader_context = {
     .int_points = { int_points[0], int_points[1] },
-    .points_in_cam_coords = { points_in_cam_coords[0], points_in_cam_coords[1] },
+    .points_in_cam_coords = { points_in_cam_coords[0],
+                              points_in_cam_coords[1] },
     .colors = { colors[0], colors[1] },
     .zBuffer = zBuffer,
     .width = w,
     .tela = tela,
   };
 
-  draw_line_tela(tela, &line_2d, raster_line_shader, &raster_line_shader_context);
+  draw_line_tela(
+      tela, &line_2d, raster_line_shader, &raster_line_shader_context
+  );
 }
 
 const f32 dithering_matrix_4x4[16] = {
-  0.0f / 16.0f, 8.0f / 16.0f, 2.0f / 16.0f, 10.0f / 16.0f, 12.0f / 16.0f,
-  4.0f / 16.0f, 14.0f / 16.0f, 6.0f / 16.0f, 3.0f / 16.0f, 11.0f / 16.0f,
-  1.0f / 16.0f, 9.0f / 16.0f, 15.0f / 16.0f, 7.0f / 16.0f, 13.0f / 16.0f,
+  0.0f / 16.0f, 8.0f / 16.0f,  2.0f / 16.0f,  10.0f / 16.0f, 12.0f / 16.0f,
+  4.0f / 16.0f, 14.0f / 16.0f, 6.0f / 16.0f,  3.0f / 16.0f,  11.0f / 16.0f,
+  1.0f / 16.0f, 9.0f / 16.0f,  15.0f / 16.0f, 7.0f / 16.0f,  13.0f / 16.0f,
 };
 
 Color get_bilinear_tex_color(Tela* texture, Vec2 uv) {
@@ -4082,7 +4326,7 @@ typedef struct {
   Vec2 tex_coords[3];
   Tela* texture;
   bool have_textures;
-  f32* zBuffer; // size will be tela->width * tela->height
+  f32* zBuffer;  // size will be tela->width * tela->height
   u32 width;
   u32 height;
   Vec2 u;
@@ -4091,7 +4335,9 @@ typedef struct {
   Tela* tela;
 } RasterTriangleShaderContext;
 
-Color raster_triangle_shader(u32 x, u32 y, const Triangle_2D* triangle, void* ctx) {
+Color raster_triangle_shader(
+    u32 x, u32 y, const Triangle_2D* triangle, void* ctx
+) {
   RasterTriangleShaderContext* context = (RasterTriangleShaderContext*)ctx;
   Vec2* int_points = context->int_points;
   f32 inv_det = context->inv_det;
@@ -4117,7 +4363,9 @@ Color raster_triangle_shader(u32 x, u32 y, const Triangle_2D* triangle, void* ct
   f32 alpha = -(v.x * p.y - v.y * p.x) * inv_det;
   f32 beta = (u.x * p.y - u.y * p.x) * inv_det;
   f32 gamma = 1 - alpha - beta;
-  const f32 zs[3] = { points_in_cam_coords[0].z, points_in_cam_coords[1].z, points_in_cam_coords[2].z };
+  const f32 zs[3] = { points_in_cam_coords[0].z,
+                      points_in_cam_coords[1].z,
+                      points_in_cam_coords[2].z };
   if (params->perspective_correct) {
     // wReciprocal is the weight for perspective correction of z coordinate
     W = (1 / zs[0]) * gamma + (1 / zs[1]) * alpha + (1 / zs[2]) * beta;
@@ -4125,8 +4373,7 @@ Color raster_triangle_shader(u32 x, u32 y, const Triangle_2D* triangle, void* ct
     alpha = (alpha / zs[1]) * wReciprocal;
     beta = (beta / zs[2]) * wReciprocal;
     gamma = (gamma / zs[0]) * wReciprocal;
-  }
-  else {
+  } else {
     wReciprocal = zs[0] * gamma + zs[1] * alpha + zs[2] * beta;
   }
   // compute color
@@ -4137,23 +4384,29 @@ Color raster_triangle_shader(u32 x, u32 y, const Triangle_2D* triangle, void* ct
     c1.alpha * gamma + c2.alpha * alpha + c3.alpha * beta,
   };
   if (have_textures) {
-    Vec2 tex_uv = add_vec2(scale_vec2(tex_coords[0], gamma),
-      add_vec2(scale_vec2(tex_coords[1], alpha),
-        scale_vec2(tex_coords[2], beta)));
-    Color tex_color = params->bilinear_texture ?
-      get_bilinear_tex_color(texture, tex_uv) :
-      get_tex_color(texture, tex_uv);
+    Vec2 tex_uv = add_vec2(
+        scale_vec2(tex_coords[0], gamma),
+        add_vec2(
+            scale_vec2(tex_coords[1], alpha), scale_vec2(tex_coords[2], beta)
+        )
+    );
+    Color tex_color = params->bilinear_texture
+                          ? get_bilinear_tex_color(texture, tex_uv)
+                          : get_tex_color(texture, tex_uv);
     c = tex_color;
   }
   const Vec2 ij = to_grid_tela(tela, x, y);
   const u32 zBufferIndex = (u32)floorf(w * ij.x + ij.y);
   if (wReciprocal < zBuffer[zBufferIndex]) {
-    const f32 matrix_value = dithering_matrix_4x4[((u32)ij.x % 4) * 4 + ((u32)ij.y % 4)];
-    const Color color = matrix_value < c.alpha ? c : (Color) { 0, 0, 0, 0 };
-    if (color.alpha > 0) zBuffer[zBufferIndex] = wReciprocal; // if color.alpha is 0, don't update zBuffer
+    const f32 matrix_value =
+        dithering_matrix_4x4[((u32)ij.x % 4) * 4 + ((u32)ij.y % 4)];
+    const Color color = matrix_value < c.alpha ? c : (Color){ 0, 0, 0, 0 };
+    if (color.alpha > 0)
+      zBuffer[zBufferIndex] =
+          wReciprocal;  // if color.alpha is 0, don't update zBuffer
     return color;
   }
-  return (Color) { 0, 0, 0, 0 };
+  return (Color){ 0, 0, 0, 0 };
 }
 
 void raster_triangle(RasterTriangleInput* input) {
@@ -4185,9 +4438,10 @@ void raster_triangle(RasterTriangleInput* input) {
     Vec3 dv = sub_vec3(points_in_cam_coords[2], points_in_cam_coords[0]);
     Vec3 n = cross_vec3(du, dv);
     n = normalize_vec3(n);
-    if (dot_vec3(n, points_in_cam_coords[0]) <= 0) return;
+    if (dot_vec3(n, points_in_cam_coords[0]) <= 0)
+      return;
   }
-  //frustum culling
+  // frustum culling
   u32 inFrustum[3];
   u32 inFrustumCount = 0;
   u32 outFrustum[3];
@@ -4195,72 +4449,69 @@ void raster_triangle(RasterTriangleInput* input) {
   for (u32 i = 0; i < 3; i++) {
     if (points_in_cam_coords[i].z < near_plane_z) {
       outFrustum[outFrustumCount++] = i;
-    }
-    else {
+    } else {
       inFrustum[inFrustumCount++] = i;
     }
   }
-  if (params->clip_camera_plane && outFrustumCount >= 1) return;
-  //project
+  if (params->clip_camera_plane && outFrustumCount >= 1)
+    return;
+  // project
   Vec3 projectedPoints[3];
   for (u32 i = 0; i < 3; i++) {
     projectedPoints[i] = scale_vec3(
-      points_in_cam_coords[i],
-      distanceToPlane / points_in_cam_coords[i].z
+        points_in_cam_coords[i], distanceToPlane / points_in_cam_coords[i].z
     );
   }
   // integer coordinates
   Vec2 intPoints[3];
   for (u32 i = 0; i < 3; i++) {
     intPoints[i] = vec2(
-      (int)(w / 2 + projectedPoints[i].x * w),
-      (int)(h / 2 + projectedPoints[i].y * h)
+        (int)(w / 2 + projectedPoints[i].x * w),
+        (int)(h / 2 + projectedPoints[i].y * h)
     );
   }
   // shader
   Vec2 u = sub_vec2(intPoints[1], intPoints[0]);
   Vec2 v = sub_vec2(intPoints[2], intPoints[0]);
-  f32 det = wedge_vec2(u, v); // wedge product
-  if (fabsf(det) < 1e-6f) return;  // Degenerate triangle in screen space
+  f32 det = wedge_vec2(u, v);  // wedge product
+  if (fabsf(det) < 1e-6f)
+    return;  // Degenerate triangle in screen space
   f32 invDet = 1 / det;
   Color c1 = colors[0];
   Color c2 = colors[1];
   Color c3 = colors[2];
   bool haveTextures = texture != NULL && tex_coords != NULL;
 
-  RasterTriangleProps* new_triangle_props = &(RasterTriangleProps) {
-    .colors = { c1, c2, c3 },
-      .tex_coords = { tex_coords[0], tex_coords[1], tex_coords[2] },
-      .texture = (Tela*)texture
-  };
-  Triangle_2D* triangle_2d = &(Triangle_2D) {
-    .positions = { intPoints[0], intPoints[1], intPoints[2] },
-      .props = new_triangle_props
-  };
+  RasterTriangleProps* new_triangle_props = &(RasterTriangleProps
+  ){ .colors = { c1, c2, c3 },
+     .tex_coords = { tex_coords[0], tex_coords[1], tex_coords[2] },
+     .texture = (Tela*)texture };
+  Triangle_2D* triangle_2d =
+      &(Triangle_2D){ .positions = { intPoints[0], intPoints[1], intPoints[2] },
+                      .props = new_triangle_props };
 
-  RasterTriangleShaderContext raster_triangle_shader_context = (RasterTriangleShaderContext){
-    .int_points = { intPoints[0], intPoints[1], intPoints[2] },
-      .inv_det = invDet,
-      .points_in_cam_coords = { points_in_cam_coords[0], points_in_cam_coords[1], points_in_cam_coords[2] },
-      .u = u,
-      .v = v,
-      .c1 = c1,
-      .c2 = c2,
-      .c3 = c3,
-      .tex_coords = { tex_coords[0], tex_coords[1], tex_coords[2] },
-      .texture = (Tela*)texture,
-      .have_textures = haveTextures,
-      .zBuffer = zBuffer,
-      .width = w,
-      .height = h,
-      .params = params,
-      .tela = tela
-  };
+  RasterTriangleShaderContext raster_triangle_shader_context =
+      (RasterTriangleShaderContext
+      ){ .int_points = { intPoints[0], intPoints[1], intPoints[2] },
+         .inv_det = invDet,
+         .points_in_cam_coords = { points_in_cam_coords[0],
+                                   points_in_cam_coords[1],
+                                   points_in_cam_coords[2] },
+         .u = u,
+         .v = v,
+         .c1 = c1,
+         .c2 = c2,
+         .c3 = c3,
+         .tex_coords = { tex_coords[0], tex_coords[1], tex_coords[2] },
+         .texture = (Tela*)texture,
+         .have_textures = haveTextures,
+         .zBuffer = zBuffer,
+         .width = w,
+         .height = h,
+         .params = params,
+         .tela = tela };
   draw_triangle_tela(
-    tela,
-    triangle_2d,
-    raster_triangle_shader,
-    &raster_triangle_shader_context
+      tela, triangle_2d, raster_triangle_shader, &raster_triangle_shader_context
   );
 }
 
@@ -4276,7 +4527,7 @@ typedef struct {
   Camera* camera;
   Tela* tela;
   RasterParams* params;
-  f32* zBuffer; // size will be tela->width * tela->height
+  f32* zBuffer;  // size will be tela->width * tela->height
 } RasterSphereInput;
 
 void raster_sphere(RasterSphereInput* input) {
@@ -4292,7 +4543,7 @@ void raster_sphere(RasterSphereInput* input) {
   const f32 distance_to_plane = camera->distance_to_plane;
 
   RasterSphereProps* props = (RasterSphereProps*)sphere->props;
-  Color color = props ? props->color : (Color) { 1.0f, 1.0f, 1.0f, 1.0f };
+  Color color = props ? props->color : (Color){ 1.0f, 1.0f, 1.0f, 1.0f };
   Vec2 tex_coord = props ? props->tex_coord : vec2(0, 0);
   Tela* texture = props ? props->texture : NULL;
 
@@ -4301,7 +4552,8 @@ void raster_sphere(RasterSphereInput* input) {
 
   // frustum culling
   f32 z = point_in_cam.z;
-  if (z < near_plane_z) return;
+  if (z < near_plane_z)
+    return;
 
   // project
   f32 proj_scale = distance_to_plane / z;
@@ -4311,7 +4563,8 @@ void raster_sphere(RasterSphereInput* input) {
   i32 x = (i32)floorf((f32)w / 2.0f + projected.x * (f32)w);
   i32 y = (i32)floorf((f32)h / 2.0f + projected.y * (f32)h);
 
-  if (x < 0 || x >= (i32)w || y < 0 || y >= (i32)h) return;
+  if (x < 0 || x >= (i32)w || y < 0 || y >= (i32)h)
+    return;
 
   // projected radius in pixels
   i32 int_radius = (i32)ceilf(sphere->radius * proj_scale * (f32)w);
@@ -4328,11 +4581,13 @@ void raster_sphere(RasterSphereInput* input) {
   for (i32 l = -int_radius; l < int_radius; l++) {
     for (i32 k = -int_radius; k < int_radius; k++) {
       i32 sq_len = k * k + l * l;
-      if (sq_len > int_radius_sq) continue;
+      if (sq_len > int_radius_sq)
+        continue;
 
       i32 xl = max_i32(0, min_i32((i32)w - 1, x + k));
       i32 yl = (i32)floorf((f32)(y + l));
-      if (yl < 0 || yl >= (i32)h) continue;
+      if (yl < 0 || yl >= (i32)h)
+        continue;
 
       Vec2 grid = to_grid_tela(tela, (u32)xl, (u32)yl);
       u32 gi = (u32)grid.x;
@@ -4347,7 +4602,6 @@ void raster_sphere(RasterSphereInput* input) {
   }
 }
 
-
 Tela* raster_scene(Scene* scene, RasterParams params) {
   Tela* tela = params.tela;
   Camera* camera = params.camera;
@@ -4358,39 +4612,33 @@ Tela* raster_scene(Scene* scene, RasterParams params) {
   u32 h = tela->height;
   u32 buffer_length = w * h;
   f32 z_buffer[buffer_length];
-  for (u32 i = 0; i < buffer_length; i++) { z_buffer[i] = INFINITY; }
+  for (u32 i = 0; i < buffer_length; i++) {
+    z_buffer[i] = INFINITY;
+  }
   Array* elems = get_scene_elems_scene(scene);
   for (u32 i = 0; i < elems->length; i++) {
     SceneElem* elem = (SceneElem*)get_array_element(elems, i);
     if (elem->geometry_type == TRIANGLE) {
       Triangle* triangle = &elem->as.triangle;
-      raster_triangle(&(RasterTriangleInput) {
-        .triangle = triangle,
-          .camera = camera,
-          .tela = tela,
-          .params = &params,
-          .zBuffer = z_buffer
-      });
-    }
-    else if (elem->geometry_type == SPHERE) {
+      raster_triangle(&(RasterTriangleInput){ .triangle = triangle,
+                                              .camera = camera,
+                                              .tela = tela,
+                                              .params = &params,
+                                              .zBuffer = z_buffer });
+    } else if (elem->geometry_type == SPHERE) {
       Sphere* sphere = &elem->as.sphere;
-      raster_sphere(&(RasterSphereInput) {
-        .sphere = sphere,
-          .camera = camera,
-          .tela = tela,
-          .params = &params,
-          .zBuffer = z_buffer
-      });
-    }
-    else if (elem->geometry_type == LINE_GEOMETRY) {
+      raster_sphere(&(RasterSphereInput){ .sphere = sphere,
+                                          .camera = camera,
+                                          .tela = tela,
+                                          .params = &params,
+                                          .zBuffer = z_buffer });
+    } else if (elem->geometry_type == LINE_GEOMETRY) {
       Line* line = &elem->as.line;
-      raster_line(&(RasterLineInput) {
-        .line = line,
-          .camera = camera,
-          .tela = tela,
-          .params = &params,
-          .zBuffer = z_buffer
-      });
+      raster_line(&(RasterLineInput){ .line = line,
+                                      .camera = camera,
+                                      .tela = tela,
+                                      .params = &params,
+                                      .zBuffer = z_buffer });
     }
   }
   return tela;
@@ -4415,21 +4663,30 @@ static void _free_debug_line_props(Scene* scene) {
   }
 }
 
-static inline u32 _compute_kscene_debug_max_levels(const NodeKScene* node, u32 k) {
-  if (!node || k == 0 || node->num_of_primitives == 0) return 1;
+static inline u32 _compute_kscene_debug_max_levels(
+    const NodeKScene* node, u32 k
+) {
+  if (!node || k == 0 || node->num_of_primitives == 0)
+    return 1;
   f32 levels = roundf(log2f((f32)node->num_of_primitives / (f32)k)) + 1.0f;
-  if (levels <= 0.0f) levels = 1.0f;
+  if (levels <= 0.0f)
+    levels = 1.0f;
   return (u32)levels;
 }
 
 static inline Color _kscene_level_color(u32 level, u32 max_levels) {
   f32 t = max_levels == 0 ? 0.0f : (f32)level / (f32)max_levels;
-  return add_color(scale_color(COLOR_RED, 1.0f - t), scale_color(COLOR_BLUE, t));
+  return add_color(
+      scale_color(COLOR_RED, 1.0f - t), scale_color(COLOR_BLUE, t)
+  );
 }
 
-static void _kscene_debug_node(KScene* ks, NodeKScene* node, u32 level, u32 max_levels, Scene* debug_scene) {
+static void _kscene_debug_node(
+    KScene* ks, NodeKScene* node, u32 level, u32 max_levels, Scene* debug_scene
+) {
   (void)ks;
-  if (!node) return;
+  if (!node)
+    return;
 
   draw_box(debug_scene, node->box, _kscene_level_color(level, max_levels));
 
@@ -4442,23 +4699,29 @@ static void _kscene_debug_node(KScene* ks, NodeKScene* node, u32 level, u32 max_
 }
 
 static void _kscene_debug(Scene* self, void* props) {
-  if (!self || !props) return;
+  if (!self || !props)
+    return;
 
   SceneDebugProps* debug_props = (SceneDebugProps*)props;
-  if (!debug_props->camera || !debug_props->tela) return;
+  if (!debug_props->camera || !debug_props->tela)
+    return;
 
   KScene* ks = (KScene*)self->data;
-  if (!ks || !ks->root) return;
+  if (!ks || !ks->root)
+    return;
 
   Scene debug_scene_instance = new_naive_scene();
   const u32 max_levels = _compute_kscene_debug_max_levels(ks->root, ks->k);
   _kscene_debug_node(ks, ks->root, 0, max_levels, &debug_scene_instance);
 
-  raster_scene(&debug_scene_instance, (RasterParams) {
-    .clear_screen = false,
-    .camera = debug_props->camera,
-    .tela = debug_props->tela,
-  });
+  raster_scene(
+      &debug_scene_instance,
+      (RasterParams){
+          .clear_screen = false,
+          .camera = debug_props->camera,
+          .tela = debug_props->tela,
+      }
+  );
 
   _free_debug_line_props(&debug_scene_instance);
   free_scene(&debug_scene_instance);
@@ -4466,14 +4729,14 @@ static void _kscene_debug(Scene* self, void* props) {
 
 //========================================================================================
 /*                                                                                      *
- *                                       RAY_TRACE                                       *
+ *                                       RAY_TRACE *
  *                                                                                      */
- //========================================================================================
+//========================================================================================
 
 typedef struct {
   Vec3 direction;
   f32 sharpness;
-}DirectionalLightParams;
+} DirectionalLightParams;
 
 typedef struct {
   u32 samples_per_pixel;
@@ -4482,7 +4745,7 @@ typedef struct {
   f32 gamma;
   bool bilinear_texture;
   bool is_biased;
-  Color(*render_background)(Ray, void*);
+  Color (*render_background)(Ray, void*);
   void* render_background_context;
   Tela* exposed_tela;
   Camera* camera;
@@ -4497,32 +4760,26 @@ typedef struct {
 Ray scatter_diffuse(Ray ray, SceneHit hit) {
   Vec3 normal = { 0, 0, 0 };
   if (hit.scene_elem->geometry_type == TRIANGLE) {
-    normal = normal_to_point_triangle(&hit.scene_elem->as.triangle, hit.position);
-  }
-  else if (hit.scene_elem->geometry_type == SPHERE) {
+    normal =
+        normal_to_point_triangle(&hit.scene_elem->as.triangle, hit.position);
+  } else if (hit.scene_elem->geometry_type == SPHERE) {
     normal = normal_to_point_sphere(&hit.scene_elem->as.sphere, hit.position);
   }
   Vec3 random_sphere_vec = random_point_in_sphere();
   // Offset origin slightly along normal to prevent f32 self-intersection
   const Vec3 origin = add_vec3(hit.position, scale_vec3(normal, 1e-2f));
-  if (dot_vec3(random_sphere_vec, normal) >= 0) return build_ray(origin, random_sphere_vec);
+  if (dot_vec3(random_sphere_vec, normal) >= 0)
+    return build_ray(origin, random_sphere_vec);
   return build_ray(origin, scale_vec3(random_sphere_vec, -1));
 }
 
 Material build_emissive_material() {
-  return (Material) {
-    .emissive = true,
-      .scatter = NULL,
-      .data = NULL
-  };
+  return (Material){ .emissive = true, .scatter = NULL, .data = NULL };
 }
 
 Material build_diffuse_material() {
-  return (Material) {
-    .emissive = false,
-      .scatter = scatter_diffuse,
-      .data = NULL
-  };
+  return (Material
+  ){ .emissive = false, .scatter = scatter_diffuse, .data = NULL };
 }
 
 // Forward declaration
@@ -4534,9 +4791,9 @@ Ray scatter_metallic(Ray ray, SceneHit hit) {
   fuzz = fmin(1, fmax(0, fuzz));
   Vec3 normal = { 0, 0, 0 };
   if (hit.scene_elem->geometry_type == TRIANGLE) {
-    normal = normal_to_point_triangle(&hit.scene_elem->as.triangle, hit.position);
-  }
-  else if (hit.scene_elem->geometry_type == SPHERE) {
+    normal =
+        normal_to_point_triangle(&hit.scene_elem->as.triangle, hit.position);
+  } else if (hit.scene_elem->geometry_type == SPHERE) {
     normal = normal_to_point_sphere(&hit.scene_elem->as.sphere, hit.position);
   }
   normal = normalize_vec3(normal);
@@ -4552,22 +4809,18 @@ Ray scatter_metallic(Ray ray, SceneHit hit) {
 Material build_metallic_material(f32 fuzz) {
   f32* data = (f32*)malloc(sizeof(f32));
   *data = fuzz;
-  return (Material) {
+  return (Material){
     .emissive = false,
-      .scatter = scatter_metallic,
-      .data = data,
+    .scatter = scatter_metallic,
+    .data = data,
   };
 }
 
 static inline Ray scatter_alpha_aux(Ray ray, SceneHit hit, f32 alpha) {
   Vec3 point = hit.position;
-  if (random_double() <= alpha) return scatter_diffuse(ray, hit);
-  Vec3 v = sub_vec3(point, ray.init);
-  f32 t = INFINITY;
-  if (ray.dir.x != 0) t = v.x / ray.dir.x;
-  if (ray.dir.y != 0) t = v.y / ray.dir.y;
-  if (ray.dir.z != 0) t = v.z / ray.dir.z;
-  return build_ray(trace_ray(ray, t + 1e-2), ray.dir);
+  if (random_double() <= alpha)
+    return scatter_diffuse(ray, hit);
+  return build_ray(trace_ray(ray, hit.t + 1e-2), ray.dir);
 }
 
 Ray scatter_alpha(Ray ray, SceneHit hit) {
@@ -4578,10 +4831,10 @@ Ray scatter_alpha(Ray ray, SceneHit hit) {
 Material build_alpha_material(f32 alpha) {
   f32* data = (f32*)malloc(sizeof(f32));
   *data = fmin(fmax(alpha, 0), 1);
-  return (Material) {
+  return (Material){
     .emissive = false,
-      .scatter = scatter_alpha,
-      .data = data,
+    .scatter = scatter_alpha,
+    .data = data,
   };
 }
 
@@ -4589,21 +4842,18 @@ Ray scatter_dielectric(Ray ray, SceneHit hit) {
   f32 index_of_refraction = *((f32*)get_material_from_hit(hit).data);
   Vec3 point = hit.position;
   Vec3 p = sub_vec3(point, ray.init);
-  f32 t = INFINITY;
-  if (ray.dir.x != 0) t = p.x / ray.dir.x;
-  if (ray.dir.y != 0) t = p.y / ray.dir.y;
-  if (ray.dir.z != 0) t = p.z / ray.dir.z;
-
+  f32 t = hit.t;
   Vec3 v_in = ray.dir;
   Vec3 normal = { 0, 0, 0 };
   if (hit.scene_elem->geometry_type == TRIANGLE) {
-    normal = normal_to_point_triangle(&hit.scene_elem->as.triangle, hit.position);
-  }
-  else if (hit.scene_elem->geometry_type == SPHERE) {
+    normal =
+        normal_to_point_triangle(&hit.scene_elem->as.triangle, hit.position);
+  } else if (hit.scene_elem->geometry_type == SPHERE) {
     normal = normal_to_point_sphere(&hit.scene_elem->as.sphere, hit.position);
   }
   bool is_outside = dot_vec3(v_in, normal) < 0;
-  f32 refraction_ration = is_outside ? 1 / index_of_refraction : index_of_refraction;
+  f32 refraction_ration =
+      is_outside ? 1 / index_of_refraction : index_of_refraction;
   Vec3 n = is_outside ? scale_vec3(normal, -1) : normal;
   f32 cos_theta_in = fminf(1.0f, dot_vec3(v_in, n));
   f32 sin_theta_in = sqrtf(1.0f - cos_theta_in * cos_theta_in);
@@ -4619,7 +4869,8 @@ Ray scatter_dielectric(Ray ray, SceneHit hit) {
   Vec3 vo = sub_vec3(v_in, vp);
   vo = normalize_vec3(vo);
 
-  Vec3 v_out = add_vec3(scale_vec3(n, cos_theta_out), scale_vec3(vo, sin_theta_out));
+  Vec3 v_out =
+      add_vec3(scale_vec3(n, cos_theta_out), scale_vec3(vo, sin_theta_out));
 
   return build_ray(trace_ray(ray, t + 1e-2), v_out);
 }
@@ -4627,16 +4878,17 @@ Ray scatter_dielectric(Ray ray, SceneHit hit) {
 Material build_dielectric_material(f32 index_of_refraction) {
   f32* data = (f32*)malloc(sizeof(f32));
   *data = index_of_refraction;
-  return (Material) {
+  return (Material){
     .emissive = false,
-      .scatter = scatter_dielectric,
-      .data = data,
+    .scatter = scatter_dielectric,
+    .data = data,
   };
 }
 
 Color get_color_from_hit(SceneHit hit, Ray ray, bool bilinear_texture) {
   if (hit.scene_elem->geometry_type == TRIANGLE) {
-    RasterTriangleProps* props = (RasterTriangleProps*)hit.scene_elem->as.triangle.props;
+    RasterTriangleProps* props =
+        (RasterTriangleProps*)hit.scene_elem->as.triangle.props;
     Triangle* tri = &hit.scene_elem->as.triangle;
 
     // Compute barycentric coordinates via tangent-based projection
@@ -4649,52 +4901,54 @@ Color get_color_from_hit(SceneHit hit, Ray ray, bool bilinear_texture) {
     f32 beta = dot_vec3(cross_vec3(u1, v), r) * det_inv;
     f32 gamma = 1.0f - alpha - beta;
 
-
     // Texture sampling if available
-    bool have_texture = props->texture != NULL
-      && !(props->tex_coords[0].x == 0 && props->tex_coords[0].y == 0
-        && props->tex_coords[1].x == 0 && props->tex_coords[1].y == 0
-        && props->tex_coords[2].x == 0 && props->tex_coords[2].y == 0);
+    bool have_texture =
+        props->texture != NULL &&
+        !(props->tex_coords[0].x == 0 && props->tex_coords[0].y == 0 &&
+          props->tex_coords[1].x == 0 && props->tex_coords[1].y == 0 &&
+          props->tex_coords[2].x == 0 && props->tex_coords[2].y == 0);
 
     if (have_texture) {
       Vec2 tex_uv = add_vec2(
-        add_vec2(
-          scale_vec2(props->tex_coords[0], gamma),
-          scale_vec2(props->tex_coords[1], alpha)
-        ),
-        scale_vec2(props->tex_coords[2], beta)
+          add_vec2(
+              scale_vec2(props->tex_coords[0], gamma),
+              scale_vec2(props->tex_coords[1], alpha)
+          ),
+          scale_vec2(props->tex_coords[2], beta)
       );
-      return bilinear_texture
-        ? get_bilinear_tex_color(props->texture, tex_uv)
-        : get_tex_color(props->texture, tex_uv);
+      return bilinear_texture ? get_bilinear_tex_color(props->texture, tex_uv)
+                              : get_tex_color(props->texture, tex_uv);
     }
 
     // Barycentric color interpolation
     return add_color(
-      add_color(
-        scale_color(props->colors[0], gamma),
-        scale_color(props->colors[1], alpha)
-      ),
-      scale_color(props->colors[2], beta)
+        add_color(
+            scale_color(props->colors[0], gamma),
+            scale_color(props->colors[1], alpha)
+        ),
+        scale_color(props->colors[2], beta)
     );
   }
   if (hit.scene_elem->geometry_type == SPHERE) {
-    RasterSphereProps* props = (RasterSphereProps*)hit.scene_elem->as.sphere.props;
+    RasterSphereProps* props =
+        (RasterSphereProps*)hit.scene_elem->as.sphere.props;
     return props->color;
   }
-  return (Color) { 0, 0, 0, 0 };
+  return (Color){ 0, 0, 0, 0 };
 }
 
 Material get_material_from_hit(SceneHit hit) {
   if (hit.scene_elem->geometry_type == TRIANGLE) {
-    RasterTriangleProps* props = (RasterTriangleProps*)hit.scene_elem->as.triangle.props;
+    RasterTriangleProps* props =
+        (RasterTriangleProps*)hit.scene_elem->as.triangle.props;
     return *props->material;
   }
   if (hit.scene_elem->geometry_type == SPHERE) {
-    RasterSphereProps* props = (RasterSphereProps*)hit.scene_elem->as.sphere.props;
+    RasterSphereProps* props =
+        (RasterSphereProps*)hit.scene_elem->as.sphere.props;
     return *props->material;
   }
-  return (Material) { 0 };
+  return (Material){ 0 };
 }
 
 Color render_miss_scene(Ray ray, void* context) {
@@ -4702,14 +4956,17 @@ Color render_miss_scene(Ray ray, void* context) {
   RaytraceParams* params = input->params;
   Scene* scene = input->scene;
   DirectionalLightParams* directional_light = params->directional_light;
-  Color(*render_background)(Ray, void*) = params->render_background;
+  Color (*render_background)(Ray, void*) = params->render_background;
   void* render_background_context = params->render_background_context;
 
-  Color sky_color = render_background != NULL ? render_background(ray, render_background_context) : COLOR_BLACK;
+  Color sky_color = render_background != NULL
+                        ? render_background(ray, render_background_context)
+                        : COLOR_BLACK;
   if (directional_light == NULL) {
     return sky_color;
   }
-  SceneHit hit = intersect_scene(scene, build_ray(ray.init, directional_light->direction));
+  SceneHit hit =
+      intersect_scene(scene, build_ray(ray.init, directional_light->direction));
   if (hit.hit) {
     return lerp_color(sky_color, COLOR_BLACK, 0.5f);
   }
@@ -4724,7 +4981,7 @@ Color render_miss_scene(Ray ray, void* context) {
 Color trace_ray_scene(Ray ray, RayTraceLambdaInput* input, u32 bounces) {
   Scene* scene = input->scene;
   RaytraceParams* params = input->params;
-  Color(*render_background)(Ray, void*) = params->render_background;
+  Color (*render_background)(Ray, void*) = params->render_background;
   void* render_background_context = params->render_background_context;
   bool bilinear_texture = params->bilinear_texture;
 
@@ -4739,7 +4996,8 @@ Color trace_ray_scene(Ray ray, RayTraceLambdaInput* input, u32 bounces) {
 
   GeometryType hit_geometry_type = intersection.scene_elem->geometry_type;
   Color albedo = get_color_from_hit(intersection, ray, bilinear_texture);
-  f32 alpha = fmaxf(albedo.alpha, 0.1f);
+  // albedo.alpha = 1.0f; // Ensure alpha is 1 for non-alpha materials
+  f32 alpha = albedo.alpha;
   Material material = get_material_from_hit(intersection);
 
   bool is_emissive = material.emissive;
@@ -4747,14 +5005,27 @@ Color trace_ray_scene(Ray ray, RayTraceLambdaInput* input, u32 bounces) {
     return albedo;
   }
 
-  Ray scatter_ray = random_double() < alpha ? material.scatter(ray, intersection): build_ray(trace_ray(ray,intersection.t + 1e-2), ray.dir);
+  // Ray scatter_ray = random_double() < alpha ? material.scatter(ray,
+  // intersection): build_ray(trace_ray(ray,intersection.t + 1e-2), ray.dir);
+  // Ray scatter_ray = material.scatter(ray, intersection);
+  Ray scatter_ray = { 0 };
+  if (alpha < 1.0f) {
+    scatter_ray = scatter_alpha_aux(ray, intersection, alpha);
+  } else {
+    scatter_ray = material.scatter(ray, intersection);
+  }
+  alpha < 1.0f ? build_ray(trace_ray(ray, intersection.t + 1e-1), ray.dir)
+               : material.scatter(ray, intersection);
   Color scattered_color = trace_ray_scene(scatter_ray, input, bounces - 1);
   Vec3 normal = { 0, 0, 0 };
   if (hit_geometry_type == TRIANGLE) {
-    normal = normal_to_point_triangle(&intersection.scene_elem->as.triangle, intersection.position);
-  }
-  else if (hit_geometry_type == SPHERE) {
-    normal = normal_to_point_sphere(&intersection.scene_elem->as.sphere, intersection.position);
+    normal = normal_to_point_triangle(
+        &intersection.scene_elem->as.triangle, intersection.position
+    );
+  } else if (hit_geometry_type == SPHERE) {
+    normal = normal_to_point_sphere(
+        &intersection.scene_elem->as.sphere, intersection.position
+    );
   }
   f32 attenuation = fabs(dot_vec3(normal, scatter_ray.dir));
   Color final_color = mul_color(albedo, scattered_color);
@@ -4779,61 +5050,62 @@ Color ray_trace_lambda(Ray ray, void* context) {
   Color accumulated_color = { 0, 0, 0, 0 };
   for (u32 i = 0; i < samples; i++) {
     const Vec3 epsilon = scale_vec3(random_point_in_sphere(), variance);
-    const Vec3 epsilon_ortho = sub_vec3(epsilon, scale_vec3(ray.dir, dot_vec3(epsilon, ray.dir)));
+    const Vec3 epsilon_ortho =
+        sub_vec3(epsilon, scale_vec3(ray.dir, dot_vec3(epsilon, ray.dir)));
     Vec3 new_dir = add_vec3(ray.dir, epsilon_ortho);
     new_dir = normalize_vec3(new_dir);
     Ray jittered_ray = build_ray(ray.init, new_dir);
-    accumulated_color = add_color(accumulated_color, trace_ray_scene(jittered_ray, ray_trace_inputs, bounces));
+    accumulated_color = add_color(
+        accumulated_color,
+        trace_ray_scene(jittered_ray, ray_trace_inputs, bounces)
+    );
   }
   return gamma_color(scale_color(accumulated_color, inv_samples), gamma);
 }
 
-Tela* ray_map_camera_exposed(Camera* camera, Tela* tela,
-  Color(*ray_scene)(Ray, void*), void* context) {
-
+Tela* ray_map_camera_exposed(
+    Camera* camera, Tela* tela, Color (*ray_scene)(Ray, void*), void* context
+) {
   LambdaRayContext lambda_context = {
-      .camera = camera,
-      .tela = tela,
-      .lambda_context = context,
-      .lambdaWithRays = ray_scene,
+    .camera = camera,
+    .tela = tela,
+    .lambda_context = context,
+    .lambdaWithRays = ray_scene,
   };
   return map_exposed_tela(tela, lambda_tela_from_ray, &lambda_context);
 }
 
-Tela* ray_map_camera_exposed_parallel(Camera* camera, Tela* tela,
-  Color(*ray_scene)(Ray, void*), void* context) {
-
+Tela* ray_map_camera_exposed_parallel(
+    Camera* camera, Tela* tela, Color (*ray_scene)(Ray, void*), void* context
+) {
   LambdaRayContext lambda_context = {
-      .camera = camera,
-      .tela = tela,
-      .lambda_context = context,
-      .lambdaWithRays = ray_scene,
+    .camera = camera,
+    .tela = tela,
+    .lambda_context = context,
+    .lambdaWithRays = ray_scene,
   };
   return map_exposed_tela_parallel(tela, lambda_tela_from_ray, &lambda_context);
 }
 
 Tela* ray_trace_scene(Scene* scene, RaytraceParams* params) {
-  RayTraceLambdaInput lambda_input = {
-    .scene = scene,
-    .params = params
-  };
-  return ray_map_camera_exposed(params->camera, params->exposed_tela, ray_trace_lambda, &lambda_input);
+  RayTraceLambdaInput lambda_input = { .scene = scene, .params = params };
+  return ray_map_camera_exposed(
+      params->camera, params->exposed_tela, ray_trace_lambda, &lambda_input
+  );
 }
 
 Tela* ray_trace_scene_parallel(Scene* scene, RaytraceParams* params) {
-  RayTraceLambdaInput lambda_input = {
-    .scene = scene,
-    .params = params
-  };
-  return ray_map_camera_exposed_parallel(params->camera, params->exposed_tela, ray_trace_lambda, &lambda_input);
+  RayTraceLambdaInput lambda_input = { .scene = scene, .params = params };
+  return ray_map_camera_exposed_parallel(
+      params->camera, params->exposed_tela, ray_trace_lambda, &lambda_input
+  );
 }
-
 
 //========================================================================================
 /*                                                                                      *
- *                                         MESH                                         *
+ *                                         MESH *
  *                                                                                      */
- //========================================================================================
+//========================================================================================
 typedef struct {
   u32 vertex_indices[3];
   u32 tex_coord_indices[3];
@@ -4841,12 +5113,12 @@ typedef struct {
 } Face;
 
 typedef struct {
-  Array vertices;  // Vec3
-  Array tex_coords; // Vec2
-  Array normals; // Vec3
-  Array colors; // Color
-  Array faces; // Face
-  Array materials; // Material
+  Array vertices;    // Vec3
+  Array tex_coords;  // Vec2
+  Array normals;     // Vec3
+  Array colors;      // Color
+  Array faces;       // Face
+  Array materials;   // Material
   Tela* texture;
   String name;
 } Mesh;
@@ -4862,7 +5134,7 @@ AABB get_bounding_box_mesh(Mesh* mesh) {
   return box;
 }
 
-Mesh map_vertices_mesh(Mesh* mesh, Vec3(*mapper)(Vec3, void*), void* context) {
+Mesh map_vertices_mesh(Mesh* mesh, Vec3 (*mapper)(Vec3, void*), void* context) {
   for (u32 i = 0; i < mesh->vertices.length; i++) {
     Vec3* v = (Vec3*)get_array_element(&mesh->vertices, i);
     *v = mapper(*v, context);
@@ -4870,7 +5142,9 @@ Mesh map_vertices_mesh(Mesh* mesh, Vec3(*mapper)(Vec3, void*), void* context) {
   return *mesh;
 }
 
-Mesh map_triangles_materials_mesh(Mesh* mesh, Material(*mapper)(Face, void*), void* context) {
+Mesh map_triangles_materials_mesh(
+    Mesh* mesh, Material (*mapper)(Face, void*), void* context
+) {
   mesh->materials = new_array(mesh->faces.length, sizeof(Material));
   for (u32 i = 0; i < mesh->faces.length; i++) {
     Face* face = (Face*)get_array_element(&mesh->faces, i);
@@ -4880,7 +5154,7 @@ Mesh map_triangles_materials_mesh(Mesh* mesh, Material(*mapper)(Face, void*), vo
   return *mesh;
 }
 
-Mesh map_colors_mesh(Mesh* mesh, Color(*mapper)(Vec3, void*), void* context) {
+Mesh map_colors_mesh(Mesh* mesh, Color (*mapper)(Vec3, void*), void* context) {
   mesh->colors = new_array(mesh->vertices.length, sizeof(Color));
   for (u32 i = 0; i < mesh->vertices.length; i++) {
     Vec3* v = (Vec3*)get_array_element(&mesh->vertices, i);
@@ -4907,29 +5181,32 @@ Array get_triangles_mesh(Mesh* mesh) {
     tri.props = NULL;
     // positions from vertex indices
     for (u32 j = 0; j < 3; j++) {
-      Vec3* v = (Vec3*)get_array_element(&mesh->vertices, face->vertex_indices[j]);
+      Vec3* v =
+          (Vec3*)get_array_element(&mesh->vertices, face->vertex_indices[j]);
       tri.positions[j] = v ? *v : vec3(0, 0, 0);
     }
 
     // Build props (colors, tex_coords, texture)
-    RasterTriangleProps* props = (RasterTriangleProps*)malloc(sizeof(RasterTriangleProps));
+    RasterTriangleProps* props =
+        (RasterTriangleProps*)malloc(sizeof(RasterTriangleProps));
     props->texture = mesh->texture;
 
     for (u32 j = 0; j < 3; j++) {
       // colors
       if (mesh->colors.length > 0) {
-        Color* c = (Color*)get_array_element(&mesh->colors, face->vertex_indices[j]);
+        Color* c =
+            (Color*)get_array_element(&mesh->colors, face->vertex_indices[j]);
         props->colors[j] = c ? *c : default_color;
-      }
-      else {
+      } else {
         props->colors[j] = default_color;
       }
       // texture coordinates
       if (mesh->tex_coords.length > 0) {
-        Vec2* tc = (Vec2*)get_array_element(&mesh->tex_coords, face->tex_coord_indices[j]);
+        Vec2* tc = (Vec2*)get_array_element(
+            &mesh->tex_coords, face->tex_coord_indices[j]
+        );
         props->tex_coords[j] = tc ? *tc : vec2(0, 0);
-      }
-      else {
+      } else {
         props->tex_coords[j] = vec2(0, 0);
       }
     }
@@ -4941,12 +5218,10 @@ Array get_triangles_mesh(Mesh* mesh) {
         Material* mat_copy = (Material*)malloc(sizeof(Material));
         *mat_copy = *mat;
         props->material = mat_copy;
-      }
-      else {
+      } else {
         props->material = NULL;
       }
-    }
-    else {
+    } else {
       props->material = NULL;
     }
 
@@ -4955,7 +5230,6 @@ Array get_triangles_mesh(Mesh* mesh) {
   }
   return triangles;
 }
-
 
 Array get_spheres_mesh(Mesh* mesh, f32 radius) {
   Array spheres = new_array(mesh->vertices.length, sizeof(Sphere));
@@ -4970,29 +5244,31 @@ Array get_spheres_mesh(Mesh* mesh, f32 radius) {
 
     for (u32 j = 0; j < 3; j++) {
       u32 vi = face->vertex_indices[j];
-      if (visited[vi]) continue;
+      if (visited[vi])
+        continue;
       visited[vi] = true;
 
       Vec3* v = (Vec3*)get_array_element(&mesh->vertices, vi);
       Sphere sphere = build_sphere(v ? *v : vec3(0, 0, 0), radius);
 
       // Build props (color, tex_coord, texture)
-      RasterSphereProps* props = (RasterSphereProps*)malloc(sizeof(RasterSphereProps));
+      RasterSphereProps* props =
+          (RasterSphereProps*)malloc(sizeof(RasterSphereProps));
       props->texture = mesh->texture;
 
       if (mesh->colors.length > 0) {
         Color* c = (Color*)get_array_element(&mesh->colors, vi);
         props->color = c ? *c : default_color;
-      }
-      else {
+      } else {
         props->color = default_color;
       }
 
       if (mesh->tex_coords.length > 0) {
-        Vec2* tc = (Vec2*)get_array_element(&mesh->tex_coords, face->tex_coord_indices[j]);
+        Vec2* tc = (Vec2*)get_array_element(
+            &mesh->tex_coords, face->tex_coord_indices[j]
+        );
         props->tex_coord = tc ? *tc : vec2(0, 0);
-      }
-      else {
+      } else {
         props->tex_coord = vec2(0, 0);
       }
 
@@ -5006,9 +5282,9 @@ Array get_spheres_mesh(Mesh* mesh, f32 radius) {
 
 //========================================================================================
 /*                                                                                      *
- *                                OBJ PARSING MESH UTILS                                *
+ *                                OBJ PARSING MESH UTILS *
  *                                                                                      */
- //========================================================================================
+//========================================================================================
 
 typedef struct {
   u32 start;
@@ -5023,21 +5299,27 @@ typedef struct {
 
 static inline u32 obj_next_line(String str, u32 pos, ObjLine* line) {
   line->start = pos;
-  while (pos < str.length && str.data[pos] != '\n' && str.data[pos] != '\r') pos++;
+  while (pos < str.length && str.data[pos] != '\n' && str.data[pos] != '\r')
+    pos++;
   line->end = pos;
-  while (pos < str.length && (str.data[pos] == '\n' || str.data[pos] == '\r')) pos++;
+  while (pos < str.length && (str.data[pos] == '\n' || str.data[pos] == '\r'))
+    pos++;
   return pos;
 }
 
 static inline u32 obj_skip_whitespace(const char* data, u32 pos, u32 end) {
-  while (pos < end && (data[pos] == ' ' || data[pos] == '\t')) pos++;
+  while (pos < end && (data[pos] == ' ' || data[pos] == '\t'))
+    pos++;
   return pos;
 }
 
-static inline bool obj_match_prefix(const char* data, u32 pos, u32 end, const char* prefix) {
+static inline bool obj_match_prefix(
+    const char* data, u32 pos, u32 end, const char* prefix
+) {
   u32 len = (u32)strlen(prefix);
   for (u32 i = 0; i < len; i++) {
-    if (pos + i >= end || data[pos + i] != prefix[i]) return false;
+    if (pos + i >= end || data[pos + i] != prefix[i])
+      return false;
   }
   u32 after = pos + len;
   return after >= end || data[after] == ' ' || data[after] == '\t';
@@ -5053,10 +5335,13 @@ static inline u32 obj_parse_u32(const char* data, u32 pos, u32 end, u32* out) {
   return pos;
 }
 
-static inline u32 obj_parse_face_token(const char* data, u32 pos, u32 end, ObjFaceToken* token) {
+static inline u32 obj_parse_face_token(
+    const char* data, u32 pos, u32 end, ObjFaceToken* token
+) {
   *token = (ObjFaceToken){ 0 };
   pos = obj_parse_u32(data, pos, end, &token->vertex);
-  if (token->vertex == 0) return pos;
+  if (token->vertex == 0)
+    return pos;
   if (pos < end && data[pos] == '/') {
     pos++;
     if (pos < end && data[pos] >= '0' && data[pos] <= '9') {
@@ -5072,7 +5357,9 @@ static inline u32 obj_parse_face_token(const char* data, u32 pos, u32 end, ObjFa
   return pos;
 }
 
-static inline void obj_parse_vertex(const char* data, u32 pos, Array* vertices) {
+static inline void obj_parse_vertex(
+    const char* data, u32 pos, Array* vertices
+) {
   f32 x = 0, y = 0, z = 0;
   sscanf(data + pos, "%f %f %f", &x, &y, &z);
   Vec3 v = vec3(x, y, z);
@@ -5086,35 +5373,45 @@ static inline void obj_parse_normal(const char* data, u32 pos, Array* normals) {
   push_array(normals, &n);
 }
 
-static inline void obj_parse_tex_coord(const char* data, u32 pos, Array* tex_coords) {
+static inline void obj_parse_tex_coord(
+    const char* data, u32 pos, Array* tex_coords
+) {
   f32 u = 0, v = 0;
   sscanf(data + pos, "%f %f", &u, &v);
   Vec2 tc = vec2(u, v);
   push_array(tex_coords, &tc);
 }
 
-static inline void obj_triangulate_face(ObjFaceToken* tokens, u32 count, Array* faces) {
+static inline void obj_triangulate_face(
+    ObjFaceToken* tokens, u32 count, Array* faces
+) {
   for (u32 k = 1; k + 1 < count; k++) {
     u32 tri[3] = { 0, k, k + 1 };
     Face face;
     for (u32 j = 0; j < 3; j++) {
       face.vertex_indices[j] = tokens[tri[j]].vertex - 1;
-      face.tex_coord_indices[j] = tokens[tri[j]].tex_coord > 0 ? tokens[tri[j]].tex_coord - 1 : 0;
-      face.normal_indices[j] = tokens[tri[j]].normal > 0 ? tokens[tri[j]].normal - 1 : 0;
+      face.tex_coord_indices[j] =
+          tokens[tri[j]].tex_coord > 0 ? tokens[tri[j]].tex_coord - 1 : 0;
+      face.normal_indices[j] =
+          tokens[tri[j]].normal > 0 ? tokens[tri[j]].normal - 1 : 0;
     }
     push_array(faces, &face);
   }
 }
 
-static inline void obj_parse_face(const char* data, u32 pos, u32 end, Array* faces) {
+static inline void obj_parse_face(
+    const char* data, u32 pos, u32 end, Array* faces
+) {
   ObjFaceToken tokens[16];
   u32 count = 0;
   while (pos < end && count < 16) {
     pos = obj_skip_whitespace(data, pos, end);
-    if (pos >= end) break;
+    if (pos >= end)
+      break;
     ObjFaceToken token;
     pos = obj_parse_face_token(data, pos, end, &token);
-    if (token.vertex == 0) break;
+    if (token.vertex == 0)
+      break;
     tokens[count++] = token;
   }
   obj_triangulate_face(tokens, count, faces);
@@ -5133,27 +5430,24 @@ Mesh read_obj_mesh(String obj_file, char* mesh_name) {
   while (pos < obj_file.length) {
     ObjLine line;
     pos = obj_next_line(obj_file, pos, &line);
-    if (line.end == line.start) continue;
+    if (line.end == line.start)
+      continue;
 
     u32 i = obj_skip_whitespace(obj_file.data, line.start, line.end);
-    if (i >= line.end || obj_file.data[i] == '#') continue;
+    if (i >= line.end || obj_file.data[i] == '#')
+      continue;
 
     if (obj_match_prefix(obj_file.data, i, line.end, "vn")) {
       obj_parse_normal(obj_file.data, i + 2, &mesh.normals);
-    }
-    else if (obj_match_prefix(obj_file.data, i, line.end, "vt")) {
+    } else if (obj_match_prefix(obj_file.data, i, line.end, "vt")) {
       obj_parse_tex_coord(obj_file.data, i + 2, &mesh.tex_coords);
-    }
-    else if (obj_match_prefix(obj_file.data, i, line.end, "v")) {
+    } else if (obj_match_prefix(obj_file.data, i, line.end, "v")) {
       obj_parse_vertex(obj_file.data, i + 1, &mesh.vertices);
-    }
-    else if (obj_match_prefix(obj_file.data, i, line.end, "f")) {
+    } else if (obj_match_prefix(obj_file.data, i, line.end, "f")) {
       obj_parse_face(obj_file.data, i + 1, line.end, &mesh.faces);
     }
   }
   return mesh;
 }
-
-
 
 #endif /* TELA_C */
