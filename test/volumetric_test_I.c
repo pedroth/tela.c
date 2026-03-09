@@ -109,7 +109,7 @@ static Color ray_scene(Ray r, void *ctx) {
 
     if (d < 0.0f) {
       density +=
-          expf(-(t - t0) * ALPHA_DENSITY) * noise(p, 2.0f * time) * MARCH_STEP;
+          expf(-(t - t0) * ALPHA_DENSITY) * MARCH_STEP * noise(p, 2.0f * time);
     }
   }
 

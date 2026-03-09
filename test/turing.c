@@ -1,25 +1,27 @@
 /**
- * Wave Simulation
+ * Turing Pattern (Gray-Scott Reaction-Diffusion)
  *
- * A 2D wave equation simulation with interactive mouse drawing.
- * Uses symplectic integration to solve the wave PDE on a toroidal grid.
- * Color encodes height (red-blue) and speed (green).
+ * A 2D reaction-diffusion simulation with interactive mouse drawing.
+ * Uses Gray-Scott model on a toroidal grid.
+ * Color encodes U concentration (red) and V concentration (blue).
  */
 
 #include "../src/index.c"
 
- /* =============================================================================
-  * Constants
-  * ========================================================================== */
+/* =============================================================================
+ * Constants
+ * ========================================================================== */
 
 static const u32 WIDTH = 640;
 static const u32 HEIGHT = 480;
 
 #define GRID_SIZE 200
-#define AMPLITUDE 10.0f
-#define FRICTION 0.1f
-#define WAVE_SPEED 10.0f
-#define SPREAD 200.0f
+#define AMPLITUDE 1.0f
+#define DU 1.02f
+#define DV 0.4f
+#define FEED 0.046f
+#define KILL 0.062f
+#define DT 0.8f
 
 /* =============================================================================
  * Utilities
@@ -28,25 +30,17 @@ static const u32 HEIGHT = 480;
 static u32 wrap(i32 n, i32 m) { return (u32)(((n % m) + m) % m); }
 
 /* =============================================================================
- * Wave State
+ * Reaction-Diffusion State
  * ========================================================================== */
 
-static f32 g_height[GRID_SIZE][GRID_SIZE];
-static f32 g_velocity[GRID_SIZE][GRID_SIZE];
+static f32 g_U[GRID_SIZE][GRID_SIZE];
+static f32 g_V[GRID_SIZE][GRID_SIZE];
 
-static void initialize_wave(void) {
+static void initialize_state(void) {
   for (u32 i = 0; i < GRID_SIZE; i++) {
     for (u32 j = 0; j < GRID_SIZE; j++) {
-      f32 x = (j - GRID_SIZE / 2.0f) / (f32)GRID_SIZE;
-      f32 y = (i - GRID_SIZE / 2.0f) / (f32)GRID_SIZE;
-
-      // Three Gaussian bumps arranged in a triangle
-      f32 bump1 = AMPLITUDE * expf(-SPREAD * ((x - 0.25f) * (x - 0.25f) + y * y));
-      f32 bump2 = AMPLITUDE * expf(-SPREAD * ((x + 0.25f) * (x + 0.25f) + y * y));
-      f32 bump3 = AMPLITUDE * expf(-SPREAD * (x * x + (y - 0.25f) * (y - 0.25f)));
-
-      g_height[i][j] = bump1 + bump2 + bump3;
-      g_velocity[i][j] = 0.0f;
+      g_U[i][j] = 0.0f;
+      g_V[i][j] = 0.0f;
     }
   }
 }
@@ -61,70 +55,80 @@ typedef struct {
 } App;
 
 typedef struct {
-  f32 min_height;
-  f32 max_height;
-  f32 max_abs_velocity;
-} WaveShaderContext;
+  f32 min_U;
+  f32 max_U;
+  f32 min_V;
+  f32 max_V;
+} TuringShaderContext;
 
 /* =============================================================================
  * Shader
  * ========================================================================== */
 
-static Color wave_shader(u32 x, u32 y, const void* context) {
-  WaveShaderContext* ctx = (WaveShaderContext*)context;
-  f32 range = ctx->max_height - ctx->min_height;
+static Color turing_shader(u32 x, u32 y, const void* context) {
+  TuringShaderContext* ctx = (TuringShaderContext*)context;
 
   u32 xi = (u32)((x / (f32)WIDTH) * GRID_SIZE);
   u32 yi = (u32)((y / (f32)HEIGHT) * GRID_SIZE);
-  f32 t = (g_height[yi][xi] - ctx->min_height) / range;
-  f32 red = t;
-  f32 blue = 1.0f - t;
-  f32 green = fabsf(g_velocity[yi][xi]) / ctx->max_abs_velocity;
 
-  return (Color) { red, green, blue, 1.0f };
+  f32 range_U = ctx->max_U - ctx->min_U;
+  f32 range_V = ctx->max_V - ctx->min_V;
+
+  f32 red = range_U > 0.0f ? (g_U[yi][xi] - ctx->min_U) / range_U : 1.0f;
+  f32 blue = range_V > 0.0f ? (g_V[yi][xi] - ctx->min_V) / range_V : 1.0f;
+
+  return (Color){ red, 0.0f, blue, 1.0f };
 }
 
 /* =============================================================================
  * Animation Loop
  * ========================================================================== */
 
-static void on_frame(f32 dt, f32 time, void* ctx) {
+static void on_frame(f32 dt_unused, f32 time, void* ctx) {
   App* app = (App*)ctx;
 
-  f32 max_h = -__FLT_MAX__;
-  f32 min_h = __FLT_MAX__;
-  f32 max_v = -__FLT_MAX__;
+  f32 max_U = -__FLT_MAX__;
+  f32 min_U = __FLT_MAX__;
+  f32 max_V = -__FLT_MAX__;
+  f32 min_V = __FLT_MAX__;
 
-  // Symplectic Euler integration of the 2D wave equation
+  // Gray-Scott reaction-diffusion update
   for (u32 i = 0; i < GRID_SIZE; i++) {
     for (u32 j = 0; j < GRID_SIZE; j++) {
       // Discrete Laplacian (toroidal boundary)
-      f32 laplacian =
-        g_height[i][wrap((i32)j + 1, GRID_SIZE)] +
-        g_height[i][wrap((i32)j - 1, GRID_SIZE)] +
-        g_height[wrap((i32)i + 1, GRID_SIZE)][j] +
-        g_height[wrap((i32)i - 1, GRID_SIZE)][j] -
-        4.0f * g_height[i][j];
+      f32 u_laplacian =
+        (g_U[i][wrap((i32)j + 1, GRID_SIZE)] +
+         g_U[i][wrap((i32)j - 1, GRID_SIZE)] +
+         g_U[wrap((i32)i + 1, GRID_SIZE)][j] +
+         g_U[wrap((i32)i - 1, GRID_SIZE)][j]) / 4.0f -
+        g_U[i][j];
 
-      f32 acceleration = WAVE_SPEED * laplacian - FRICTION * g_velocity[i][j];
+      f32 v_laplacian =
+        (g_V[i][wrap((i32)j + 1, GRID_SIZE)] +
+         g_V[i][wrap((i32)j - 1, GRID_SIZE)] +
+         g_V[wrap((i32)i + 1, GRID_SIZE)][j] +
+         g_V[wrap((i32)i - 1, GRID_SIZE)][j]) / 4.0f -
+        g_V[i][j];
 
-      // Update velocity, then position (symplectic order)
-      g_velocity[i][j] += dt * acceleration;
-      g_height[i][j] += dt * g_velocity[i][j];
+      f32 uvv = g_U[i][j] * g_V[i][j] * g_V[i][j];
+
+      // Update U and V
+      g_U[i][j] += DT * (DU * u_laplacian - uvv + FEED * (1.0f - g_U[i][j]));
+      g_V[i][j] += DT * (DV * v_laplacian + uvv - (KILL + FEED) * g_V[i][j]);
 
       // Track min/max for shader normalization
-      if (g_height[i][j] > max_h) max_h = g_height[i][j];
-      if (g_height[i][j] < min_h) min_h = g_height[i][j];
-      f32 abs_v = fabsf(g_velocity[i][j]);
-      if (abs_v > max_v) max_v = abs_v;
+      if (g_U[i][j] > max_U) max_U = g_U[i][j];
+      if (g_U[i][j] < min_U) min_U = g_U[i][j];
+      if (g_V[i][j] > max_V) max_V = g_V[i][j];
+      if (g_V[i][j] < min_V) min_V = g_V[i][j];
     }
   }
 
   // Render
-  WaveShaderContext shader_ctx = { min_h, max_h, max_v };
-  map_tela(app->tela, wave_shader, &shader_ctx);
+  TuringShaderContext shader_ctx = { min_U, max_U, min_V, max_V };
+  map_tela(app->tela, turing_shader, &shader_ctx);
 
-  set_window_title(app->window, format_string("Wave | FPS: %.2f |min: %.2f |max: %.2f |R: reset", 1.0f / dt, shader_ctx.min_height, shader_ctx.max_height));
+  set_window_title(app->window, format_string("Turing Pattern | FPS: %.2f | R: reset", 1.0f / dt_unused));
   paint_window(app->window, app->tela);
 }
 
@@ -147,18 +151,22 @@ static void on_mouse_up(Window* window, i32 x, i32 y, u32 button, void* ctx) {
   g_mouse_down = false;
 }
 
+static void on_key_down(Window* window, u32 keycode, void* ctx) {
+  if (keycode == SDLK_r) {
+    initialize_state();
+  }
+}
+
 static void on_mouse_move(Window* window, i32 x, i32 y, void* ctx) {
   if (!g_mouse_down) return;
 
-  App* app = (App*)ctx;
-
-  // Map window coordinates directly to grid coordinates
+  // Map window coordinates to grid coordinates
   i32 xi = (i32)((x / (f32)WIDTH) * GRID_SIZE);
   i32 yi = (i32)((y / (f32)HEIGHT) * GRID_SIZE);
   u32 i = wrap(yi - (i32)GRID_SIZE + 1, (i32)GRID_SIZE);
   u32 j = wrap(xi, (i32)GRID_SIZE);
 
-  // Paint a 3x3 brush
+  // Paint a 3x3 brush of V concentration
   i32 brush[] = { -1, 0, 1 };
   // i32 brush[] = {-2, -1, 0, 1, 2 }; // Uncomment for larger brush
   u32 brush_size = sizeof(brush) / sizeof(brush[0]);
@@ -167,18 +175,7 @@ static void on_mouse_move(Window* window, i32 x, i32 y, void* ctx) {
   for (u32 k = 0; k < nn; k++) {
     u32 u = k / brush_size;
     u32 v = k % brush_size;
-    g_height[wrap((i32)i + brush[u], GRID_SIZE)][wrap((i32)j + brush[v], GRID_SIZE)] = AMPLITUDE;
-  }
-}
-
-static void on_key_down(Window* window, u32 keycode, void* ctx) {
-  if (keycode == 'r') {
-    for (u32 i = 0; i < GRID_SIZE; i++) {
-      for (u32 j = 0; j < GRID_SIZE; j++) {
-        g_height[i][j] = 0.0f;
-        g_velocity[i][j] = 0.0f;
-      }
-    }
+    g_V[wrap((i32)i + brush[u], GRID_SIZE)][wrap((i32)j + brush[v], GRID_SIZE)] = AMPLITUDE;
   }
 }
 
@@ -194,10 +191,10 @@ static void register_input_handlers(Window* window, App* app) {
  * ========================================================================== */
 
 int main(void) {
-  initialize_wave();
+  initialize_state();
 
   Tela* tela = new_tela(WIDTH, HEIGHT);
-  Window* window = new_window(WIDTH, HEIGHT, "Wave Simulation");
+  Window* window = new_window(WIDTH, HEIGHT, "Turing Pattern");
 
   App app = { .tela = tela, .window = window };
 

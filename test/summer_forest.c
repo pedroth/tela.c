@@ -147,8 +147,8 @@ int main(void) {
 
     // Setup camera looking at scene center, orbiting at radius 3
     Vec3 look_at = vec3(8496.0f, 1431.0f, 2429.0f);
-    Camera camera = create_camera(vec3(0, 0, 0), look_at, 1.0f);
-    set_orbit_camera(&camera, 3.0f, 0.0f, 0.0f);
+    Camera camera = create_camera(vec3(3, 0, 0), look_at, 1.0f);
+    set_orbit_camera(&camera, 3.1f, 0.0f, 0.0f);
 
     // Load mesh (no normalization - use world coordinates as-is)
     String obj = io_read_file("./assets/summer_forest.obj");

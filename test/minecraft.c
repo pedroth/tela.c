@@ -56,7 +56,7 @@ static void on_frame(f32 dt, f32 time, void* ctx) {
             .clip_camera_plane = true,
             .clear_screen = true,
             .background_color = (Color){ 0.0f, 0.0f, 0.0f, 1.0f },
-            .perspective_correct = false
+            .perspective_correct = true
     });
 
     // Update window title with FPS

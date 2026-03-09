@@ -25,6 +25,7 @@ typedef struct {
 static const MeshEntry MESH_TABLE[] = {
     { "./assets/megaman.obj",      "./assets/megaman.png"    },
     { "./assets/spot.obj",         "./assets/spot.png"       },
+    { "./assets/spyro.obj",         "./assets/spyro.png"       },
     { "./assets/oil.obj",          "./assets/oil.png"        },
     { "./assets/riku.obj",         "./assets/riku.png"       },
     { "./assets/earth.obj",        "./assets/earth.jpg"      },

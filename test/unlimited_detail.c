@@ -159,7 +159,7 @@ int main(void) {
 		.mouse_down = false,
 		.mouse_pos = vec2(0, 0),
 		.show_debug = false,
-		.use_parallel = false,
+		.use_parallel = true,
 	};
 
 	String obj = io_read_file("assets/spot.obj");

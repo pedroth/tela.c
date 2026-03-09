@@ -64,7 +64,7 @@ static void on_frame(f32 dt, f32 time, void* ctx) {
 
     // Render
     RaytraceParams params = {
-     .samples_per_pixel = 3,
+     .samples_per_pixel = 1,
      .bounces = 5,
      .variance = 0.001f,
      .gamma = 0.5f,
