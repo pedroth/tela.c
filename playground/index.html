@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tela.C Playground</title>
+    <link rel="stylesheet" href="../index.css">
+</head>
+
+<body>
+    <div id="root">
+        <!-- Elements to be injected here -->
+    </div>
+</body>
+<script type="module">
+    const isGithub = window.location.host === "pedroth.github.io";
+    const SOURCE = isGithub ? "/tela.c" : ""
+    // eslint-disable-next-line no-unused-vars
+    const { DOM, some, none } = await import(SOURCE + "/playground/index.js")
+    //========================================================================================
+    /*                                                                                      *
+     *                                         UTILS                                        *
+     *                                                                                      */
+    //========================================================================================
+
+    const TelaLocalStorage = (() => {
+        const namespace = "tela.c";
+        return {
+            getItem: key => {
+                const ls = localStorage.getItem(namespace);
+                return !ls ? ls : JSON.parse(ls)[key];
+            },
+            setItem: (key, value) => {
+                const ls = JSON.parse(localStorage.getItem(namespace)) || {};
+                ls[key] = value;
+                localStorage.setItem(namespace, JSON.stringify(ls));
+                return this;
+            }
+        };
+    })();
+
+
+
+    function getSourceFile(mediaPath) {
+        if (!mediaPath) return null;
+        const filename = mediaPath.split("/").pop().replace(/\.(mp4|png)$/, "");
+        return `test/${filename}.c`;
+    }
+
+    function getCompileCommand(example) {
+        const mediaPath = (example && example.video) || (example && example.thumbnail);
+        const source = getSourceFile(mediaPath);
+        if (!source) return "";
+        return `gcc -O3 -fopenmp -o app ${source} -lSDL2 -lm && ./app`;
+    }
+
+    function removeHashFromURL() {
+        const url = window.location.href;
+        if (url.includes("#")) {
+            const newUrl = url.split("#")[0];
+            window.history.replaceState({}, document.title, newUrl);
+        }
+    }
+
+    //========================================================================================
+    /*                                                                                      *
+     *                                          UI                                          *
+     *                                                                                      */
+    //========================================================================================
+
+    function exampleSelector() {
+        const select = DOM.of("select")
+            .attr("title", "Examples")
+            .style("font-size: large;")
+            .appendChild(...AppState.examples.map(({ title, video }) => {
+                const option = DOM.of("option")
+                    .attr("value", video)
+                    .attr("key", title)
+                    .inner(title)
+                if (getSelectedExample() === title) option.attr("selected", "")
+                return option;
+            }));
+        select.event("change", ({ target: selectElem }) => {
+            const index = selectElem.selectedIndex;
+            const videoPath = selectElem.options[index].value;
+            const selectedExample = selectElem.options[index].text;
+            TelaLocalStorage.setItem("selectedExample", selectedExample);
+            removeHashFromURL();
+            const example = AppState.examples.find(e => e.title === selectedExample);
+            if (AppState.outputContainer && AppState.mediaTag) {
+                const newMedia = createMediaTag(example);
+                AppState.outputContainer.element.replaceChild(newMedia.element, AppState.mediaTag.element);
+                AppState.mediaTag = newMedia;
+            }
+            if (AppState.compileCode) {
+                AppState.compileCode.element.textContent = getCompileCommand(example);
+            }
+        });
+        return DOM.of("div")
+            .appendChild(
+                DOM.of("span")
+                    .style("font-size: larger; margin-right: 0.5rem")
+                    .inner("Example:"),
+                select
+            )
+    }
+
+    function headerTools() {
+        return DOM.of("div")
+            .addClass("flex")
+            .style("align-items: center")
+            .appendChild(
+                exampleSelector(),
+            );
+    }
+
+    function header() {
+        return DOM.of("header")
+            .style("max-width: fit-content; display:flex; gap: 1rem; align-items: center")
+            .appendChild(
+                DOM.of("a")
+                    .attr("href", SOURCE === "" ? "/" : SOURCE)
+                    .appendChild(
+                        DOM.of("h2").inner("Tela.C"),
+                    ),
+                DOM.of("h2").inner("playground"),
+                headerTools()
+            )
+    }
+
+    function createMediaTag(example) {
+        if (example && example.video) {
+            return DOM.of("video")
+                .attr("autoplay", "")
+                .attr("loop", "")
+                .attr("muted", "")
+                .attr("playsinline", "")
+                .attr("controls", "")
+                .attr("src", SOURCE + "/" + example.video)
+                .style("width: 100%; flex: 1; min-height: 0; object-fit: contain;");
+        }
+        return DOM.of("img")
+            .attr("src", SOURCE + "/" + (example && example.thumbnail ? example.thumbnail : ""))
+            .style("width: 100%; flex: 1; min-height: 0; object-fit: contain;");
+    }
+
+    function output() {
+        const selectedTitle = getSelectedExample();
+        const selectedExample = AppState.examples.find(e => e.title === selectedTitle) || AppState.examples[0];
+        const mediaTag = createMediaTag(selectedExample);
+        AppState.mediaTag = mediaTag;
+        const compileCode = DOM.of("code")
+            .style("display: block; background: #111; color: #0f0; padding: 0.75rem 1rem; border-radius: 0.5rem; font-size: 0.9rem; white-space: pre-wrap; word-break: break-all; user-select: all;")
+            .inner(getCompileCommand(selectedExample));
+        AppState.compileCode = compileCode;
+        const compileSection = DOM.of("div")
+            .style("margin-top: 0.5rem;")
+            .appendChild(
+                DOM.of("span")
+                    .style("font-size: 0.95rem; color: var(--text-color); opacity: 0.8;")
+                    .inner("Compile & run:"),
+                compileCode
+            );
+        const container = DOM.of("div")
+            .appendChild(mediaTag, compileSection)
+            .addClass("grow margin flex")
+            .style("flex-direction: column;");
+        AppState.outputContainer = container;
+        return container;
+    }
+
+    function onResize(container, output) {
+        const style = container.build().style;
+        if (window.innerWidth >= window.innerHeight) {
+            style["flex-direction"] = "row";
+            output.style(`width:${window.innerWidth / 2}px; height:${window.innerHeight * 0.79}px; flex-direction: column; display: flex;`);
+        } else {
+            style["flex-direction"] = "column";
+            output.style(`width:${97}%; height:${window.innerHeight / 2}px; flex-direction: column; display: flex;`);
+        }
+    }
+
+    async function main() {
+        const container = DOM.of("main")
+            .addClass("flex spaced-items")
+            .style("max-width: 1200px; margin: 0 auto;");
+        const out = output();
+        onResize(
+            container,
+            out
+        );
+        window.addEventListener(
+            "resize",
+            () => onResize(container, out)
+        );
+        return container
+            .appendChild(
+                out
+            )
+    }
+
+    function footer() {
+        return DOM.of("footer")
+            .appendChild(
+                DOM.of("hr"),
+                DOM.of("p")
+                    .addClass("center")
+                    .inner(`© ${new Date().getFullYear()} Pedroth`)
+            )
+    }
+
+    async function renderUI() {
+        return DOM.ofId("root")
+            .appendChild(header())
+            .appendChild(await main())
+            .appendChild(footer())
+            .addClass("loaded")
+    }
+
+    //========================================================================================
+    /*                                                                                      *
+     *                                         MAIN                                         *
+     *                                                                                      */
+    //========================================================================================
+
+    const AppState = {
+        examples: [],
+    }
+
+    function getExampleFromPath(path) {
+        return fetch(SOURCE + path).then(f => f.text());
+    }
+
+    function getSelectedExample() {
+        const url = window.location.href;
+        const split = url.split("#example=");
+        if (split.length <= 1) return TelaLocalStorage.getItem("selectedExample") || "Simple shader";
+        return AppState.examples[parseInt(split[1])].title;
+    }
+
+    function getURLData() {
+        const url = window.location.href;
+        const split = url.split("#code=");
+        if (split.length <= 1) return undefined;
+        return decodeURI(split[1]);
+    }
+
+
+    (async () => {
+        const examples = JSON.parse(await fetch(SOURCE + "/playground/examples.json").then(f => f.text()));
+        AppState.examples = examples;
+        await renderUI();
+    })()
+</script>
+
+</html>

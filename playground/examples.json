@@ -1,0 +1,142 @@
+[
+    {
+        "title": "2D Physics",
+        "thumbnail": "playground/media/2d_physics.png",
+        "video": "playground/media/2d_physics.mp4"
+    },
+    {
+        "title": "Amazing shader",
+        "thumbnail": "playground/media/amazing_shader.png",
+        "video": "playground/media/amazing_shader.mp4"
+    },
+    {
+        "title": "Black hole",
+        "thumbnail": "playground/media/black_hole.png",
+        "video": "playground/media/black_hole.mp4"
+    },
+    {
+        "title": "Cornell box meshes",
+        "thumbnail": "playground/media/cornell_box_meshes.png",
+        "video": "playground/media/cornell_box_meshes.mp4"
+    },
+    {
+        "title": "Cornell box",
+        "thumbnail": "playground/media/cornell_box.png",
+        "video": "playground/media/cornell_box.mp4"
+    },
+    {
+        "title": "Debug ray marching",
+        "thumbnail": "playground/media/debug_ray_marching.png",
+        "video": "playground/media/debug_ray_marching.mp4"
+    },
+    {
+        "title": "Glass",
+        "thumbnail": "playground/media/glass.png",
+        "video": "playground/media/glass.mp4"
+    },
+    {
+        "title": "Image gen",
+        "thumbnail": "playground/media/image_gen.png",
+        "video": ""
+    },
+    {
+        "title": "Img2rgb",
+        "thumbnail": "playground/media/img2rgb.png",
+        "video": "playground/media/img2rgb.mp4"
+    },
+    {
+        "title": "Line test",
+        "thumbnail": "playground/media/line_test.png",
+        "video": "playground/media/line_test.mp4"
+    },
+    {
+        "title": "Mandelbrot",
+        "thumbnail": "playground/media/mandelbrot.png",
+        "video": "playground/media/mandelbrot.mp4"
+    },
+    {
+        "title": "Meshes sky",
+        "thumbnail": "playground/media/meshes_sky.png",
+        "video": "playground/media/meshes_sky.mp4"
+    },
+    {
+        "title": "Meshes test",
+        "thumbnail": "playground/media/meshes_test.png",
+        "video": "playground/media/meshes_test.mp4"
+    },
+    {
+        "title": "Minecraft raytrace",
+        "thumbnail": "playground/media/minecraft_raytrace.png",
+        "video": "playground/media/minecraft_raytrace.mp4"
+    },
+    {
+        "title": "Minecraft",
+        "thumbnail": "playground/media/minecraft.png",
+        "video": "playground/media/minecraft.mp4"
+    },
+    {
+        "title": "Point cloud",
+        "thumbnail": "playground/media/point_cloud.png",
+        "video": "playground/media/point_cloud.mp4"
+    },
+    {
+        "title": "SDF editor",
+        "thumbnail": "playground/media/sdf_editor.png",
+        "video": "playground/media/sdf_editor.mp4"
+    },
+    {
+        "title": "SDF test",
+        "thumbnail": "playground/media/sdf_test.png",
+        "video": "playground/media/sdf_test.mp4"
+    },
+    {
+        "title": "Simple animation",
+        "thumbnail": "playground/media/simple_animation.png",
+        "video": "playground/media/simple_animation.mp4"
+    },
+    {
+        "title": "Summer forest raytrace",
+        "thumbnail": "playground/media/summer_forest_raytrace.png",
+        "video": "playground/media/summer_forest_raytrace.mp4"
+    },
+    {
+        "title": "Summer forest",
+        "thumbnail": "playground/media/summer_forest.png",
+        "video": "playground/media/summer_forest.mp4"
+    },
+    {
+        "title": "Triangle test",
+        "thumbnail": "playground/media/triangle_test.png",
+        "video": "playground/media/triangle_test.mp4"
+    },
+    {
+        "title": "Turing",
+        "thumbnail": "playground/media/turing.png",
+        "video": "playground/media/turing.mp4"
+    },
+    {
+        "title": "Unlimited detail",
+        "thumbnail": "playground/media/unlimited_detail.png",
+        "video": "playground/media/unlimited_detail.mp4"
+    },
+    {
+        "title": "Volumetric test I",
+        "thumbnail": "playground/media/volumetric_test_I.png",
+        "video": "playground/media/volumetric_test_I.mp4"
+    },
+    {
+        "title": "Volumetric test II",
+        "thumbnail": "playground/media/volumetric_test_II.png",
+        "video": "playground/media/volumetric_test_II.mp4"
+    },
+    {
+        "title": "Wave 3D",
+        "thumbnail": "playground/media/wave_3d.png",
+        "video": "playground/media/wave_3d.mp4"
+    },
+    {
+        "title": "Wave",
+        "thumbnail": "playground/media/wave.png",
+        "video": "playground/media/wave.mp4"
+    }
+]
