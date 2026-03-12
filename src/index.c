@@ -5121,7 +5121,7 @@ typedef struct {
 } Mesh;
 
 AABB get_bounding_box_mesh(Mesh* mesh) {
-  AABB box = { 0 };
+  AABB box = EMPTY_AABB;
   Array vertices = mesh->vertices;
   for (u32 i = 0; i < vertices.length; i++) {
     Vec3 vertex = *(Vec3*)get_array_element(&vertices, i);

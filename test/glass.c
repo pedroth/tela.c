@@ -290,7 +290,7 @@ int main(void) {
     set_orbit_camera(&camera, 3.0f, 0.0f, 0.0f);
 
     // Build scene
-    Scene scene = new_kscene(0);
+    Scene scene = new_kscene(10);
     build_scene(&scene);
     scene.vtable->rebuild_scene(&scene); // force build before rendering
 
