@@ -53,7 +53,7 @@ static void on_frame(f32 dt, f32 time, void* ctx) {
       vec3(1.5f + 0.7f * cosf(time), 1.5f + 0.7f * sinf(time), 1.5f);
 
   RaytraceParams params = {
-    .samples_per_pixel = 200,
+    .samples_per_pixel = 1000,
     .bounces = 10,
     .variance = 0.001f,
     .gamma = 0.5f,
@@ -210,7 +210,7 @@ int main(void) {
     .tela = tela,
   };
   u32 t0 = get_time_ms();
-  loop_to_video(animation, "outputII.mp4", loop_params);
+  loop_to_video(animation, "cornell_box_video.mp4", loop_params);
   u32 t1 = get_time_ms();
   printf("loop_to_video took %.3f s\n", (t1 - t0) / 1000.0);
 
