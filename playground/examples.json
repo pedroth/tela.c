@@ -138,5 +138,10 @@
         "title": "Wave",
         "thumbnail": "playground/media/wave.png",
         "video": "playground/media/wave.mp4"
+    },
+    {
+        "title": "Glass sphere caustics",
+        "thumbnail": "playground/media/cornell_box_video.png",
+        "video": "playground/media/cornell_box_video.mp4"
     }
 ]

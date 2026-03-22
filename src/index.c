@@ -32,6 +32,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <time.h>
 
 #ifdef _OPENMP
@@ -1443,27 +1444,27 @@ struct SceneElem {
   const SceneElemVTable* vtable;
   GeometryType geometry_type;
   union {
-    Triangle triangle;
-    Sphere sphere;
-    Line line;
-    AABB aabb;
+    Triangle* triangle;
+    Sphere* sphere;
+    Line* line;
+    AABB* aabb;
   } as;
 };
 
 static AABB _scene_elem_triangle_box(SceneElem* elem) {
-  return get_bounding_box_triangle(&elem->as.triangle);
+  return get_bounding_box_triangle(elem->as.triangle);
 }
 
 static Vec3 _scene_elem_triangle_normal(SceneElem* elem, Vec3 point) {
-  return normal_to_point_triangle(&elem->as.triangle, point);
+  return normal_to_point_triangle(elem->as.triangle, point);
 }
 
 static f32 _scene_elem_triangle_distance(SceneElem* elem, Vec3 point) {
-  return distance_to_point_triangle(&elem->as.triangle, point);
+  return distance_to_point_triangle(elem->as.triangle, point);
 }
 
 static SceneHit _scene_elem_triangle_intersect(SceneElem* elem, Ray ray) {
-  SceneHit hit = intersect_with_ray_triangle(&elem->as.triangle, ray);
+  SceneHit hit = intersect_with_ray_triangle(elem->as.triangle, ray);
   if (hit.hit) {
     hit.scene_elem = elem;
   }
@@ -1471,19 +1472,19 @@ static SceneHit _scene_elem_triangle_intersect(SceneElem* elem, Ray ray) {
 }
 
 static AABB _scene_elem_sphere_box(SceneElem* elem) {
-  return get_bounding_box_sphere(&elem->as.sphere);
+  return get_bounding_box_sphere(elem->as.sphere);
 }
 
 static Vec3 _scene_elem_sphere_normal(SceneElem* elem, Vec3 point) {
-  return normal_to_point_sphere(&elem->as.sphere, point);
+  return normal_to_point_sphere(elem->as.sphere, point);
 }
 
 static f32 _scene_elem_sphere_distance(SceneElem* elem, Vec3 point) {
-  return distance_to_point_sphere(&elem->as.sphere, point);
+  return distance_to_point_sphere(elem->as.sphere, point);
 }
 
 static SceneHit _scene_elem_sphere_intersect(SceneElem* elem, Ray ray) {
-  SceneHit hit = intersect_with_ray_sphere(&elem->as.sphere, ray);
+  SceneHit hit = intersect_with_ray_sphere(elem->as.sphere, ray);
   if (hit.hit) {
     hit.scene_elem = elem;
   }
@@ -1491,7 +1492,7 @@ static SceneHit _scene_elem_sphere_intersect(SceneElem* elem, Ray ray) {
 }
 
 static AABB _scene_elem_line_box(SceneElem* elem) {
-  Line* line = &elem->as.line;
+  Line* line = elem->as.line;
   Vec3 radius = vec3(line->radius, line->radius, line->radius);
   Vec3 min = op_vec3(line->positions[0], line->positions[1], fminf);
   Vec3 max = op_vec3(line->positions[0], line->positions[1], fmaxf);
@@ -1517,7 +1518,7 @@ static Vec3 _scene_elem_line_normal(SceneElem* elem, Vec3 point) {
 }
 
 static f32 _scene_elem_line_distance(SceneElem* elem, Vec3 point) {
-  Line* line = &elem->as.line;
+  Line* line = elem->as.line;
   Vec3 a = line->positions[0];
   Vec3 b = line->positions[1];
   Vec3 ab = sub_vec3(b, a);
@@ -1529,7 +1530,7 @@ static f32 _scene_elem_line_distance(SceneElem* elem, Vec3 point) {
 }
 
 static SceneHit _scene_elem_line_intersect(SceneElem* elem, Ray ray) {
-  SceneHit hit = intersect_with_ray_line(&elem->as.line, ray);
+  SceneHit hit = intersect_with_ray_line(elem->as.line, ray);
   if (hit.hit) {
     hit.scene_elem = elem;
   }
@@ -1561,7 +1562,8 @@ static inline SceneElem build_scene_elem_triangle(Triangle triangle) {
   SceneElem elem;
   elem.vtable = &TRIANGLE_SCENE_ELEM_VTABLE;
   elem.geometry_type = TRIANGLE;
-  elem.as.triangle = triangle;
+  elem.as.triangle = (Triangle*)malloc(sizeof(Triangle));
+  *elem.as.triangle = triangle;
   return elem;
 }
 
@@ -1569,7 +1571,8 @@ static inline SceneElem build_scene_elem_sphere(Sphere sphere) {
   SceneElem elem;
   elem.vtable = &SPHERE_SCENE_ELEM_VTABLE;
   elem.geometry_type = SPHERE;
-  elem.as.sphere = sphere;
+  elem.as.sphere = (Sphere*)malloc(sizeof(Sphere));
+  *elem.as.sphere = sphere;
   return elem;
 }
 
@@ -1577,7 +1580,8 @@ static inline SceneElem build_scene_elem_line(Line line) {
   SceneElem elem;
   elem.vtable = &LINE_SCENE_ELEM_VTABLE;
   elem.geometry_type = LINE_GEOMETRY;
-  elem.as.line = line;
+  elem.as.line = (Line*)malloc(sizeof(Line));
+  *elem.as.line = line;
   return elem;
 }
 
@@ -3257,7 +3261,7 @@ static inline void tela_to_p3(Tela* tela, const char* filename) {
 static inline void tela_to_image(Tela* tela, const char* filename) {
   const char* temp_ppm = "temp_output.ppm";
   tela_to_p3(tela, temp_ppm);
-  char command[256];
+  char command[512];
   snprintf(command, sizeof(command), "ffmpeg -y -i %s %s", temp_ppm, filename);
   printf("Executing command: %s\n", command);
   int ret = system(command);
@@ -3265,6 +3269,8 @@ static inline void tela_to_image(Tela* tela, const char* filename) {
     remove(temp_ppm);
   }
 }
+
+
 
 typedef struct {
   char* data;
@@ -3534,6 +3540,41 @@ static inline void play_loop(Loop* loop) {
 
 static inline void free_loop(Loop* loop) {
   free(loop);
+}
+
+typedef struct {
+  Tela* tela;
+  bool (*until)(f32 time);  
+  u32 fps;
+} LoopVideoParams;
+static inline void loop_to_video(Loop* loop, const char* filename, LoopVideoParams params) {
+  const char* temp_dir = "temp_frames";
+  mkdir(temp_dir, 0755);
+  if(params.fps == 0) {
+    params.fps = 25;
+  }
+  u32 frame_count = 0;
+  f32 dt = 1.0f / (f32)params.fps;
+  f32 time = 0.0f;
+  while (params.until(time)) {
+    char frame_filename[256];
+    snprintf(frame_filename, sizeof(frame_filename), "%s/frame_%05u.png", temp_dir, frame_count);
+    loop->update(dt, time, loop->context);
+    tela_to_image(params.tela, frame_filename);
+    frame_count++;
+    time += dt;
+  }
+
+  char command[512];
+  snprintf(command, sizeof(command), "ffmpeg -y -framerate %u -i %s/frame_%%05d.png -c:v libx264 -pix_fmt yuv420p %s", params.fps, temp_dir, filename);
+  printf("Executing command: %s\n", command);
+  int ret = system(command);
+  if (ret == 0) {
+    char cleanup_command[256];
+    snprintf(cleanup_command, sizeof(cleanup_command), "rm -rf %s", temp_dir);
+    int cleanup_ret = system(cleanup_command);
+    (void)cleanup_ret;
+  }
 }
 
 //========================================================================================
@@ -4619,21 +4660,21 @@ Tela* raster_scene(Scene* scene, RasterParams params) {
   for (u32 i = 0; i < elems->length; i++) {
     SceneElem* elem = (SceneElem*)get_array_element(elems, i);
     if (elem->geometry_type == TRIANGLE) {
-      Triangle* triangle = &elem->as.triangle;
+      Triangle* triangle = elem->as.triangle;
       raster_triangle(&(RasterTriangleInput){ .triangle = triangle,
                                               .camera = camera,
                                               .tela = tela,
                                               .params = &params,
                                               .zBuffer = z_buffer });
     } else if (elem->geometry_type == SPHERE) {
-      Sphere* sphere = &elem->as.sphere;
+      Sphere* sphere = elem->as.sphere;
       raster_sphere(&(RasterSphereInput){ .sphere = sphere,
                                           .camera = camera,
                                           .tela = tela,
                                           .params = &params,
                                           .zBuffer = z_buffer });
     } else if (elem->geometry_type == LINE_GEOMETRY) {
-      Line* line = &elem->as.line;
+      Line* line = elem->as.line;
       raster_line(&(RasterLineInput){ .line = line,
                                       .camera = camera,
                                       .tela = tela,
@@ -4654,7 +4695,7 @@ static void _free_debug_line_props(Scene* scene) {
   for (u32 i = 0; i < elems->length; i++) {
     SceneElem* elem = (SceneElem*)get_array_element(elems, i);
     if (elem->geometry_type == LINE_GEOMETRY) {
-      Line* line = &elem->as.line;
+      Line* line = elem->as.line;
       if (line->props) {
         free(line->props);
         line->props = NULL;
@@ -4761,9 +4802,9 @@ Ray scatter_diffuse(Ray ray, SceneHit hit) {
   Vec3 normal = { 0, 0, 0 };
   if (hit.scene_elem->geometry_type == TRIANGLE) {
     normal =
-        normal_to_point_triangle(&hit.scene_elem->as.triangle, hit.position);
+        normal_to_point_triangle(hit.scene_elem->as.triangle, hit.position);
   } else if (hit.scene_elem->geometry_type == SPHERE) {
-    normal = normal_to_point_sphere(&hit.scene_elem->as.sphere, hit.position);
+    normal = normal_to_point_sphere(hit.scene_elem->as.sphere, hit.position);
   }
   Vec3 random_sphere_vec = random_point_in_sphere();
   // Offset origin slightly along normal to prevent f32 self-intersection
@@ -4792,9 +4833,9 @@ Ray scatter_metallic(Ray ray, SceneHit hit) {
   Vec3 normal = { 0, 0, 0 };
   if (hit.scene_elem->geometry_type == TRIANGLE) {
     normal =
-        normal_to_point_triangle(&hit.scene_elem->as.triangle, hit.position);
+        normal_to_point_triangle(hit.scene_elem->as.triangle, hit.position);
   } else if (hit.scene_elem->geometry_type == SPHERE) {
-    normal = normal_to_point_sphere(&hit.scene_elem->as.sphere, hit.position);
+    normal = normal_to_point_sphere(hit.scene_elem->as.sphere, hit.position);
   }
   normal = normalize_vec3(normal);
   Vec3 v = ray.dir;
@@ -4847,9 +4888,9 @@ Ray scatter_dielectric(Ray ray, SceneHit hit) {
   Vec3 normal = { 0, 0, 0 };
   if (hit.scene_elem->geometry_type == TRIANGLE) {
     normal =
-        normal_to_point_triangle(&hit.scene_elem->as.triangle, hit.position);
+        normal_to_point_triangle(hit.scene_elem->as.triangle, hit.position);
   } else if (hit.scene_elem->geometry_type == SPHERE) {
-    normal = normal_to_point_sphere(&hit.scene_elem->as.sphere, hit.position);
+    normal = normal_to_point_sphere(hit.scene_elem->as.sphere, hit.position);
   }
   bool is_outside = dot_vec3(v_in, normal) < 0;
   f32 refraction_ration =
@@ -4888,8 +4929,8 @@ Material build_dielectric_material(f32 index_of_refraction) {
 Color get_color_from_hit(SceneHit hit, Ray ray, bool bilinear_texture) {
   if (hit.scene_elem->geometry_type == TRIANGLE) {
     RasterTriangleProps* props =
-        (RasterTriangleProps*)hit.scene_elem->as.triangle.props;
-    Triangle* tri = &hit.scene_elem->as.triangle;
+        (RasterTriangleProps*)hit.scene_elem->as.triangle->props;
+    Triangle* tri = hit.scene_elem->as.triangle;
 
     // Compute barycentric coordinates via tangent-based projection
     Vec3 u1 = sub_vec3(tri->positions[1], tri->positions[0]);
@@ -4931,7 +4972,7 @@ Color get_color_from_hit(SceneHit hit, Ray ray, bool bilinear_texture) {
   }
   if (hit.scene_elem->geometry_type == SPHERE) {
     RasterSphereProps* props =
-        (RasterSphereProps*)hit.scene_elem->as.sphere.props;
+        (RasterSphereProps*)hit.scene_elem->as.sphere->props;
     return props->color;
   }
   return (Color){ 0, 0, 0, 0 };
@@ -4940,12 +4981,12 @@ Color get_color_from_hit(SceneHit hit, Ray ray, bool bilinear_texture) {
 Material get_material_from_hit(SceneHit hit) {
   if (hit.scene_elem->geometry_type == TRIANGLE) {
     RasterTriangleProps* props =
-        (RasterTriangleProps*)hit.scene_elem->as.triangle.props;
+        (RasterTriangleProps*)hit.scene_elem->as.triangle->props;
     return *props->material;
   }
   if (hit.scene_elem->geometry_type == SPHERE) {
     RasterSphereProps* props =
-        (RasterSphereProps*)hit.scene_elem->as.sphere.props;
+        (RasterSphereProps*)hit.scene_elem->as.sphere->props;
     return *props->material;
   }
   return (Material){ 0 };
@@ -5017,11 +5058,11 @@ Color trace_ray_scene(Ray ray, RayTraceLambdaInput* input, u32 bounces) {
   Vec3 normal = { 0, 0, 0 };
   if (hit_geometry_type == TRIANGLE) {
     normal = normal_to_point_triangle(
-        &intersection.scene_elem->as.triangle, intersection.position
+        intersection.scene_elem->as.triangle, intersection.position
     );
   } else if (hit_geometry_type == SPHERE) {
     normal = normal_to_point_sphere(
-        &intersection.scene_elem->as.sphere, intersection.position
+        intersection.scene_elem->as.sphere, intersection.position
     );
   }
   f32 attenuation = fabs(dot_vec3(normal, scatter_ray.dir));
