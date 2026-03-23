@@ -122,7 +122,8 @@
                 DOM.of("a")
                     .attr("href", SOURCE === "" ? "/" : SOURCE)
                     .appendChild(
-                        DOM.of("h2").inner("Tela.C"),
+                        DOM.of("h2")
+                            .inner("Tela.c"),
                     ),
                 DOM.of("h2").inner("playground"),
                 headerTools()
