@@ -51,7 +51,7 @@ static void on_frame(f32 dt, f32 time, void* ctx) {
   elem->as.sphere.position = vec3(1.5f + 0.7f * cosf(time), 1.5f + 0.7f * sinf(time), 1.5f);
 
   RaytraceParams params = {
-    .samples_per_pixel = 10,
+    .samples_per_pixel = 250,
     .bounces = 10,
     .variance = 0.001f,
     .gamma = 0.5f,
