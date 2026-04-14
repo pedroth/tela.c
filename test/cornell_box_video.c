@@ -22,7 +22,7 @@ static const u32 HEIGHT = 480;
 
 typedef struct {
   Tela* tela;
-  Sphere* sphere;
+  u32 sphere_index;
   Camera* camera;
   Scene* scene;
 } App;
@@ -47,13 +47,11 @@ static void on_frame(f32 dt, f32 time, void* ctx) {
   Scene* scene = app->scene;
   Camera* camera = app->camera;
   Tela* exposed = app->tela;
-  Sphere* sphere = app->sphere;
-
-  sphere->position =
-      vec3(1.5f + 0.7f * cosf(time), 1.5f + 0.7f * sinf(time), 1.5f);
+  SceneElem* elem = get_array_element(get_scene_elems_scene(scene), app->sphere_index);
+  elem->as.sphere.position = vec3(1.5f + 0.7f * cosf(time), 1.5f + 0.7f * sinf(time), 1.5f);
 
   RaytraceParams params = {
-    .samples_per_pixel = 1000,
+    .samples_per_pixel = 10,
     .bounces = 10,
     .variance = 0.001f,
     .gamma = 0.5f,
@@ -193,12 +191,12 @@ int main(void) {
   glass_sphere.props =
       new_sph_props((Color){ 1.0f, 1.0f, 1.0f, 1.0f }, &mat_dielectric_13);
   SceneElem sphere_elem = build_scene_elem_sphere(glass_sphere);
-  Sphere* scene_sphere = sphere_elem.as.sphere;
   add_scene_elem_scene(&scene, sphere_elem);
+  u32 sphere_index = get_scene_elems_scene(&scene)->length - 1;
 
   App app = {
     .tela = tela,
-    .sphere = scene_sphere,
+    .sphere_index = sphere_index,
     .camera = &camera,
     .scene = &scene,
   };

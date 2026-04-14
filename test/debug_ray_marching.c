@@ -73,14 +73,14 @@ static void free_scene_props(Scene* scene) {
     for (u32 i = 0; i < elems->length; i++) {
         SceneElem* elem = (SceneElem*)get_array_element(elems, i);
         if (elem->geometry_type == LINE_GEOMETRY) {
-            Line* line = elem->as.line;
+            Line* line = &elem->as.line;
             if (line->props) {
                 free(line->props);
                 line->props = NULL;
             }
         }
         else if (elem->geometry_type == SPHERE) {
-            Sphere* sphere = elem->as.sphere;
+            Sphere* sphere = &elem->as.sphere;
             if (sphere->props) {
                 free(sphere->props);
                 sphere->props = NULL;
@@ -137,7 +137,7 @@ static void free_scene_sphere_props(Scene* scene) {
         if (elem->geometry_type != SPHERE) {
             continue;
         }
-        Sphere* sphere = elem->as.sphere;
+        Sphere* sphere = &elem->as.sphere;
         if (sphere->props) {
             free(sphere->props);
             sphere->props = NULL;

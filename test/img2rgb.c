@@ -64,7 +64,7 @@ static void move_to_grid(f32 tau, f32 dt, void *ctx) {
 
   for (u32 k = 0; k < elems->length; k++) {
     SceneElem *elem = (SceneElem *)get_array_element(elems, k);
-    Sphere *s = elem->as.sphere;
+    Sphere *s = &elem->as.sphere;
     Vec3 target = app->pixels[k].init_pos;
     Vec3 speed = sub_vec3(target, s->position);
     s->position = add_vec3(s->position, scale_vec3(speed, t));
@@ -82,7 +82,7 @@ static void move_to_color(f32 tau, f32 dt, void *ctx) {
 
   for (u32 k = 0; k < elems->length; k++) {
     SceneElem *elem = (SceneElem *)get_array_element(elems, k);
-    Sphere *s = elem->as.sphere;
+    Sphere *s = &elem->as.sphere;
     Vec3 target = app->pixels[k].color_pos;
     Vec3 speed = sub_vec3(target, s->position);
     s->position = add_vec3(s->position, scale_vec3(speed, t));
