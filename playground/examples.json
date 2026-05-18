@@ -80,9 +80,19 @@
         "video": "playground/media/point_cloud.mp4"
     },
     {
+        "title": "Bunny explode",
+        "thumbnail": "playground/media/bunny_explode.png",
+        "video": "playground/media/bunny_explode.mp4"
+    },
+    {
         "title": "SDF editor",
         "thumbnail": "playground/media/sdf_editor.png",
         "video": "playground/media/sdf_editor.mp4"
+    },
+    {
+        "title": "SDF bunny",
+        "thumbnail": "playground/media/sdf_bunny.png",
+        "video": "playground/media/sdf_bunny.mp4"
     },
     {
         "title": "SDF test",
@@ -143,5 +153,10 @@
         "title": "Glass sphere caustics",
         "thumbnail": "playground/media/cornell_box_video.png",
         "video": "playground/media/cornell_box_video.mp4"
+    },
+    {
+        "title": "Cornell box wave caustics",
+        "thumbnail": "playground/media/cornell_box_video_wave.png",
+        "video": "playground/media/cornell_box_video_wave.mp4"
     }
 ]
