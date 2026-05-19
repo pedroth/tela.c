@@ -783,6 +783,11 @@ static inline Color gamma_color(Color c, f32 gamma) {
                   c.alpha };
 }
 
+static inline Color clamp_color(Color c, f32 min, f32 max) {
+  return (Color){ clamp(c.red, min, max), clamp(c.green, min, max),
+                  clamp(c.blue, min, max), clamp(c.alpha, min, max) };
+}
+
 static const Color COLOR_BLACK = { 0.0f, 0.0f, 0.0f, 1.0f };
 static const Color COLOR_WHITE = { 1.0f, 1.0f, 1.0f, 1.0f };
 static const Color COLOR_RED = { 1.0f, 0.0f, 0.0f, 1.0f };
@@ -5006,13 +5011,18 @@ Color render_miss_scene(Ray ray, void* context) {
   SceneHit hit =
       intersect_scene(scene, build_ray(ray.init, directional_light->direction));
   if (hit.hit) {
-    return lerp_color(sky_color, COLOR_BLACK, 0.5f);
+    return lerp_color(sky_color, COLOR_BLACK, 0.5f); // in shadow
   }
 
+  // 1. Clamp to 0 so we don't get artifacts behind the camera
   f32 dot = fmaxf(0, dot_vec3(directional_light->direction, ray.dir));
 
+  // 2. Use a high exponent for the sharp sun disk
+  // At dot = 0, sunIntensity is 0. No "if" needed.
   f32 sun_intensity = powf(dot, directional_light->sharpness);
 
+  // 3. Smooth Interpolation (Lerp)
+  // Instead of adding and scaling by 0.5, we transition between the two.
   return lerp_color(sky_color, COLOR_WHITE, sun_intensity);
 }
 
@@ -5083,6 +5093,7 @@ Color ray_trace_lambda(Ray ray, void* context) {
 
   f32 inv_samples = (is_biased ? bounces : 1.0f) / samples;
   Color accumulated_color = { 0, 0, 0, 0 };
+  f32 max_sample_value = 3.0f;
   for (u32 i = 0; i < samples; i++) {
     const Vec3 epsilon = scale_vec3(random_point_in_sphere(), variance);
     const Vec3 epsilon_ortho =
@@ -5090,9 +5101,11 @@ Color ray_trace_lambda(Ray ray, void* context) {
     Vec3 new_dir = add_vec3(ray.dir, epsilon_ortho);
     new_dir = normalize_vec3(new_dir);
     Ray jittered_ray = build_ray(ray.init, new_dir);
+    Color sample_color = trace_ray_scene(jittered_ray, ray_trace_inputs, bounces);
+    sample_color = clamp_color(sample_color, 0.0f, max_sample_value);
     accumulated_color = add_color(
         accumulated_color,
-        trace_ray_scene(jittered_ray, ray_trace_inputs, bounces)
+        sample_color
     );
   }
   return gamma_color(scale_color(accumulated_color, inv_samples), gamma);

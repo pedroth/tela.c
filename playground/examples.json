@@ -158,5 +158,10 @@
         "title": "Cornell box wave caustics",
         "thumbnail": "playground/media/cornell_box_video_wave.png",
         "video": "playground/media/cornell_box_video_wave.mp4"
+    },
+    {
+        "title": "Cornell box wave caustics sky",
+        "thumbnail": "playground/media/cornell_box_video_wave_sky.png",
+        "video": "playground/media/cornell_box_video_wave_sky.mp4"
     }
 ]

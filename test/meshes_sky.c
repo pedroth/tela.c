@@ -268,7 +268,7 @@ static void on_frame(f32 dt, f32 time, void* ctx) {
       .render_background = render_sky,
       .render_background_context = NULL,
       .exposed_tela = app->tela,
-      // .directional_light = g_directional_light,
+      .directional_light = g_directional_light,
   };
 
   ray_trace_scene_parallel(app->scene, &params);
