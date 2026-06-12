@@ -4,6 +4,8 @@
  * A volumetric ray marching demo that renders a glowing noise field inside a
  * unit cube. Density accumulates along each ray using exponential attenuation.
  * Features interactive orbit camera controls via mouse.
+ * 
+ * gcc -O3 -fopenmp -o app test/wave_3d.c -lSDL2 -lm && ./app
  */
 
 #include "../src/index.c"
@@ -85,6 +87,7 @@ typedef struct {
 
 static bool g_left_mouse_down = false;
 static bool g_right_mouse_down = false;
+static bool g_opacity_scale_enabled = false;
 static Vec2 g_mouse_pos = { 0 };
 
 /* =============================================================================
@@ -158,10 +161,12 @@ static Color ray_scene(Ray r, void* ctx) {
   }
 
   // Phase 2: march through the volume, accumulating wave-style color
-  f32 t0 = t;
   f32 acc_red = 0.0f, acc_green = 0.0f, acc_blue = 0.0f;
+  f32 acc_alpha = 0.0f;
 
   for (u32 i = 0; i < max_volume_steps; i++) {
+    if (acc_alpha > 0.985f) break;
+
     t += MARCH_STEP;
     p = trace_ray(r, t);
     f32 d = sdf_box(p);
@@ -178,12 +183,16 @@ static Color ray_scene(Ray r, void* ctx) {
       f32 blue = 1.0f - normalized;
       f32 green = local_velocity / max_v;
 
-
-      // Accumulate with exponential attenuation for transparency
-      f32 weight = expf(-(t - t0) * ALPHA_DENSITY) * MARCH_STEP;
-      acc_red += red * weight;
-      acc_green += green * weight;
-      acc_blue += blue * weight;
+      // Absorption-style compositing: scale each step's contribution by
+      // remaining transparency to avoid additive blowout.
+      // Fade out near zero density so empty regions are transparent.
+      f32 opacity_scale = g_opacity_scale_enabled ? normalized * normalized : 1.0f;
+      f32 dens = MARCH_STEP * opacity_scale * (1.6f * red + 1.6f * blue + 2.2f * green);
+      f32 a = clamp(dens, 0.0f, 1.0f);
+      acc_red   += (1.0f - acc_alpha) * red   * a;
+      acc_green += (1.0f - acc_alpha) * green * a;
+      acc_blue  += (1.0f - acc_alpha) * blue  * a;
+      acc_alpha += (1.0f - acc_alpha) * a;
     }
   }
 
@@ -252,10 +261,11 @@ static void on_frame(f32 dt, f32 time, void* ctx) {
   set_window_title(
       app->window,
       format_string(
-          "Volumetric | FPS: %.1f |min: %.2f |max: %.2f |R: reset",
+          "Volumetric | FPS: %.1f |min: %.2f |max: %.2f |R: reset |O: opacity scale [%s]",
           1.0f / dt,
           app->shader_ctx->min_height,
-          app->shader_ctx->max_height
+          app->shader_ctx->max_height,
+          g_opacity_scale_enabled ? "on" : "off"
       )
   );
   paint_window(app->window, app->tela);
@@ -367,6 +377,9 @@ static void on_mouse_scroll(Window* window, i32 delta_y, void* ctx) {
 }
 
 static void on_key_down(Window* window, u32 keycode, void* ctx) {
+  if (keycode == 'o') {
+    g_opacity_scale_enabled = !g_opacity_scale_enabled;
+  }
   if (keycode == 'r') {
     for (u32 i = 0; i < GRID_SIZE; i++) {
       for (u32 j = 0; j < GRID_SIZE; j++) {
