@@ -5498,4 +5498,855 @@ Mesh read_obj_mesh(String obj_file, char* mesh_name) {
   return mesh;
 }
 
+//========================================================================================
+/*                                                                                      *
+ *                                          SVG                                         *
+ *                                                                                      */
+//========================================================================================
+
+/* =============================================================================
+ * T2D — 2D Affine Transform  [a c e; b d f; 0 0 1]
+ * ========================================================================== */
+
+typedef struct { f32 a, b, c, d, e, f; } T2D;
+
+static inline T2D t2d_identity(void) { return (T2D){ 1, 0, 0, 1, 0, 0 }; }
+
+static inline Vec2 t2d_apply(T2D t, Vec2 p) {
+    return vec2(t.a * p.x + t.c * p.y + t.e,
+                t.b * p.x + t.d * p.y + t.f);
+}
+
+static inline T2D t2d_compose(T2D o, T2D i) {
+    return (T2D){
+        .a = o.a*i.a + o.c*i.b, .b = o.b*i.a + o.d*i.b,
+        .c = o.a*i.c + o.c*i.d, .d = o.b*i.c + o.d*i.d,
+        .e = o.a*i.e + o.c*i.f + o.e,
+        .f = o.b*i.e + o.d*i.f + o.f,
+    };
+}
+
+/* Parse SVG transform attribute: matrix/translate/scale/rotate */
+static T2D parse_svg_transform(const char* s) {
+    T2D result = t2d_identity();
+    if (!s) return result;
+    while (*s) {
+        while (*s == ' ' || *s == '\t' || *s == '\n' || *s == ',') s++;
+        if (!*s) break;
+        if (strncmp(s, "matrix", 6) == 0) {
+            float a, b, c, d, e, f;
+            int n = sscanf(s + 6, " (%f ,%f ,%f ,%f ,%f ,%f)", &a,&b,&c,&d,&e,&f);
+            if (n < 6) sscanf(s + 6, " (%f %f %f %f %f %f)", &a,&b,&c,&d,&e,&f);
+            result = t2d_compose(result, (T2D){a,b,c,d,e,f});
+        } else if (strncmp(s, "translate", 9) == 0) {
+            float tx = 0, ty = 0;
+            sscanf(s + 9, " (%f ,%f)", &tx, &ty);
+            if (ty == 0) sscanf(s + 9, " (%f %f)", &tx, &ty);
+            result = t2d_compose(result, (T2D){1,0,0,1,tx,ty});
+        } else if (strncmp(s, "scale", 5) == 0) {
+            float sx = 1, sy = 1;
+            int n = sscanf(s + 5, " (%f ,%f)", &sx, &sy);
+            if (n < 2) { sscanf(s + 5, " (%f)", &sx); sy = sx; }
+            result = t2d_compose(result, (T2D){sx,0,0,sy,0,0});
+        } else if (strncmp(s, "rotate", 6) == 0) {
+            float angle = 0, cx = 0, cy = 0;
+            sscanf(s + 6, " (%f ,%f ,%f)", &angle, &cx, &cy);
+            if (!cx && !cy) sscanf(s + 6, " (%f)", &angle);
+            float rad = angle * (float)PI / 180.0f;
+            float ca = cosf(rad), sa = sinf(rad);
+            T2D t1 = {1,0,0,1,-cx,-cy};
+            T2D r  = {ca,sa,-sa,ca,0,0};
+            T2D t2 = {1,0,0,1,cx,cy};
+            result = t2d_compose(result, t2d_compose(t2d_compose(t2, r), t1));
+        }
+        while (*s && *s != ')') s++;
+        if (*s) s++;
+    }
+    return result;
+}
+
+/* =============================================================================
+ * SVG Data Structures
+ * ========================================================================== */
+
+#define SVG_MAX_DEFS 128
+
+typedef struct {
+    char  id[256];
+    Array subpaths; /* Array of (Array* of Vec2) — raw SVG space */
+} SVGDef;
+
+typedef struct {
+    bool valid;
+    Vec2 min, max;
+} SVGViewBox;
+
+typedef struct {
+    SVGViewBox viewBox;
+    Array      paths;              /* Array of (Array* of Vec2) */
+    SVGDef     defs[SVG_MAX_DEFS];
+    int        def_count;
+} SVGData;
+
+static SVGDef* svg_find_def(SVGData* svg, const char* id) {
+    for (int i = 0; i < svg->def_count; i++)
+        if (strcmp(svg->defs[i].id, id) == 0) return &svg->defs[i];
+    return NULL;
+}
+
+static SVGDef* svg_get_or_create_def(SVGData* svg, const char* id) {
+    SVGDef* d = svg_find_def(svg, id);
+    if (d) return d;
+    if (svg->def_count >= SVG_MAX_DEFS) return NULL;
+    d = &svg->defs[svg->def_count++];
+    strncpy(d->id, id, 255); d->id[255] = '\0';
+    d->subpaths = new_array(4, sizeof(Array*));
+    return d;
+}
+
+/* =============================================================================
+ * Bezier Helpers (Vec2)
+ * ========================================================================== */
+
+static inline Vec2 lerp_v2(Vec2 a, Vec2 b, f32 t) {
+    return vec2(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t);
+}
+static inline Vec2 qbez(Vec2 p0, Vec2 p1, Vec2 p2, f32 t) {
+    return lerp_v2(lerp_v2(p0, p1, t), lerp_v2(p1, p2, t), t);
+}
+static inline Vec2 cbez(Vec2 p0, Vec2 p1, Vec2 p2, Vec2 p3, f32 t) {
+    Vec2 a = lerp_v2(p0, p1, t), b = lerp_v2(p1, p2, t), c = lerp_v2(p2, p3, t);
+    return lerp_v2(lerp_v2(a, b, t), lerp_v2(b, c, t), t);
+}
+
+/* =============================================================================
+ * Arc to Points
+ * ========================================================================== */
+
+static void svg_arc_to_points(f32 x1, f32 y1, f32 rx, f32 ry, f32 phi,
+                               int fA, int fS, f32 x2, f32 y2,
+                               int samples, Array* out) {
+    if (x1 == x2 && y1 == y2) return;
+    if (rx == 0 || ry == 0) { Vec2 p = vec2(x2, y2); push_array(out, &p); return; }
+    rx = fabsf(rx); ry = fabsf(ry);
+    f32 pr = phi * (f32)PI / 180.0f, cp = cosf(pr), sp = sinf(pr);
+    f32 dx = (x1-x2)/2.0f, dy = (y1-y2)/2.0f;
+    f32 x1p =  cp*dx + sp*dy;
+    f32 y1p = -sp*dx + cp*dy;
+    f32 rx2 = rx*rx, ry2 = ry*ry, x1p2 = x1p*x1p, y1p2 = y1p*y1p;
+    f32 rs = x1p2/rx2 + y1p2/ry2;
+    if (rs > 1.0f) { f32 s = sqrtf(rs); rx*=s; ry*=s; rx2=rx*rx; ry2=ry*ry; }
+    f32 sign = (fA != fS) ? 1.0f : -1.0f;
+    f32 num  = rx2*ry2 - rx2*y1p2 - ry2*x1p2;
+    f32 den  = rx2*y1p2 + ry2*x1p2;
+    f32 sq   = sign * sqrtf(fmaxf(0.0f, num/den));
+    f32 cxp  = sq*rx*y1p/ry, cyp = -sq*ry*x1p/rx;
+    f32 cx   = cp*cxp - sp*cyp + (x1+x2)/2.0f;
+    f32 cy   = sp*cxp + cp*cyp + (y1+y2)/2.0f;
+    f32 ux   = (x1p-cxp)/rx, uy = (y1p-cyp)/ry;
+    f32 vx   = (-x1p-cxp)/rx, vy = (-y1p-cyp)/ry;
+    f32 t1   = atan2f(uy, ux);
+    f32 dt   = atan2f(vy, vx) - t1;
+    if (!fS && dt > 0.0f) dt -= 2.0f*(f32)PI;
+    if ( fS && dt < 0.0f) dt += 2.0f*(f32)PI;
+    for (int i = 0; i < samples; i++) {
+        f32 t   = (f32)i / (f32)(samples-1);
+        f32 ang = t1 + t*dt;
+        Vec2 p  = vec2(cp*rx*cosf(ang) - sp*ry*sinf(ang) + cx,
+                       sp*rx*cosf(ang) + cp*ry*sinf(ang) + cy);
+        push_array(out, &p);
+    }
+}
+
+/* =============================================================================
+ * SVG Path Parser
+ * ========================================================================== */
+
+typedef struct { const char* s; u32 len; u32 pos; } SVGPathParser;
+
+static void svgpp_ws(SVGPathParser* p) {
+    while (p->pos < p->len) {
+        char c = p->s[p->pos];
+        if (c==' '||c=='\t'||c=='\n'||c=='\r') p->pos++; else break;
+    }
+}
+static void svgpp_wsc(SVGPathParser* p) {
+    while (p->pos < p->len) {
+        char c = p->s[p->pos];
+        if (c==' '||c=='\t'||c=='\n'||c=='\r'||c==',') p->pos++; else break;
+    }
+}
+static bool svgpp_num(SVGPathParser* p, f32* out) {
+    svgpp_wsc(p);
+    if (p->pos >= p->len) return false;
+    char c = p->s[p->pos];
+    if (!isdigit((unsigned char)c) && c != '-' && c != '.') return false;
+    char* end;
+    *out = strtof(p->s + p->pos, &end);
+    if (end == p->s + p->pos) return false;
+    p->pos = (u32)(end - p->s);
+    return true;
+}
+static bool svgpp_flag(SVGPathParser* p, int* out) {
+    svgpp_wsc(p);
+    if (p->pos >= p->len) return false;
+    char c = p->s[p->pos];
+    if (c == '0' || c == '1') { *out = c-'0'; p->pos++; return true; }
+    return false;
+}
+static bool svgpp_more(SVGPathParser* p) {
+    u32 save = p->pos;
+    svgpp_wsc(p);
+    bool has = p->pos < p->len && !isalpha((unsigned char)p->s[p->pos]) &&
+               (isdigit((unsigned char)p->s[p->pos]) ||
+                p->s[p->pos] == '-' || p->s[p->pos] == '.');
+    p->pos = save;
+    return has;
+}
+
+static Array* svg_new_subpath(void) {
+    Array* a = malloc(sizeof(Array));
+    *a = new_array(16, sizeof(Vec2));
+    return a;
+}
+
+static void svg_flush_subpath(Array** cur, Array* out) {
+    if (*cur) {
+        if ((*cur)->length > 1) push_array(out, cur);
+        else { free_array(*cur); free(*cur); }
+        *cur = NULL;
+    }
+}
+
+static void svg_add_pt(Array* path, Vec2 p, T2D T) {
+    Vec2 tp = t2d_apply(T, p);
+    push_array(path, &tp);
+}
+
+static void svg_ensure_subpath(Array** cur, Vec2 pos, T2D T) {
+    if (!*cur) { *cur = svg_new_subpath(); svg_add_pt(*cur, pos, T); }
+}
+
+static void svg_push_cbez(Array* cur, Vec2 p0, Vec2 p1, Vec2 p2, Vec2 p3, int n, T2D T) {
+    for (int i = 1; i < n; i++) svg_add_pt(cur, cbez(p0,p1,p2,p3,(f32)i/(n-1)), T);
+}
+static void svg_push_qbez(Array* cur, Vec2 p0, Vec2 p1, Vec2 p2, int n, T2D T) {
+    for (int i = 1; i < n; i++) svg_add_pt(cur, qbez(p0,p1,p2,(f32)i/(n-1)), T);
+}
+
+static void svg_parse_path_d(const char* d, Array* out_paths, T2D T) {
+    static const int N = 10;
+    if (!d || !d[0]) return;
+    SVGPathParser p = { d, (u32)strlen(d), 0 };
+    char  cmd = 0;
+    Array* cur = NULL;
+    Vec2  pos = {0}, spos = {0}, lctrl = {0};
+
+    while (p.pos < p.len) {
+        svgpp_ws(&p);
+        if (p.pos >= p.len) break;
+        if (isalpha((unsigned char)p.s[p.pos])) { cmd = p.s[p.pos++]; }
+        if (!cmd) break;
+
+        char lo  = (char)tolower((unsigned char)cmd);
+        bool rel = islower((unsigned char)cmd);
+        f32  x, y, x1, y1, x2, y2, rx, ry, phi;
+        int  fa, fs;
+
+        switch (lo) {
+        case 'm':
+            if (!svgpp_num(&p,&x) || !svgpp_num(&p,&y)) { cmd=0; break; }
+            svg_flush_subpath(&cur, out_paths);
+            pos  = rel ? add_vec2(pos, vec2(x,y)) : vec2(x,y);
+            spos = pos;
+            cur  = svg_new_subpath();
+            svg_add_pt(cur, pos, T);
+            lctrl = pos;
+            cmd = rel ? 'l' : 'L';
+            break;
+        case 'z':
+            if (cur) svg_add_pt(cur, spos, T);
+            svg_flush_subpath(&cur, out_paths);
+            pos = spos; cmd = 0;
+            break;
+        case 'l':
+            if (!svgpp_num(&p,&x) || !svgpp_num(&p,&y)) { cmd=0; break; }
+            { Vec2 np = rel ? add_vec2(pos,vec2(x,y)) : vec2(x,y);
+              svg_ensure_subpath(&cur, pos, T); svg_add_pt(cur, np, T);
+              lctrl = pos = np; }
+            break;
+        case 'h':
+            if (!svgpp_num(&p,&x)) { cmd=0; break; }
+            { Vec2 np = rel ? vec2(pos.x+x,pos.y) : vec2(x,pos.y);
+              svg_ensure_subpath(&cur, pos, T); svg_add_pt(cur, np, T);
+              lctrl = pos = np; }
+            break;
+        case 'v':
+            if (!svgpp_num(&p,&y)) { cmd=0; break; }
+            { Vec2 np = rel ? vec2(pos.x,pos.y+y) : vec2(pos.x,y);
+              svg_ensure_subpath(&cur, pos, T); svg_add_pt(cur, np, T);
+              lctrl = pos = np; }
+            break;
+        case 'c':
+            if (!svgpp_num(&p,&x1)||!svgpp_num(&p,&y1)||!svgpp_num(&p,&x2)||
+                !svgpp_num(&p,&y2)||!svgpp_num(&p,&x) ||!svgpp_num(&p,&y)) { cmd=0; break; }
+            { Vec2 p1 = rel?add_vec2(pos,vec2(x1,y1)):vec2(x1,y1);
+              Vec2 p2 = rel?add_vec2(pos,vec2(x2,y2)):vec2(x2,y2);
+              Vec2 pe = rel?add_vec2(pos,vec2(x, y )):vec2(x, y );
+              svg_ensure_subpath(&cur, pos, T);
+              svg_push_cbez(cur, pos, p1, p2, pe, N, T);
+              lctrl = p2; pos = pe; }
+            break;
+        case 's':
+            if (!svgpp_num(&p,&x2)||!svgpp_num(&p,&y2)||
+                !svgpp_num(&p,&x) ||!svgpp_num(&p,&y)) { cmd=0; break; }
+            { Vec2 p1 = sub_vec2(scale_vec2(pos,2.0f),lctrl);
+              Vec2 p2 = rel?add_vec2(pos,vec2(x2,y2)):vec2(x2,y2);
+              Vec2 pe = rel?add_vec2(pos,vec2(x, y )):vec2(x, y );
+              svg_ensure_subpath(&cur, pos, T);
+              svg_push_cbez(cur, pos, p1, p2, pe, N, T);
+              lctrl = p2; pos = pe; }
+            break;
+        case 'q':
+            if (!svgpp_num(&p,&x1)||!svgpp_num(&p,&y1)||
+                !svgpp_num(&p,&x) ||!svgpp_num(&p,&y)) { cmd=0; break; }
+            { Vec2 p1 = rel?add_vec2(pos,vec2(x1,y1)):vec2(x1,y1);
+              Vec2 pe = rel?add_vec2(pos,vec2(x, y )):vec2(x, y );
+              svg_ensure_subpath(&cur, pos, T);
+              svg_push_qbez(cur, pos, p1, pe, N, T);
+              lctrl = p1; pos = pe; }
+            break;
+        case 't':
+            if (!svgpp_num(&p,&x)||!svgpp_num(&p,&y)) { cmd=0; break; }
+            { Vec2 ctrl = sub_vec2(scale_vec2(pos,2.0f),lctrl);
+              Vec2 pe   = rel?add_vec2(pos,vec2(x,y)):vec2(x,y);
+              svg_ensure_subpath(&cur, pos, T);
+              svg_push_qbez(cur, pos, ctrl, pe, N, T);
+              lctrl = ctrl; pos = pe; }
+            break;
+        case 'a':
+            if (!svgpp_num(&p,&rx)||!svgpp_num(&p,&ry)||!svgpp_num(&p,&phi)||
+                !svgpp_flag(&p,&fa)||!svgpp_flag(&p,&fs)||
+                !svgpp_num(&p,&x) ||!svgpp_num(&p,&y)) { cmd=0; break; }
+            { f32 x2v = rel?pos.x+x:x, y2v = rel?pos.y+y:y;
+              svg_ensure_subpath(&cur, pos, T);
+              Array arc = new_array(N+1, sizeof(Vec2));
+              svg_arc_to_points(pos.x,pos.y,rx,ry,phi,fa,fs,x2v,y2v,N,&arc);
+              for (u32 k=0; k<arc.length; k++)
+                  svg_add_pt(cur, *(Vec2*)get_array_element(&arc,k), T);
+              free_array(&arc);
+              lctrl = pos = vec2(x2v, y2v); }
+            break;
+        default:
+            cmd = 0;
+            break;
+        }
+        if (lo == 'z' || lo == 'm') continue;
+        (void)svgpp_more; /* suppress unused warning */
+    }
+    svg_flush_subpath(&cur, out_paths);
+}
+
+/* =============================================================================
+ * XML Tag Scanner
+ * ========================================================================== */
+
+#define XML_MAX_ATTRS 40
+#define XML_VAL_MAX   8192
+#define XML_KEY_MAX   256
+
+typedef struct {
+    char key[XML_KEY_MAX];
+    char value[XML_VAL_MAX];
+} XMLAttr;
+
+typedef struct {
+    char    name[XML_KEY_MAX];
+    XMLAttr attrs[XML_MAX_ATTRS];
+    int     attr_count;
+    bool    self_closing;
+    bool    closing;
+    u32     end_pos;
+} XMLTag;
+
+static const char* xml_attr(const XMLTag* tag, const char* key) {
+    for (int i = 0; i < tag->attr_count; i++)
+        if (strcmp(tag->attrs[i].key, key) == 0) return tag->attrs[i].value;
+    return NULL;
+}
+
+/* Returns end_pos (position after '>') or 0 on EOF */
+static u32 xml_next_tag(const char* s, u32 len, u32 start, XMLTag* tag) {
+    u32 pos = start;
+retry:
+    while (pos < len && s[pos] != '<') pos++;
+    if (pos >= len) return 0;
+    pos++;
+    if (pos+2 < len && s[pos]=='!' && s[pos+1]=='-' && s[pos+2]=='-') {
+        pos += 3;
+        while (pos+2 < len && !(s[pos]=='-'&&s[pos+1]=='-'&&s[pos+2]=='>')) pos++;
+        pos += 3; goto retry;
+    }
+    if (pos < len && (s[pos]=='?'||s[pos]=='!')) {
+        while (pos < len && s[pos] != '>') pos++;
+        pos++; goto retry;
+    }
+    tag->closing = tag->self_closing = false;
+    tag->attr_count = 0;
+    if (pos < len && s[pos] == '/') { tag->closing = true; pos++; }
+    while (pos < len && isspace((unsigned char)s[pos])) pos++;
+    u32 ns = pos;
+    while (pos < len && !isspace((unsigned char)s[pos]) &&
+           s[pos]!='>' && s[pos]!='/' && s[pos]!=':') pos++;
+    if (pos < len && s[pos] == ':') {
+        pos++; ns = pos;
+        while (pos < len && !isspace((unsigned char)s[pos]) &&
+               s[pos]!='>' && s[pos]!='/') pos++;
+    }
+    u32 nl = pos - ns; if (nl >= XML_KEY_MAX) nl = XML_KEY_MAX-1;
+    memcpy(tag->name, s+ns, nl); tag->name[nl] = '\0';
+
+    while (pos < len) {
+        while (pos < len && isspace((unsigned char)s[pos])) pos++;
+        if (pos >= len || s[pos] == '>') { if (pos < len) pos++; break; }
+        if (s[pos]=='/' && pos+1<len && s[pos+1]=='>') {
+            tag->self_closing = true; pos += 2; break;
+        }
+        u32 ks = pos;
+        while (pos < len && s[pos]!='=' && !isspace((unsigned char)s[pos]) &&
+               s[pos]!='>' && s[pos]!='/') pos++;
+        u32 kl = pos - ks;
+        if (!kl) { pos++; continue; }
+        if (tag->attr_count >= XML_MAX_ATTRS) {
+            while (pos < len && isspace((unsigned char)s[pos])) pos++;
+            if (pos < len && s[pos] == '=') {
+                pos++;
+                while (pos < len && isspace((unsigned char)s[pos])) pos++;
+                if (pos < len && (s[pos]=='"'||s[pos]=='\'')) {
+                    char q = s[pos++];
+                    while (pos < len && s[pos] != q) pos++;
+                    if (pos < len) pos++;
+                }
+            }
+            continue;
+        }
+        XMLAttr* a = &tag->attrs[tag->attr_count];
+        u32 kc = kl<XML_KEY_MAX-1?kl:XML_KEY_MAX-1;
+        memcpy(a->key, s+ks, kc); a->key[kc] = '\0';
+        while (pos < len && isspace((unsigned char)s[pos])) pos++;
+        if (pos < len && s[pos] == '=') {
+            pos++;
+            while (pos < len && isspace((unsigned char)s[pos])) pos++;
+            if (pos < len && (s[pos]=='"'||s[pos]=='\'')) {
+                char q = s[pos++];
+                u32 vs = pos;
+                while (pos < len && s[pos] != q) pos++;
+                u32 vl = pos - vs, vc = vl<XML_VAL_MAX-1?vl:XML_VAL_MAX-1;
+                memcpy(a->value, s+vs, vc); a->value[vc] = '\0';
+                if (pos < len) pos++;
+            } else {
+                u32 vs = pos;
+                while (pos<len && !isspace((unsigned char)s[pos]) && s[pos]!='>') pos++;
+                u32 vl = pos-vs, vc = vl<XML_VAL_MAX-1?vl:XML_VAL_MAX-1;
+                memcpy(a->value, s+vs, vc); a->value[vc] = '\0';
+            }
+        } else {
+            strncpy(a->value, "true", 5);
+        }
+        tag->attr_count++;
+    }
+    tag->end_pos = pos;
+    return pos;
+}
+
+/* =============================================================================
+ * SVG File Parser
+ * ========================================================================== */
+
+static void svg_normalize_paths(Array* paths, Vec2 vb_min, Vec2 vb_diag) {
+    for (u32 i = 0; i < paths->length; i++) {
+        Array* path = *(Array**)get_array_element(paths, i);
+        for (u32 j = 0; j < path->length; j++) {
+            Vec2* p = (Vec2*)get_array_element(path, j);
+            p->x = (p->x - vb_min.x) / vb_diag.x;
+            p->y = 1.0f - (p->y - vb_min.y) / vb_diag.y;
+        }
+    }
+}
+
+static void svg_instantiate_def(SVGDef* def, Array* out_paths, T2D T) {
+    for (u32 i = 0; i < def->subpaths.length; i++) {
+        Array* src = *(Array**)get_array_element(&def->subpaths, i);
+        Array* dst = svg_new_subpath();
+        for (u32 j = 0; j < src->length; j++) {
+            Vec2 pt = t2d_apply(T, *(Vec2*)get_array_element(src, j));
+            push_array(dst, &pt);
+        }
+        push_array(out_paths, &dst);
+    }
+}
+
+SVGData parse_svg(const char* data, u32 len) {
+    SVGData svg = {0};
+    svg.viewBox.valid = false;
+    svg.viewBox.min   = vec2(0, 0);
+    svg.viewBox.max   = vec2(1, 1);
+    svg.paths         = new_array(32, sizeof(Array*));
+    svg.def_count     = 0;
+
+    T2D  tstack[64]; int tsp = 0;
+    int  tdepth[64];
+    tstack[0] = t2d_identity();
+    int  g_depth = 0;
+    bool in_defs = false;
+
+    u32    pos = 0;
+    XMLTag tag;
+
+    while (1) {
+        u32 npos = xml_next_tag(data, len, pos, &tag);
+        if (!npos) break;
+        pos = npos;
+
+        if (tag.closing) {
+            if (strcmp(tag.name,"g")==0 && g_depth>0) {
+                g_depth--;
+                if (tdepth[g_depth]) tsp--;
+            }
+            if (strcmp(tag.name,"defs")==0) in_defs = false;
+            continue;
+        }
+
+        if (strcmp(tag.name,"svg")==0) {
+            const char* vb = xml_attr(&tag,"viewBox");
+            if (vb) {
+                float x, y, w, h;
+                if (sscanf(vb,"%f %f %f %f",&x,&y,&w,&h)==4 ||
+                    sscanf(vb,"%f,%f,%f,%f",&x,&y,&w,&h)==4) {
+                    svg.viewBox.min = vec2(x,y);
+                    svg.viewBox.max = vec2(x+w,y+h);
+                    svg.viewBox.valid = true;
+                }
+            }
+            continue;
+        }
+        if (strcmp(tag.name,"defs")==0 && !tag.self_closing) {
+            in_defs = true; continue;
+        }
+        if (strcmp(tag.name,"g")==0 && !tag.self_closing) {
+            const char* tr = xml_attr(&tag,"transform");
+            tdepth[g_depth] = 0;
+            if (tr) {
+                tstack[tsp+1] = t2d_compose(tstack[tsp], parse_svg_transform(tr));
+                tsp++;
+                tdepth[g_depth] = 1;
+            }
+            g_depth++;
+            continue;
+        }
+        if (strcmp(tag.name,"path")==0) {
+            const char* d  = xml_attr(&tag,"d");
+            if (!d) continue;
+            const char* id = xml_attr(&tag,"id");
+            if (in_defs && id) {
+                SVGDef* def = svg_get_or_create_def(&svg, id);
+                if (def) svg_parse_path_d(d, &def->subpaths, t2d_identity());
+            } else {
+                svg_parse_path_d(d, &svg.paths, tstack[tsp]);
+            }
+            continue;
+        }
+        if (strcmp(tag.name,"rect")==0) {
+            const char* wx=xml_attr(&tag,"x"), *wy=xml_attr(&tag,"y");
+            const char* ww=xml_attr(&tag,"width"), *wh=xml_attr(&tag,"height");
+            if (wx&&wy&&ww&&wh) {
+                f32 rx=strtof(wx,NULL), ry=strtof(wy,NULL);
+                f32 rw=strtof(ww,NULL), rh=strtof(wh,NULL);
+                Vec2 pts[5] = { vec2(rx,ry), vec2(rx+rw,ry),
+                                vec2(rx+rw,ry+rh), vec2(rx,ry+rh), vec2(rx,ry) };
+                Array* path = svg_new_subpath();
+                for (int k=0;k<5;k++) svg_add_pt(path, pts[k], tstack[tsp]);
+                push_array(&svg.paths, &path);
+            }
+            continue;
+        }
+        if (strcmp(tag.name,"use")==0) {
+            const char* href = xml_attr(&tag,"xlink:href");
+            if (!href) href = xml_attr(&tag,"href");
+            if (!href) continue;
+            const char* id = (href[0]=='#') ? href+1 : href;
+            SVGDef* def = svg_find_def(&svg, id);
+            if (!def) continue;
+            T2D use_T = tstack[tsp];
+            const char* xa = xml_attr(&tag,"x"), *ya = xml_attr(&tag,"y");
+            if (xa||ya) {
+                f32 tx=xa?strtof(xa,NULL):0.0f, ty=ya?strtof(ya,NULL):0.0f;
+                use_T = t2d_compose(use_T,(T2D){1,0,0,1,tx,ty});
+            }
+            const char* tr = xml_attr(&tag,"transform");
+            if (tr) use_T = t2d_compose(use_T, parse_svg_transform(tr));
+            svg_instantiate_def(def, &svg.paths, use_T);
+            continue;
+        }
+    }
+
+    if (svg.viewBox.valid) {
+        Vec2 vb_min  = svg.viewBox.min;
+        Vec2 vb_diag = sub_vec2(svg.viewBox.max, svg.viewBox.min);
+        if (vb_diag.x > 0 && vb_diag.y > 0)
+            svg_normalize_paths(&svg.paths, vb_min, vb_diag);
+    }
+    return svg;
+}
+
+void free_svg(SVGData* svg) {
+    for (u32 i = 0; i < svg->paths.length; i++) {
+        Array* p = *(Array**)get_array_element(&svg->paths, i);
+        free_array(p); free(p);
+    }
+    free_array(&svg->paths);
+    for (int i = 0; i < svg->def_count; i++) {
+        Array* sub = &svg->defs[i].subpaths;
+        for (u32 j = 0; j < sub->length; j++) {
+            Array* p = *(Array**)get_array_element(sub, j);
+            free_array(p); free(p);
+        }
+        free_array(sub);
+    }
+}
+
+/* =============================================================================
+ * SVG Path Orientation (signed area; negative = CCW in screen space)
+ * ========================================================================== */
+
+static inline f32 svg_path_orientation(const Array* path) {
+    f32 area = 0;
+    u32 n = path->length;
+    for (u32 i = 0; i < n; i++) {
+        Vec2 a = *(Vec2*)get_array_element((Array*)path, i);
+        Vec2 b = *(Vec2*)get_array_element((Array*)path, (i+1)%n);
+        area += wedge_vec2(a, b);
+    }
+    return area >= 0 ? 1.0f : -1.0f;
+}
+
+/* =============================================================================
+ * SVG 2D Rendering Helpers
+ * ========================================================================== */
+
+static Color _svg_solid_line_shader(u32 x, u32 y, Line_2D* l, void* ctx) {
+    (void)x; (void)y; (void)l;
+    return *(Color*)ctx;
+}
+
+static Color _svg_solid_tri_shader(u32 x, u32 y, const Triangle_2D* t, void* ctx) {
+    (void)x; (void)y; (void)t;
+    return *(Color*)ctx;
+}
+
+static void draw_svg_path_lines(Tela* tela, const Camera_2D* cam,
+                                 const Array* path, Color color) {
+    u32 n = path->length;
+    for (u32 i = 0; i + 1 < n; i++) {
+        Vec2 p0 = to_canvas_coord_camera_2d(cam, *(Vec2*)get_array_element((Array*)path, i),   tela);
+        Vec2 p1 = to_canvas_coord_camera_2d(cam, *(Vec2*)get_array_element((Array*)path, i+1), tela);
+        Line_2D line = { .positions = {p0, p1} };
+        draw_line_tela(tela, &line, _svg_solid_line_shader, &color);
+    }
+}
+
+static void draw_svg_path_triangles(Tela* tela, const Camera_2D* cam,
+                                     const Array* path, Color color) {
+    if (path->length < 3) return;
+    f32 ori = svg_path_orientation(path);
+    Array ordered = new_array(path->length, sizeof(Vec2));
+    if (ori > 0) {
+        for (i32 i = (i32)path->length-1; i >= 0; i--)
+            push_array(&ordered, get_array_element((Array*)path, (u32)i));
+    } else {
+        for (u32 i = 0; i < path->length; i++)
+            push_array(&ordered, get_array_element((Array*)path, i));
+    }
+    Array tris = triangulate_polygon(&ordered);
+    for (u32 i = 0; i < tris.length; i++) {
+        Tri2D* tri = (Tri2D*)get_array_element(&tris, i);
+        Vec2 p0 = to_canvas_coord_camera_2d(cam, tri->v[0], tela);
+        Vec2 p1 = to_canvas_coord_camera_2d(cam, tri->v[1], tela);
+        Vec2 p2 = to_canvas_coord_camera_2d(cam, tri->v[2], tela);
+        Triangle_2D t2d = { .positions = {p0, p1, p2} };
+        draw_triangle_tela(tela, &t2d, _svg_solid_tri_shader, &color);
+    }
+    free_array(&ordered);
+    free_array(&tris);
+}
+
+/* =============================================================================
+ * SVG Triangulation with Hole Merging  (matches tela.js Triangulate.js)
+ * ========================================================================== */
+
+typedef struct { Tri2D tri; Color color; } SVGTri;
+
+static AABB_2D svg_path_aabb(const Array* path) {
+    if (path->length == 0) return EMPTY_AABB_2D;
+    Vec2 mn = *(Vec2*)get_array_element((Array*)path, 0);
+    Vec2 mx = mn;
+    for (u32 i = 1; i < path->length; i++) {
+        Vec2 p = *(Vec2*)get_array_element((Array*)path, i);
+        mn.x = fminf(mn.x, p.x); mn.y = fminf(mn.y, p.y);
+        mx.x = fmaxf(mx.x, p.x); mx.y = fmaxf(mx.y, p.y);
+    }
+    return build_aabb_2d(mn, mx);
+}
+
+static bool svg_aabb_contains(const AABB_2D* outer, const AABB_2D* inner) {
+    return inner->min.x >= outer->min.x && inner->max.x <= outer->max.x &&
+           inner->min.y >= outer->min.y && inner->max.y <= outer->max.y;
+}
+
+/* Join outer polygon with a hole via a nearest-point bridge.
+ * Matches joinBoxTreePaths() from Triangulate.js.
+ * Caller must free_array + free the returned Array*. */
+static Array* svg_join_hole(const Array* outer, const Array* inner) {
+    u32 bi = 0, bj = 0;
+    f32 best = __FLT_MAX__;
+    for (u32 i = 0; i < outer->length; i++) {
+        Vec2 p = *(Vec2*)get_array_element((Array*)outer, i);
+        for (u32 j = 0; j < inner->length; j++) {
+            Vec2 q  = *(Vec2*)get_array_element((Array*)inner, j);
+            Vec2 dv = sub_vec2(p, q);
+            f32  d  = dv.x*dv.x + dv.y*dv.y + (f32)j; /* deterministic salt */
+            if (d < best) { best = d; bi = i; bj = j; }
+        }
+    }
+    Array* r = svg_new_subpath();
+    for (u32 i = 0; i <= bi; i++)
+        push_array(r, get_array_element((Array*)outer, i));
+    for (u32 j = bj; j < inner->length; j++)
+        push_array(r, get_array_element((Array*)inner, j));
+    for (u32 j = 0; j <= bj; j++)
+        push_array(r, get_array_element((Array*)inner, j));
+    for (u32 i = bi; i < outer->length; i++)
+        push_array(r, get_array_element((Array*)outer, i));
+    return r;
+}
+
+/* Triangulate a flat Array of subpaths with hole merging (root = outer contour,
+ * children inside its AABB = holes).  Assigns a random Color per triangle.
+ * Matches svg_2.js: triangulate(paths) + Color.random() per triangle. */
+static Array svg_triangulate_paths(const Array* paths) {
+    u32   n      = paths->length;
+    Array result = new_array(64, sizeof(SVGTri));
+    if (n == 0) return result;
+
+    AABB_2D* aabbs  = (AABB_2D*)malloc(n * sizeof(AABB_2D));
+    i32*     parent = (i32*)    malloc(n * sizeof(i32));
+    for (u32 i = 0; i < n; i++) {
+        aabbs[i]  = svg_path_aabb(*(Array**)get_array_element((Array*)paths, i));
+        parent[i] = -1;
+    }
+
+    /* parent[i] = smallest path j whose AABB strictly contains path i's AABB */
+    for (u32 i = 0; i < n; i++) {
+        for (u32 j = 0; j < n; j++) {
+            if (i == j) continue;
+            if (!svg_aabb_contains(&aabbs[j], &aabbs[i])) continue;
+            if (parent[i] == -1 ||
+                svg_aabb_contains(&aabbs[(u32)parent[i]], &aabbs[j]))
+                parent[i] = (i32)j;
+        }
+    }
+
+    for (u32 i = 0; i < n; i++) {
+        if (parent[i] != -1) continue; /* non-root: will be merged as a hole */
+
+        Array* base  = *(Array**)get_array_element((Array*)paths, i);
+        Array* cur   = base;
+        Array* owned = NULL;   /* non-NULL once we heap-allocated cur */
+
+        /* Merge direct-child holes into cur via bridges */
+        for (u32 j = 0; j < n; j++) {
+            if (parent[j] != (i32)i) continue;
+            Array* hole    = *(Array**)get_array_element((Array*)paths, j);
+            Array* bridged = svg_join_hole(cur, hole);
+            if (owned) { free_array(owned); free(owned); }
+            owned = bridged;
+            cur   = bridged;
+        }
+
+        /* Orient for ear-clip (CCW = negative signed area) */
+        f32 ori = svg_path_orientation(cur);
+        Array ordered = new_array(cur->length, sizeof(Vec2));
+        if (ori > 0) {
+            for (i32 k = (i32)cur->length - 1; k >= 0; k--)
+                push_array(&ordered, get_array_element(cur, (u32)k));
+        } else {
+            for (u32 k = 0; k < cur->length; k++)
+                push_array(&ordered, get_array_element(cur, k));
+        }
+
+        Array tris = triangulate_polygon(&ordered);
+        for (u32 t = 0; t < tris.length; t++) {
+            SVGTri st;
+            st.tri   = *(Tri2D*)get_array_element(&tris, t);
+            st.color = random_color();
+            push_array(&result, &st);
+        }
+        free_array(&ordered);
+        free_array(&tris);
+        if (owned) { free_array(owned); free(owned); }
+    }
+
+    free(aabbs);
+    free(parent);
+    return result;
+}
+
+/* Draw pre-computed SVGTri array through a Camera_2D. */
+static void draw_svg_tris(Tela* tela, const Camera_2D* cam,
+                          const Array* svg_tris) {
+    for (u32 i = 0; i < svg_tris->length; i++) {
+        SVGTri* st = (SVGTri*)get_array_element((Array*)svg_tris, i);
+        Vec2 p0 = to_canvas_coord_camera_2d(cam, st->tri.v[0], tela);
+        Vec2 p1 = to_canvas_coord_camera_2d(cam, st->tri.v[1], tela);
+        Vec2 p2 = to_canvas_coord_camera_2d(cam, st->tri.v[2], tela);
+        Triangle_2D t2d = { .positions = {p0, p1, p2} };
+        draw_triangle_tela(tela, &t2d, _svg_solid_tri_shader, &st->color);
+    }
+}
+
+/* Gradient line shader: interpolates from ORANGE to RED along the segment. */
+typedef struct { Color c0; Color c1; } _SVGGradCtx;
+static Color _svg_gradient_line_shader(u32 x, u32 y, Line_2D* l, void* ctx) {
+    _SVGGradCtx* gc = (_SVGGradCtx*)ctx;
+    Vec2 p  = vec2((f32)x, (f32)y);
+    Vec2 ab = sub_vec2(l->positions[1], l->positions[0]);
+    f32  len2 = dot_vec2(ab, ab);
+    f32  t = 0.0f;
+    if (len2 > 1e-12f)
+        t = dot_vec2(sub_vec2(p, l->positions[0]), ab) / len2;
+    t = fmaxf(0.0f, fminf(1.0f, t));
+    return (Color){
+        gc->c0.red   + t * (gc->c1.red   - gc->c0.red),
+        gc->c0.green + t * (gc->c1.green - gc->c0.green),
+        gc->c0.blue  + t * (gc->c1.blue  - gc->c0.blue),
+        1.0f
+    };
+}
+
+/* Draw path outlines with an orange→red gradient per segment (matches svg_2.js). */
+static void draw_svg_path_lines_gradient(Tela* tela, const Camera_2D* cam,
+                                          const Array* path) {
+    _SVGGradCtx gc = {
+        {1.0f, 0.5f, 0.0f, 1.0f}, /* ORANGE */
+        {1.0f, 0.0f, 0.0f, 1.0f}  /* RED    */
+    };
+    u32 np = path->length;
+    for (u32 i = 0; i + 1 < np; i++) {
+        Vec2 p0 = to_canvas_coord_camera_2d(cam, *(Vec2*)get_array_element((Array*)path, i),   tela);
+        Vec2 p1 = to_canvas_coord_camera_2d(cam, *(Vec2*)get_array_element((Array*)path, i+1), tela);
+        Line_2D line = { .positions = {p0, p1} };
+        draw_line_tela(tela, &line, _svg_gradient_line_shader, &gc);
+    }
+}
+
 #endif /* TELA_C */
