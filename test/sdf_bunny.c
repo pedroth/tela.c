@@ -7,7 +7,7 @@ static const f32 TORUS_MINOR = 0.25f;
 static const f32 MESH_SPHERE_RADIUS = 0.05f;
 static const u32 MAX_RAYMARCH_ITERATIONS = 100;
 static const f32 MAX_RAYMARCH_DISTANCE = 10.0f;
-static const f32 RAYMARCH_EPSILON = 1e-3f;
+static const f32 RAYMARCH_EPSILON = 1e-2f;
 static const f32 NORMAL_EPSILON = 1e-3f;
 
 typedef struct {
@@ -56,6 +56,7 @@ static f32 smooth_min_32(f32 a, f32 b) {
 	const f32 ea = expf(-k * (a - m));
 	const f32 eb = expf(-k * (b - m));
 	return m - logf(ea + eb) / k;
+	// return fminf(a, b);
 }
 
 static Vec3 torus_normal(Vec3 p) {
@@ -85,7 +86,7 @@ static Color ray_scene(Ray ray, void* ctx) {
 			render_ctx->scene,
 			build_ray(p, ray.dir),
 			smooth_min_32
-		);
+		)-0.01f;
 		f32 d = tau * torus_dist + (1.0f - tau) * scene_dist;
 		t += d;
 
@@ -103,7 +104,7 @@ static Color ray_scene(Ray ray, void* ctx) {
 			};
 		}
 
-		if (d > MAX_RAYMARCH_DISTANCE) {
+		if (t > MAX_RAYMARCH_DISTANCE) {
 			return (Color) {
 				.red = 0.0f,
 				.green = 0.0f,
@@ -172,7 +173,7 @@ static void on_mouse_scroll(Window* window, i32 delta_y, void* ctx) {
 }
 
 static void build_bunny_scene(Scene* scene) {
-	String obj = io_read_file("./assets/bunny.obj");
+	String obj = io_read_file("./assets/bunny_orig.obj");
 	Mesh mesh = read_obj_mesh(obj, "mesh");
 
 	AABB box = get_bounding_box_mesh(&mesh);
@@ -197,7 +198,7 @@ static void build_bunny_scene(Scene* scene) {
 int main(void) {
 	Tela* tela = new_tela(WIDTH, HEIGHT);
 	Window* window = new_window(WIDTH * 2, HEIGHT * 2, "Bunny Ray march");
-	Scene scene = new_kscene(20);
+	Scene scene = new_kscene(10);
 	Camera camera = create_camera(vec3(5.0f, 0.0f, 0.0f), vec3(0.0f, 0.0f, 0.0f), 1.0f);
 
 	build_bunny_scene(&scene);

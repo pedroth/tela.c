@@ -136,7 +136,7 @@ static Color ray_march(Ray ray, f32 time, Vec3 light_pos) {
     }
 
     // Escaped to infinity
-    if (dist > MAX_RAYMARCH_DISTANCE) {
+    if (t > MAX_RAYMARCH_DISTANCE) {
       f32 c = 2.0f * (f32)i / MAX_RAYMARCH_ITERATIONS;
       return (Color){c, c, c, 1.0f};
     }

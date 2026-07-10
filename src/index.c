@@ -1677,7 +1677,7 @@ static inline f32 smooth_min_k_scene(f32 a, f32 b, f32 k) {
 }
 
 static inline f32 smooth_min_scene_default(f32 a, f32 b) {
-  return smooth_min_k_scene(a, b, 50.0f);
+  return smooth_min_k_scene(a, b, 32.0f);
 }
 
 static inline Array triangles_to_scene_elems(Array triangles) {
@@ -2396,37 +2396,32 @@ static f32 distance_to_point_kscene(
 static Vec3 normal_to_point_kscene(
     KScene* ks, Vec3 point, f32 (*my_min)(f32, f32)
 ) {
-  if (!ks || !ks->root)
-    return vec3(0, 0, 1);
+  if (ks->root) {
+    Vec3 ones = vec3(1, 1, 1);
+    ones = scale_vec3(ones, 1.0f / (2.0f * (f32)ks->k));
+    AABB box = build_aabb(sub_vec3(point, ones), add_vec3(point, ones));
 
-  Vec3 ones = vec3(1, 1, 1);
-  ones = scale_vec3(ones, 1.0f / (2.0f * (f32)ks->k));
-  AABB box = build_aabb(sub_vec3(point, ones), add_vec3(point, ones));
+    Array near_elems = new_array(8, sizeof(SceneElem*));
+    collect_elems_in_box_node_k_scene(ks->root, &box, &near_elems);
 
-  Array near_elems = new_array(8, sizeof(SceneElem*));
-  collect_elems_in_box_node_k_scene(ks->root, &box, &near_elems);
+    Vec3 normal = vec3(0, 0, 0);
+    f32 weight = 0.0f;
+    for (u32 i = 0; i < near_elems.length; i++) {
+      SceneElem** elem_ptr = (SceneElem**)get_array_element(&near_elems, i);
+      SceneElem* elem = *elem_ptr;
+      Vec3 n = normal_to_point_scene_elem(elem, point);
+      f32 d = 1.0f / distance_to_point_scene_elem(elem, point);
+      normal = add_vec3(normal, scale_vec3(n, d));
+      weight += d;
+    }
 
-  Vec3 normal = vec3(0, 0, 0);
-  f32 weight = 0.0f;
-  for (u32 i = 0; i < near_elems.length; i++) {
-    SceneElem** elem_ptr = (SceneElem**)get_array_element(&near_elems, i);
-    SceneElem* elem = *elem_ptr;
-    f32 d = distance_to_point_scene_elem(elem, point);
-    Vec3 n = normal_to_point_scene_elem(elem, point);
-    if (d < 0.0f)
-      n = scale_vec3(n, -1.0f);
-    f32 safe_d = (fabsf(d) < 1e-4f) ? (d < 0.0f ? -1e-4f : 1e-4f) : d;
-    f32 w = 1.0f / safe_d;
-    normal = add_vec3(normal, scale_vec3(n, w));
-    weight += w;
-  }
+    if (near_elems.data)
+      free_array(&near_elems);
 
-  if (near_elems.data)
-    free_array(&near_elems);
-
-  if (fabsf(weight) > 1e-10f && length_vec3(normal) > 0.0f) {
-    Vec3 out = scale_vec3(normal, 1.0f / weight);
-    return normalize_vec3(out);
+    if (length_vec3(normal) > 0.0f) {
+      Vec3 out = scale_vec3(normal, 1.0f / weight);
+      return normalize_vec3(out);
+    }
   }
 
   const f32 epsilon = 1e-3f;

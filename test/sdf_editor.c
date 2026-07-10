@@ -53,20 +53,19 @@ static Color render_ray(Ray ray, void* ctx) {
 	RenderCtx* render_ctx = (RenderCtx*)ctx;
 	if (!render_ctx || !render_ctx->scene) return COLOR_BLACK;
 
-	const u32 max_iterations = 100;
+	const u32 max_iterations = 50;
 	const f32 epsilon = 1e-6f;
+	const f32 max_distance = 25.0f;
 
 	Vec3 p = ray.init;
 	f32 t = distance_on_ray_scene(render_ctx->scene, ray, smooth_min_scene_default);
 	if (!isfinite(t)) return COLOR_BLACK;
-
 	for (u32 i = 0; i < max_iterations; i++) {
 		p = trace_ray(ray, t);
 		const f32 d = distance_on_ray_scene(render_ctx->scene, build_ray(p, ray.dir), smooth_min_scene_default);
 		if (!isfinite(d)) {
 			return COLOR_BLACK;
 		}
-
 		if (d < epsilon) {
 			const Vec3 normal = normal_to_point_scene(render_ctx->scene, p, NULL);
 			return (Color) {
@@ -76,10 +75,8 @@ static Color render_ray(Ray ray, void* ctx) {
 				.alpha = 1.0f,
 			};
 		}
-
 		t += d;
-
-		if (d > 10.0f) {
+		if (t > max_distance) {
 			return (Color) {
 				.red = 0.0f,
 				.green = 0.0f,
@@ -88,7 +85,6 @@ static Color render_ray(Ray ray, void* ctx) {
 			};
 		}
 	}
-
 	return COLOR_BLACK;
 }
 
@@ -188,7 +184,7 @@ int main(void) {
 	Tela* tela = new_tela(WIDTH, HEIGHT);
 	Window* window = new_window(WIDTH, HEIGHT, "SDF Editor");
 
-	Scene scene = new_kscene(20);
+	Scene scene = new_kscene(10);
 	Camera camera = create_camera(vec3(5.0f, 0.0f, 0.0f), vec3(0.0f, 0.0f, 0.0f), 1.0f);
 
 	App app = {
