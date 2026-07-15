@@ -2217,8 +2217,6 @@ static SceneHit intersect_node_k_scene(NodeKScene* node, Ray ray) {
 static f32 distance_from_leaf_elems_node_k_scene(
     NodeKScene* node, Vec3 point, f32 (*my_min)(f32, f32)
 ) {
-  if (!node || !node->is_leaf)
-    return INFINITY;
   f32 (*combine)(f32, f32) = my_min ? my_min : fminf;
   f32 distance = INFINITY;
   for (u32 i = 0; i < node->elems.length; i++) {
@@ -2383,46 +2381,65 @@ static SceneHit intersect_kscene(KScene* ks, Ray ray) {
   return intersect_node_k_scene(ks->root, ray);
 }
 
+static f32 _distance_to_point_bvh_kscene(
+    NodeKScene* node, Vec3 point, f32 (*combine)(f32, f32)
+) {
+  if (!node)
+    return INFINITY;
+  if (node->is_leaf)
+    return distance_from_leaf_elems_node_k_scene(node, point, combine);
+
+  f32 left_aabb = distance_aabb(&node->left->box, point);
+  f32 right_aabb = distance_aabb(&node->right->box, point);
+
+  // Visit the spatially closer subtree first
+  NodeKScene* first = left_aabb <= right_aabb ? node->left : node->right;
+  NodeKScene* second = left_aabb <= right_aabb ? node->right : node->left;
+
+  f32 first_d = _distance_to_point_bvh_kscene(first, point, combine);
+  f32 second_d = _distance_to_point_bvh_kscene(second, point, combine);
+  return combine(first_d, second_d);
+}
+
 static f32 distance_to_point_kscene(
     KScene* ks, Vec3 point, f32 (*my_min)(f32, f32)
 ) {
   if (!ks->root)
     return INFINITY;
-  if (ks->root->is_leaf)
-    return distance_from_leaf_elems_node_k_scene(ks->root, point, my_min);
-  return distance_to_point_node_k_scene(ks->root, point);
+  f32 (*combine)(f32, f32) = my_min ? my_min : fminf;
+  return _distance_to_point_bvh_kscene(ks->root, point, combine);
 }
 
 static Vec3 normal_to_point_kscene(
     KScene* ks, Vec3 point, f32 (*my_min)(f32, f32)
 ) {
-  if (ks->root) {
-    Vec3 ones = vec3(1, 1, 1);
-    ones = scale_vec3(ones, 1.0f / (2.0f * (f32)ks->k));
-    AABB box = build_aabb(sub_vec3(point, ones), add_vec3(point, ones));
+  // if (ks->root) {
+  //   Vec3 ones = vec3(1, 1, 1);
+  //   ones = scale_vec3(ones, 1.0f / (2.0f * (f32)ks->k));
+  //   AABB box = build_aabb(sub_vec3(point, ones), add_vec3(point, ones));
 
-    Array near_elems = new_array(8, sizeof(SceneElem*));
-    collect_elems_in_box_node_k_scene(ks->root, &box, &near_elems);
+  //   Array near_elems = new_array(8, sizeof(SceneElem*));
+  //   collect_elems_in_box_node_k_scene(ks->root, &box, &near_elems);
 
-    Vec3 normal = vec3(0, 0, 0);
-    f32 weight = 0.0f;
-    for (u32 i = 0; i < near_elems.length; i++) {
-      SceneElem** elem_ptr = (SceneElem**)get_array_element(&near_elems, i);
-      SceneElem* elem = *elem_ptr;
-      Vec3 n = normal_to_point_scene_elem(elem, point);
-      f32 d = 1.0f / distance_to_point_scene_elem(elem, point);
-      normal = add_vec3(normal, scale_vec3(n, d));
-      weight += d;
-    }
+  //   Vec3 normal = vec3(0, 0, 0);
+  //   f32 weight = 0.0f;
+  //   for (u32 i = 0; i < near_elems.length; i++) {
+  //     SceneElem** elem_ptr = (SceneElem**)get_array_element(&near_elems, i);
+  //     SceneElem* elem = *elem_ptr;
+  //     Vec3 n = normal_to_point_scene_elem(elem, point);
+  //     f32 d = 1.0f / distance_to_point_scene_elem(elem, point);
+  //     normal = add_vec3(normal, scale_vec3(n, d));
+  //     weight += d;
+  //   }
 
-    if (near_elems.data)
-      free_array(&near_elems);
+  //   if (near_elems.data)
+  //     free_array(&near_elems);
 
-    if (length_vec3(normal) > 0.0f) {
-      Vec3 out = scale_vec3(normal, 1.0f / weight);
-      return normalize_vec3(out);
-    }
-  }
+  //   if (length_vec3(normal) > 0.0f) {
+  //     Vec3 out = scale_vec3(normal, 1.0f / weight);
+  //     return normalize_vec3(out);
+  //   }
+  // }
 
   const f32 epsilon = 1e-3f;
   f32 f = distance_to_point_kscene(ks, point, my_min);

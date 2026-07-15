@@ -15,6 +15,7 @@ typedef struct {
 	Window* window;
 	Scene scene;
 	Camera camera;
+	f32 time;
 } App;
 
 typedef struct {
@@ -121,8 +122,10 @@ static void on_frame(f32 dt, f32 time, void* ctx) {
 	App* app = (App*)ctx;
 	RenderCtx render_ctx = {
 		.scene = &app->scene,
-		.time = time,
+		.time = app->time + 0.01f,
 	};
+
+	app->time += 0.01f;
 
 	ray_map_camera_parallel(&app->camera, app->tela, ray_scene, &render_ctx);
 
@@ -208,6 +211,7 @@ int main(void) {
 		.window = window,
 		.scene = scene,
 		.camera = camera,
+		.time = 0.0f,
 	};
 
 	Loop* animation = loop(on_frame, &app);
