@@ -1,6 +1,6 @@
 # tela.c
 
-A vibe ported (using claude opus 4.6) library of pedroth's tela.js, a software-only graphic library from scratch, with reference implementation of computer graphics algorithms.
+`tela.c` is a `C` port of _pedroth's `tela.js`_, a software-only graphic library from scratch, with reference implementation of computer graphics algorithms.
 
 ![](/tela.png)
 
@@ -10,7 +10,9 @@ The purpose of this graphic engine is to be able to generate images in a computa
 
 ## Port details
 
-It tries to be as close as possible to the original tela.js, but with some minor differences regarding the differences between C and JS, but there are also some minor improvements over the original. 
+It tries to be as close as possible to the original `tela.js`, but with some minor differences regarding the differences between C and JS. There are also some minor improvements over the original. 
+
+> Many parts of the port were done with the help of _claude opus 4.6_. Without it, this port would have taken much longer to be done.
 
 # Table of Contents
 
@@ -32,26 +34,24 @@ It tries to be as close as possible to the original tela.js, but with some minor
 Just git clone the repo, then compile any of the examples in the `test` as follows:
 
 ```bash
-gcc -O3 -fopenmp -o <executable name> test/<demo name>.c -lSDL2 -lm
-./<executable name>
+gcc -O3 -fopenmp -o <executable name> test/<demo name>.c -lSDL2 -lm && ./<executable name>
 ```
 
 Example:
 ```bash
-gcc -O3 -fopenmp -o app test/meshes_sky.c -lSDL2 -lm
-./app
+gcc -O3 -fopenmp -o app test/meshes_sky.c -lSDL2 -lm && ./app
 ```
 
 For even more performance, you could do:
 ```bash
-gcc -O3 -fopenmp -ffast-math -o app test/meshes_sky.c -lSDL2 -lm -march=native
-./app
+gcc -O3 -fopenmp -ffast-math -o app test/meshes_sky.c -lSDL2 -lm -march=native && ./app
 ```
 
 # Acknowledgements
 
 - [Keenan's 3D Model Repository](https://www.cs.cmu.edu/~kmcrane/Projects/ModelRepository/)
 - [The models resource](https://www.models-resource.com/)
+- [Alec Jacobson's common 3D test models](https://github.com/alecjacobson/common-3d-test-models/)
 - [tela.js](https://github.com/pedroth/tela.js)
 
 
