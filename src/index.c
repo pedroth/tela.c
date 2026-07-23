@@ -784,8 +784,10 @@ static inline Color gamma_color(Color c, f32 gamma) {
 }
 
 static inline Color clamp_color(Color c, f32 min, f32 max) {
-  return (Color){ clamp(c.red, min, max), clamp(c.green, min, max),
-                  clamp(c.blue, min, max), clamp(c.alpha, min, max) };
+  return (Color){ clamp(c.red, min, max),
+                  clamp(c.green, min, max),
+                  clamp(c.blue, min, max),
+                  clamp(c.alpha, min, max) };
 }
 
 static const Color COLOR_BLACK = { 0.0f, 0.0f, 0.0f, 1.0f };
@@ -3207,18 +3209,7 @@ Tela* set_pxl_exposed_tela(Tela* exposed, u32 x, u32 y, Color color) {
 }
 
 Color get_pxl_exposed_tela(const Tela* exposed, u32 x, u32 y) {
-  const u32 w = exposed->width;
-  const u32 h = exposed->height;
-  Vec2 grid = to_grid_tela(exposed, x, y);
-  u32 i = (u32)grid.x;
-  u32 j = (u32)grid.y;
-  i = mod_u32(i, h);
-  j = mod_u32(j, w);
-  u32 index = COLOR_CHANNELS * (w * i + j);
-  return (Color){ exposed->image[index],
-                  exposed->image[index + 1],
-                  exposed->image[index + 2],
-                  exposed->image[index + 3] };
+  return get_pxl_tela(exposed, x, y);
 };
 
 //========================================================================================
@@ -3266,8 +3257,6 @@ static inline void tela_to_image(Tela* tela, const char* filename) {
     remove(temp_ppm);
   }
 }
-
-
 
 typedef struct {
   char* data;
@@ -3541,13 +3530,15 @@ static inline void free_loop(Loop* loop) {
 
 typedef struct {
   Tela* tela;
-  bool (*until)(f32 time);  
+  bool (*until)(f32 time);
   u32 fps;
 } LoopVideoParams;
-static inline void loop_to_video(Loop* loop, const char* filename, LoopVideoParams params) {
+static inline void loop_to_video(
+    Loop* loop, const char* filename, LoopVideoParams params
+) {
   const char* temp_dir = "temp_frames";
   mkdir(temp_dir, 0755);
-  if(params.fps == 0) {
+  if (params.fps == 0) {
     params.fps = 25;
   }
   u32 frame_count = 0;
@@ -3555,7 +3546,13 @@ static inline void loop_to_video(Loop* loop, const char* filename, LoopVideoPara
   f32 time = 0.0f;
   while (params.until(time)) {
     char frame_filename[256];
-    snprintf(frame_filename, sizeof(frame_filename), "%s/frame_%05u.png", temp_dir, frame_count);
+    snprintf(
+        frame_filename,
+        sizeof(frame_filename),
+        "%s/frame_%05u.png",
+        temp_dir,
+        frame_count
+    );
     loop->update(dt, time, loop->context);
     tela_to_image(params.tela, frame_filename);
     frame_count++;
@@ -3563,7 +3560,15 @@ static inline void loop_to_video(Loop* loop, const char* filename, LoopVideoPara
   }
 
   char command[512];
-  snprintf(command, sizeof(command), "ffmpeg -y -framerate %u -i %s/frame_%%05d.png -c:v libx264 -pix_fmt yuv420p %s", params.fps, temp_dir, filename);
+  snprintf(
+      command,
+      sizeof(command),
+      "ffmpeg -y -framerate %u -i %s/frame_%%05d.png -c:v libx264 -pix_fmt "
+      "yuv420p %s",
+      params.fps,
+      temp_dir,
+      filename
+  );
   printf("Executing command: %s\n", command);
   int ret = system(command);
   if (ret == 0) {
@@ -5006,7 +5011,7 @@ Color render_miss_scene(Ray ray, void* context) {
   SceneHit hit =
       intersect_scene(scene, build_ray(ray.init, directional_light->direction));
   if (hit.hit) {
-    return lerp_color(sky_color, COLOR_BLACK, 0.5f); // in shadow
+    return lerp_color(sky_color, COLOR_BLACK, 0.5f);  // in shadow
   }
 
   // 1. Clamp to 0 so we don't get artifacts behind the camera
@@ -5096,12 +5101,10 @@ Color ray_trace_lambda(Ray ray, void* context) {
     Vec3 new_dir = add_vec3(ray.dir, epsilon_ortho);
     new_dir = normalize_vec3(new_dir);
     Ray jittered_ray = build_ray(ray.init, new_dir);
-    Color sample_color = trace_ray_scene(jittered_ray, ray_trace_inputs, bounces);
+    Color sample_color =
+        trace_ray_scene(jittered_ray, ray_trace_inputs, bounces);
     sample_color = clamp_color(sample_color, 0.0f, max_sample_value);
-    accumulated_color = add_color(
-        accumulated_color,
-        sample_color
-    );
+    accumulated_color = add_color(accumulated_color, sample_color);
   }
   return gamma_color(scale_color(accumulated_color, inv_samples), gamma);
 }
