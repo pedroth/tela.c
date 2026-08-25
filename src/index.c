@@ -3629,14 +3629,58 @@ static inline void transform_mouse_coordinates(
   out[1] = transformed_y;
 }
 
+static inline void resize_window(Window* window, i32 new_width, i32 new_height) {
+  if (!window || new_width <= 0 || new_height <= 0) {
+    return;
+  }
+
+  if (window->width == new_width && window->height == new_height) {
+    return;
+  }
+
+  u32* new_pixels =
+      (u32*)malloc((size_t)new_width * (size_t)new_height * sizeof(u32));
+  if (!new_pixels) {
+    return;
+  }
+
+  free(window->pixels);
+  window->pixels = new_pixels;
+  window->width = new_width;
+  window->height = new_height;
+
+  if (window->texture) {
+    SDL_DestroyTexture(window->texture);
+    window->texture = NULL;
+  }
+
+  window->texture = SDL_CreateTexture(
+      window->renderer,
+      SDL_PIXELFORMAT_RGBA8888,
+      SDL_TEXTUREACCESS_STREAMING,
+      window->width,
+      window->height
+  );
+  if (!window->texture) {
+    fprintf(stderr, "Window resize failed: %s\n", SDL_GetError());
+  }
+}
+
 static inline void process_window_events(Window* window) {
   SDL_Event event;
   while (SDL_PollEvent(&event)) {
-    if (event.type == SDL_QUIT ||
-        (event.type == SDL_WINDOWEVENT &&
-         event.window.event == SDL_WINDOWEVENT_CLOSE)) {
+    if (event.type == SDL_QUIT) {
       if (window->on_close_callback) {
         window->on_close_callback(window, window->on_close_context);
+      }
+    } else if (event.type == SDL_WINDOWEVENT) {
+      if (event.window.event == SDL_WINDOWEVENT_CLOSE) {
+        if (window->on_close_callback) {
+          window->on_close_callback(window, window->on_close_context);
+        }
+      } else if (event.window.event == SDL_WINDOWEVENT_RESIZED ||
+                 event.window.event == SDL_WINDOWEVENT_SIZE_CHANGED) {
+        resize_window(window, event.window.data1, event.window.data2);
       }
     } else if (event.type == SDL_MOUSEBUTTONDOWN) {
       if (window->on_mouse_down_callback) {
@@ -3736,7 +3780,7 @@ static inline Window* new_window(i32 width, i32 height, const char* title) {
       SDL_WINDOWPOS_CENTERED,
       width,
       height,
-      SDL_WINDOW_SHOWN
+      SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE
   );
   SDL_Renderer* renderer =
       SDL_CreateRenderer(sdl_window, -1, SDL_RENDERER_ACCELERATED);
