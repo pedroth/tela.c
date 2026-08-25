@@ -1,8 +1,14 @@
 /**
- * SDF Test Window
- *
- * A raymarching demo that renders a morphing torus-cube using signed distance
- * functions. Features interactive orbit camera controls via mouse.
+* * @file meshes_test.c
+  * @brief Test application for rendering 3D meshes with textures.
+  *
+  * This application loads and renders various 3D meshes from OBJ files,
+  * allowing the user to switch between them using the left and right arrow keys.
+  * The user can also rotate the camera around the mesh by clicking and dragging
+  * the mouse, and zoom in/out using the mouse scroll wheel.
+  *
+  * The application uses a simple rasterization pipeline to render the meshes
+  * onto a window, displaying the current mesh name and FPS in the window title.
  */
 
 #include "../src/index.c"
@@ -34,6 +40,7 @@ static const MeshEntry MESH_TABLE[] = {
     { "./assets/burger.obj",       "./assets/burger.jpg"     },
     { "./assets/JesusMary.obj",    "./assets/JesusMary.jpg"  },
     { "./assets/little_tokyo.obj", "./assets/little_tokyo.jpg" },
+    { "./assets/chess_set_4k.obj", "./assets/chess_set_4k.png" },
     // { "./assets/moses.obj", NULL },
     // { "./assets/dragonHD.obj", NULL },
 };

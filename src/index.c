@@ -3629,14 +3629,57 @@ static inline void transform_mouse_coordinates(
   out[1] = transformed_y;
 }
 
+static inline void resize_window(Window* window, i32 new_width, i32 new_height) {
+  if (!window || !window->sdl_window || new_width <= 0 || new_height <= 0) {
+    return;
+  }
+
+  if (new_width == window->width && new_height == window->height) {
+    return;
+  }
+
+  u32* resized_pixels = (u32*)realloc(
+      window->pixels, (size_t)new_width * (size_t)new_height * sizeof(u32)
+  );
+  if (!resized_pixels) {
+    return;
+  }
+
+  window->pixels = resized_pixels;
+  window->width = new_width;
+  window->height = new_height;
+
+  SDL_Texture* resized_texture = SDL_CreateTexture(
+      window->renderer,
+      SDL_PIXELFORMAT_RGBA8888,
+      SDL_TEXTUREACCESS_STREAMING,
+      window->width,
+      window->height
+  );
+  if (resized_texture) {
+    SDL_DestroyTexture(window->texture);
+    window->texture = resized_texture;
+  }
+}
+
 static inline void process_window_events(Window* window) {
   SDL_Event event;
   while (SDL_PollEvent(&event)) {
-    if (event.type == SDL_QUIT ||
-        (event.type == SDL_WINDOWEVENT &&
-         event.window.event == SDL_WINDOWEVENT_CLOSE)) {
+    if (event.type == SDL_QUIT) {
       if (window->on_close_callback) {
         window->on_close_callback(window, window->on_close_context);
+      }
+    } else if (event.type == SDL_WINDOWEVENT) {
+      if (event.window.event == SDL_WINDOWEVENT_RESIZED ||
+          event.window.event == SDL_WINDOWEVENT_SIZE_CHANGED) {
+        i32 new_width = 0;
+        i32 new_height = 0;
+        SDL_GetWindowSize(window->sdl_window, &new_width, &new_height);
+        resize_window(window, new_width, new_height);
+      } else if (event.window.event == SDL_WINDOWEVENT_CLOSE) {
+        if (window->on_close_callback) {
+          window->on_close_callback(window, window->on_close_context);
+        }
       }
     } else if (event.type == SDL_MOUSEBUTTONDOWN) {
       if (window->on_mouse_down_callback) {
@@ -3736,8 +3779,9 @@ static inline Window* new_window(i32 width, i32 height, const char* title) {
       SDL_WINDOWPOS_CENTERED,
       width,
       height,
-      SDL_WINDOW_SHOWN
+      SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE
   );
+  SDL_SetWindowResizable(sdl_window, SDL_TRUE);
   SDL_Renderer* renderer =
       SDL_CreateRenderer(sdl_window, -1, SDL_RENDERER_ACCELERATED);
   SDL_Texture* texture = SDL_CreateTexture(
