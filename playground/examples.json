@@ -85,6 +85,11 @@
         "video": "playground/media/bunny_explode.mp4"
     },
     {
+        "title": "Flag physics",
+        "thumbnail": "playground/media/flag.png",
+        "video": "playground/media/flag.mp4"
+    },
+    {
         "title": "SDF editor",
         "thumbnail": "playground/media/sdf_editor.png",
         "video": "playground/media/sdf_editor.mp4"

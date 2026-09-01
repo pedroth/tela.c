@@ -3594,6 +3594,7 @@ struct Window {
   SDL_Renderer* renderer;
   SDL_Texture* texture;
   u32* pixels;
+  Tela* active_tela;
   void (*on_close_callback)(Window* window, void* context);
   void* on_close_context;
 
@@ -3623,10 +3624,17 @@ struct Window {
 static inline void transform_mouse_coordinates(
     Window* window, i32 x, i32 y, i32 out[2]
 ) {
-  i32 transformed_x = x;
-  i32 transformed_y = window->height - 1 - y;
-  out[0] = transformed_x;
-  out[1] = transformed_y;
+  i32 canvas_w = (window && window->active_tela) ? (i32)window->active_tela->width : window->width;
+  i32 canvas_h = (window && window->active_tela) ? (i32)window->active_tela->height : window->height;
+
+  i32 win_w = (window && window->width > 0) ? window->width : 1;
+  i32 win_h = (window && window->height > 0) ? window->height : 1;
+
+  i32 scaled_x = (i32)((f32)x * (f32)canvas_w / (f32)win_w);
+  i32 scaled_y = (i32)((f32)y * (f32)canvas_h / (f32)win_h);
+
+  out[0] = scaled_x;
+  out[1] = canvas_h - 1 - scaled_y;
 }
 
 static inline void resize_window(Window* window, i32 new_width, i32 new_height) {
@@ -3751,6 +3759,7 @@ static inline Window* new_window(i32 width, i32 height, const char* title) {
   window->height = height;
   window->title = (char*)malloc(strlen(title) + 1);
   window->pixels = (u32*)malloc(width * height * sizeof(u32));
+  window->active_tela = NULL;
   strcpy(window->title, title);
 
   // Initialize callbacks to NULL
@@ -3809,6 +3818,8 @@ static inline Window* paint_window(Window* window, Tela* tela) {
   if (!window || !window->sdl_window || !tela || !tela->image) {
     return window;
   }
+
+  window->active_tela = tela;
 
   process_window_events(window);
 

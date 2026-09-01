@@ -55,6 +55,13 @@
         return `gcc -O3 -fopenmp -o app ${source} -lSDL2 -lm && ./app`;
     }
 
+    function getFasterCompileCommand(example) {
+        const mediaPath = (example && example.video) || (example && example.thumbnail);
+        const source = getSourceFile(mediaPath);
+        if (!source) return "";
+        return `gcc -O3 -fopenmp -ffast-math -o app ${source} -lSDL2 -lm -march=native && ./app`;
+    }
+
     function removeHashFromURL() {
         const url = window.location.href;
         if (url.includes("#")) {
@@ -95,6 +102,9 @@
             }
             if (AppState.compileCode) {
                 AppState.compileCode.element.textContent = getCompileCommand(example);
+            }
+            if (AppState.fasterCompileCode) {
+                AppState.fasterCompileCode.element.textContent = getFasterCompileCommand(example);
             }
         });
         return DOM.of("div")
@@ -151,6 +161,7 @@
         const selectedExample = AppState.examples.find(e => e.title === selectedTitle) || AppState.examples[0];
         const mediaTag = createMediaTag(selectedExample);
         AppState.mediaTag = mediaTag;
+
         const compileCode = DOM.of("code")
             .style("display: block; background: #111; color: #0f0; padding: 0.75rem 1rem; border-radius: 0.5rem; font-size: 0.9rem; white-space: pre-wrap; word-break: break-all; user-select: all;")
             .inner(getCompileCommand(selectedExample));
@@ -163,8 +174,22 @@
                     .inner("Compile & run:"),
                 compileCode
             );
+
+        const fasterCompileCode = DOM.of("code")
+            .style("display: block; background: #111; color: #0f0; padding: 0.75rem 1rem; border-radius: 0.5rem; font-size: 0.9rem; white-space: pre-wrap; word-break: break-all; user-select: all;")
+            .inner(getFasterCompileCommand(selectedExample));
+        AppState.fasterCompileCode = fasterCompileCode;
+        const fasterCompileSection = DOM.of("div")
+            .style("margin-top: 0.5rem;")
+            .appendChild(
+                DOM.of("span")
+                    .style("font-size: 0.95rem; color: var(--text-color); opacity: 0.8;")
+                    .inner("Faster compile:"),
+                fasterCompileCode
+            );
+
         const container = DOM.of("div")
-            .appendChild(mediaTag, compileSection)
+            .appendChild(mediaTag, compileSection,fasterCompileSection)
             .addClass("grow margin flex")
             .style("flex-direction: column;");
         AppState.outputContainer = container;
