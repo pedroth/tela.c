@@ -1620,6 +1620,7 @@ typedef struct {
   f32 (*distance_on_ray)(Scene* self, Ray ray, f32 (*my_min)(f32, f32));
   void (*debug)(Scene* self, void* props);
   Array* (*get_elems)(Scene* self);
+  SceneElem* (*get_elem_near)(Scene* self, Vec3 point);
   void (*free_scene)(Scene* self);
   Scene* (*rebuild_scene)(Scene* self);
 } SceneVTable;
@@ -1666,6 +1667,10 @@ static inline void debug_scene(Scene* s, void* props) {
 }
 static inline Array* get_scene_elems_scene(Scene* s) {
   return s->vtable->get_elems(s);
+}
+/* Port of tela.js getElementsNear(p): returns the scene's approximate nearest element. */
+static inline SceneElem* get_elem_near_scene(Scene* s, Vec3 point) {
+  return s->vtable->get_elem_near(s, point);
 }
 static inline void free_scene(Scene* s) {
   s->vtable->free_scene(s);
@@ -1877,6 +1882,21 @@ static f32 _naive_distance_to_point(
 ) {
   return distance_to_point_naive_scene((NaiveScene*)self->data, point, my_min);
 }
+/* Port of JS NaiveScene.getElementsNear: exhaustive argmin over all elements. */
+static SceneElem* _naive_get_elem_near(Scene* self, Vec3 point) {
+  NaiveScene* ns = (NaiveScene*)self->data;
+  SceneElem* nearest = NULL;
+  f32 best_dist = INFINITY;
+  for (u32 i = 0; i < ns->elems.length; i++) {
+    SceneElem* elem = (SceneElem*)get_array_element(&ns->elems, i);
+    f32 d = distance_to_point_scene_elem(elem, point);
+    if (d < best_dist) {
+      best_dist = d;
+      nearest = elem;
+    }
+  }
+  return nearest;
+}
 static f32 _naive_distance_on_ray(
     Scene* self, Ray ray, f32 (*my_min)(f32, f32)
 ) {
@@ -1913,6 +1933,7 @@ static const SceneVTable NAIVE_SCENE_VTABLE = {
   .distance_on_ray = _naive_distance_on_ray,
   .debug = _naive_debug,
   .get_elems = _naive_get_elems,
+  .get_elem_near = _naive_get_elem_near,
   .free_scene = _naive_free_scene,
   .rebuild_scene = _naive_rebuild_scene
 };
@@ -2282,6 +2303,90 @@ static f32 distance_to_point_node_k_scene(NodeKScene* node, Vec3 point) {
   return distance_to_point_scene_elem(elem, point);
 }
 
+/**
+ * Queue entry for the KScene best-first nearest-element search.
+ * Either a pending subtree (node set) or a single resolved element (elem set).
+ */
+typedef struct {
+  NodeKScene* node;
+  SceneElem* elem;
+  f32 distance;
+} KSceneNearEntry;
+
+static f32 _kscene_near_entry_comparator(void* a, void* b, void* ctx) {
+  (void)ctx;
+  return ((KSceneNearEntry*)a)->distance - ((KSceneNearEntry*)b)->distance;
+}
+
+static KSceneNearEntry* _new_kscene_near_node_entry(NodeKScene* node, Vec3 point) {
+  KSceneNearEntry* entry = (KSceneNearEntry*)malloc(sizeof(KSceneNearEntry));
+  entry->node = node;
+  entry->elem = NULL;
+  entry->distance = distance_aabb(&node->box, point);
+  return entry;
+}
+
+static KSceneNearEntry* _new_kscene_near_elem_entry(SceneElem* elem, Vec3 point) {
+  KSceneNearEntry* entry = (KSceneNearEntry*)malloc(sizeof(KSceneNearEntry));
+  AABB box = get_bounding_box_scene_elem(elem);
+  entry->node = NULL;
+  entry->elem = elem;
+  entry->distance = distance_aabb(&box, point);
+  return entry;
+}
+
+/**
+ * Best-first nearest-element search over the KScene BVH.
+ * Port of JS KScene.getElementsNear's internal-node branch (uses a priority
+ * queue over box.distanceToPoint lower bounds, unlike Node.getElementsNear's
+ * unbacktracked greedy descent).
+ */
+static SceneElem* get_elem_near_kscene_search(NodeKScene* root, Vec3 point) {
+  if (!root->left || !root->right)
+    return NULL;
+
+  PQueue pq;
+  pq.data = new_array(16, sizeof(void*));
+  pq.comparator_function = _kscene_near_entry_comparator;
+  pq.priority_ctx = NULL;
+
+  push_pqueue(&pq, _new_kscene_near_node_entry(root->left, point));
+  push_pqueue(&pq, _new_kscene_near_node_entry(root->right, point));
+
+  SceneElem* result = NULL;
+  while (length_pqueue(&pq) > 0) {
+    KSceneNearEntry* entry = (KSceneNearEntry*)pop_pqueue(&pq);
+
+    if (entry->elem) {
+      result = entry->elem;
+      free(entry);
+      break;
+    }
+
+    NodeKScene* node = entry->node;
+    free(entry);
+
+    if (node->is_leaf) {
+      for (u32 i = 0; i < node->elems.length; i++) {
+        SceneElem* elem = (SceneElem*)get_array_element(&node->elems, i);
+        push_pqueue(&pq, _new_kscene_near_elem_entry(elem, point));
+      }
+    } else {
+      if (node->left)
+        push_pqueue(&pq, _new_kscene_near_node_entry(node->left, point));
+      if (node->right)
+        push_pqueue(&pq, _new_kscene_near_node_entry(node->right, point));
+    }
+  }
+
+  while (length_pqueue(&pq) > 0) {
+    free(pop_pqueue(&pq));
+  }
+  free_array(&pq.data);
+
+  return result;
+}
+
 static f32 distance_on_ray_node_k_scene(
     NodeKScene* node, Ray ray, f32 (*my_min)(f32, f32)
 ) {
@@ -2385,6 +2490,23 @@ static SceneHit intersect_kscene(KScene* ks, Ray ray) {
   return intersect_node_k_scene(ks->root, ray);
 }
 
+/**
+ * Port of JS KScene.getElementsNear(p).
+ */
+static SceneElem* get_elem_near_kscene(KScene* ks, Vec3 point) {
+  if (!ks->root)
+    return NULL;
+  if (ks->root->is_leaf)
+    return get_elem_near_node_k_scene(ks->root, point);
+  return get_elem_near_kscene_search(ks->root, point);
+}
+
+/**
+ * Port of JS KScene.distanceToPoint(p, combineLeafs): when the root hasn't
+ * split, combine leaf distances directly; otherwise delegate to the
+ * best-first getElementsNear(p) search (combineLeafs is unused in that case,
+ * matching tela.js).
+ */
 static f32 distance_to_point_kscene(
     KScene* ks, Vec3 point, f32 (*my_min)(f32, f32)
 ) {
@@ -2392,7 +2514,10 @@ static f32 distance_to_point_kscene(
     return INFINITY;
   if (ks->root->is_leaf)
     return distance_from_leaf_elems_node_k_scene(ks->root, point, my_min);
-  return distance_to_point_node_k_scene(ks->root, point);
+  SceneElem* elem = get_elem_near_kscene(ks, point);
+  if (!elem)
+    return INFINITY;
+  return distance_to_point_scene_elem(elem, point);
 }
 
 static Vec3 normal_to_point_kscene(
@@ -2671,6 +2796,9 @@ static f32 _kscene_distance_on_ray(
 static Array* _kscene_get_elems(Scene* self) {
   return get_scene_elems_kscene((KScene*)self->data);
 }
+static SceneElem* _kscene_get_elem_near(Scene* self, Vec3 point) {
+  return get_elem_near_kscene((KScene*)self->data, point);
+}
 static void _kscene_free_scene(Scene* self) {
   KScene* ks = (KScene*)self->data;
   free_kscene(ks);
@@ -2695,6 +2823,7 @@ static const SceneVTable KSCENE_VTABLE = {
   .distance_on_ray = _kscene_distance_on_ray,
   .debug = _kscene_debug,
   .get_elems = _kscene_get_elems,
+  .get_elem_near = _kscene_get_elem_near,
   .free_scene = _kscene_free_scene,
   .rebuild_scene = _kscene_rebuild_scene,
 };
