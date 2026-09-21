@@ -30,6 +30,11 @@
         "video": "playground/media/debug_ray_marching.mp4"
     },
     {
+        "title": "Debug scene nearest element",
+        "thumbnail": "playground/media/debug_distance_to_scene.png",
+        "video": "playground/media/debug_distance_to_scene.mp4"
+    },
+    {
         "title": "Glass",
         "thumbnail": "playground/media/glass.png",
         "video": "playground/media/glass.mp4"
