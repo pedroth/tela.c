@@ -10,6 +10,11 @@
         "video": "playground/media/amazing_shader.mp4"
     },
     {
+        "title": "Amazing shader 2",
+        "thumbnail": "playground/media/amazing_shader_2.png",
+        "video": "playground/media/amazing_shader_2.mp4"
+    },
+    {
         "title": "Black hole",
         "thumbnail": "playground/media/black_hole.png",
         "video": "playground/media/black_hole.mp4"
