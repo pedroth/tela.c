@@ -170,6 +170,11 @@
         "video": "playground/media/wave.mp4"
     },
     {
+        "title": "Mario physics",
+        "thumbnail": "playground/media/mario_physics.png",
+        "video": "playground/media/mario_physics.mp4"
+    },
+    {
         "title": "Glass sphere caustics",
         "thumbnail": "playground/media/cornell_box_video.png",
         "video": "playground/media/cornell_box_video.mp4"

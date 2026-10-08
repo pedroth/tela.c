@@ -62,6 +62,13 @@
         return `gcc -O3 -fopenmp -ffast-math -o app ${source} -lSDL2 -lm -march=native && ./app`;
     }
 
+    function getGithubSourceUrl(example) {
+        const mediaPath = (example && example.video) || (example && example.thumbnail);
+        const source = getSourceFile(mediaPath);
+        if (!source) return "#";
+        return `https://github.com/pedroth/tela.c/blob/main/${source}`;
+    }
+
     function removeHashFromURL() {
         const url = window.location.href;
         if (url.includes("#")) {
@@ -105,6 +112,11 @@
             }
             if (AppState.fasterCompileCode) {
                 AppState.fasterCompileCode.element.textContent = getFasterCompileCommand(example);
+            }
+            if (AppState.githubLink) {
+                const url = getGithubSourceUrl(example);
+                AppState.githubLink.element.href = url;
+                AppState.githubLink.element.textContent = url;
             }
         });
         return DOM.of("div")
@@ -188,8 +200,25 @@
                 fasterCompileCode
             );
 
+        const githubUrl = getGithubSourceUrl(selectedExample);
+        const githubLink = DOM.of("a")
+            .attr("href", githubUrl)
+            .attr("target", "_blank")
+            .attr("rel", "noopener noreferrer")
+            .style("display: block; word-break: break-all;")
+            .inner(githubUrl);
+        AppState.githubLink = githubLink;
+        const githubSection = DOM.of("div")
+            .style("margin-top: 0.5rem;")
+            .appendChild(
+                DOM.of("span")
+                    .style("font-size: 0.95rem; color: var(--text-color); opacity: 0.8;")
+                    .inner("Source code:"),
+                githubLink
+            );
+
         const container = DOM.of("div")
-            .appendChild(mediaTag, compileSection,fasterCompileSection)
+            .appendChild(mediaTag, compileSection, fasterCompileSection, githubSection)
             .addClass("grow margin flex")
             .style("flex-direction: column;");
         AppState.outputContainer = container;
