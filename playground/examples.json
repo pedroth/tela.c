@@ -170,6 +170,11 @@
         "video": "playground/media/wave.mp4"
     },
     {
+        "title": "Walk on spheres",
+        "thumbnail": "playground/media/walk_on_spheres.png",
+        "video": ""
+    },
+    {
         "title": "Mario physics",
         "thumbnail": "playground/media/mario_physics.png",
         "video": "playground/media/mario_physics.mp4"
