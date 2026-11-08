@@ -4967,7 +4967,7 @@ typedef struct {
 
 typedef struct {
   u32 samples_per_pixel;
-  u32 bounces;
+  i32 bounces;
   f32 variance;
   f32 gamma;
   bool bilinear_texture;
@@ -5198,8 +5198,8 @@ Color render_miss_scene(Ray ray, void* context) {
     return lerp_color(sky_color, COLOR_BLACK, 0.5f);  // in shadow
   }
 
-  // 1. Clamp to 0 so we don't get artifacts behind the camera
-  f32 dot = fmaxf(0, dot_vec3(directional_light->direction, ray.dir));
+  // Keep the sun interpolation bounded even for non-unit ray directions.
+  f32 dot = clamp(dot_vec3(directional_light->direction, ray.dir), 0.0f, 1.0f);
 
   // 2. Use a high exponent for the sharp sun disk
   // At dot = 0, sunIntensity is 0. No "if" needed.
@@ -5210,14 +5210,14 @@ Color render_miss_scene(Ray ray, void* context) {
   return lerp_color(sky_color, COLOR_WHITE, sun_intensity);
 }
 
-Color trace_ray_scene(Ray ray, RayTraceLambdaInput* input, u32 bounces) {
+Color trace_ray_scene(Ray ray, RayTraceLambdaInput* input, i32 bounces) {
   Scene* scene = input->scene;
   RaytraceParams* params = input->params;
   Color (*render_background)(Ray, void*) = params->render_background;
   void* render_background_context = params->render_background_context;
   bool bilinear_texture = params->bilinear_texture;
 
-  if (bounces == 0) {
+  if (bounces < 0) {
     return render_miss_scene(ray, input);
   }
 
@@ -5266,7 +5266,7 @@ Color ray_trace_lambda(Ray ray, void* context) {
   RayTraceLambdaInput* ray_trace_inputs = (RayTraceLambdaInput*)context;
   RaytraceParams* params = ray_trace_inputs->params;
   u32 samples = params->samples_per_pixel;
-  u32 bounces = params->bounces;
+  i32 bounces = params->bounces;
   f32 variance = params->variance;
   f32 gamma = params->gamma;
   bool bilinear_texture = params->bilinear_texture;

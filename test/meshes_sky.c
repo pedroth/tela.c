@@ -154,7 +154,7 @@ static Material material_from_index(i32 index) {
     case 1:
       return build_metallic_material(0.1f);
     case 2:
-      return build_dielectric_material(1.5f);
+      return build_dielectric_material(1.333f);
     case 3:
       return build_alpha_material(0.5f);
     case 4:
