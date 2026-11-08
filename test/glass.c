@@ -1,8 +1,9 @@
 /**
  * Glass Cornell Box
  *
- * A path-traced Cornell box scene with a glass (dielectric) Stanford bunny mesh.
- * Features interactive orbit camera controls via mouse.
+ * A path-traced Cornell box scene with switchable bunny and crystal glass meshes.
+ * Features interactive orbit camera controls via mouse and mesh selection via
+ * the left/right arrow keys.
  *
  * Compile with:
  * gcc -O3 -fopenmp -o glass test/glass.c -lSDL2 -lm
@@ -20,6 +21,48 @@
 static const u32 WIDTH = 640 / 2;
 static const u32 HEIGHT = 480 / 2;
 
+typedef struct {
+    Vec3 center;
+    f32 scale_inv;
+} FirstTransformContext;
+
+typedef Vec3 (*VertexTransform)(Vec3, void*);
+
+static Vec3 first_transform(Vec3 v, void* ctx);
+static Vec3 second_transform(Vec3 v, void* ctx);
+static Vec3 third_transform(Vec3 v, void* ctx);
+static Vec3 fourth_transform(Vec3 v, void* ctx);
+
+static const VertexTransform BUNNY_TRANSFORMS[] = {
+    first_transform, second_transform, third_transform, fourth_transform,
+};
+
+static const VertexTransform CRYSTAL_GLASS_TRANSFORMS[] = {
+    first_transform, fourth_transform,
+};
+
+typedef struct {
+    const char* name;
+    const char* mesh_path;
+    const VertexTransform* transforms;
+    u32 transform_count;
+} MeshEntry;
+
+static const MeshEntry MESH_TABLE[] = {
+    {
+        "Bunny", "./assets/bunny_orig.obj", BUNNY_TRANSFORMS,
+        sizeof(BUNNY_TRANSFORMS) / sizeof(BUNNY_TRANSFORMS[0]),
+    },
+    {
+        "Crystal Glass", "./assets/crystal_glass.obj",
+        CRYSTAL_GLASS_TRANSFORMS,
+        sizeof(CRYSTAL_GLASS_TRANSFORMS) /
+            sizeof(CRYSTAL_GLASS_TRANSFORMS[0]),
+    },
+};
+
+static const u32 MESH_COUNT = sizeof(MESH_TABLE) / sizeof(MESH_TABLE[0]);
+
 /* =============================================================================
  * Types
  * ========================================================================== */
@@ -29,6 +72,8 @@ typedef struct {
     Window* window;
     Camera* camera;
     Scene* scene;
+    i32 current_mesh;
+    i32 pending_mesh;
 } App;
 
 /* =============================================================================
@@ -37,6 +82,8 @@ typedef struct {
 
 static bool g_mouse_down = false;
 static Vec2 g_mouse_pos = { 0 };
+
+static void build_scene(Scene* scene, i32 mesh_index);
 
 /* =============================================================================
  * Animation / Render Loop
@@ -51,6 +98,14 @@ static void on_frame(f32 dt, f32 time, void* ctx) {
     Scene* scene = app->scene;
     Camera* camera = app->camera;
     Tela* exposed = app->tela;
+
+    if (app->pending_mesh != app->current_mesh) {
+        clear_scene_elems_scene(scene);
+        build_scene(scene, app->pending_mesh);
+        scene->vtable->rebuild_scene(scene);
+        app->current_mesh = app->pending_mesh;
+        exposed->iterations = 1;
+    }
 
     RaytraceParams params = {
       .samples_per_pixel = 3,
@@ -67,7 +122,10 @@ static void on_frame(f32 dt, f32 time, void* ctx) {
     ray_trace_scene_parallel(scene, &params);
 
     set_window_title(app->window,
-        format_string("Glass Cornell Box | FPS: %.2f", 1.0f / dt));
+        format_string(
+            "Glass Cornell Box | %s | Left/Right: change meshes | FPS: %.2f",
+            MESH_TABLE[app->current_mesh].name, 1.0f / dt
+        ));
     paint_window(app->window, app->tela);
 }
 
@@ -119,11 +177,24 @@ static void on_mouse_scroll(Window* w, i32 delta_y, void* ctx) {
   exposed->iterations = 1;
 }
 
+static void on_key_down(Window* w, u32 keycode, void* ctx) {
+    (void)w;
+    App* app = (App*)ctx;
+
+    if (keycode == SDLK_RIGHT) {
+        app->pending_mesh = (app->pending_mesh + 1) % MESH_COUNT;
+    } else if (keycode == SDLK_LEFT) {
+        app->pending_mesh =
+            (app->pending_mesh - 1 + MESH_COUNT) % MESH_COUNT;
+    }
+}
+
 static void register_input_handlers(Window* window, App* app) {
     on_mouse_down_window(window, on_mouse_down, app);
     on_mouse_up_window(window, on_mouse_up, app);
     on_mouse_move_window(window, on_mouse_move, app);
     on_mouse_scroll_window(window, on_mouse_scroll, app);
+    on_key_down_window(window, on_key_down, app);
 }
 
 /* =============================================================================
@@ -140,11 +211,6 @@ static RasterTriangleProps* new_tri_props(Color c, Material* mat) {
     p->material = mat;
     return p;
 }
-
-typedef struct {
-    Vec3 center;
-    f32 scale_inv;
-} FirstTransformContext;
 
 Vec3 first_transform(Vec3 v, void* ctx) {
     Vec3 center = ((FirstTransformContext*)ctx)->center;
@@ -176,7 +242,7 @@ Material glass_material_mapper(Face face, void* ctx) {
     return mat;
 }
 
-static void build_scene(Scene* scene) {
+static void build_scene(Scene* scene, i32 mesh_index) {
     // Materials
     Material* mat_diffuse = (Material*)malloc(sizeof(Material));
     *mat_diffuse = build_diffuse_material();
@@ -184,28 +250,30 @@ static void build_scene(Scene* scene) {
     Material* mat_emissive = (Material*)malloc(sizeof(Material));
     *mat_emissive = build_emissive_material();
 
-    // Load and process bunny mesh
-    String obj = io_read_file("./assets/bunny_orig.obj");
-    Mesh bunny_mesh = read_obj_mesh(obj, "bunny");
+    const MeshEntry* mesh_entry = &MESH_TABLE[mesh_index];
+    String obj = io_read_file(mesh_entry->mesh_path);
+    Mesh mesh = read_obj_mesh(obj, "glass");
 
-    AABB bunny_box = get_bounding_box_mesh(&bunny_mesh);
-    f32 max_diag_inv = 2.0f / max_comp_vec3(bunny_box.diagonal);
+    AABB box = get_bounding_box_mesh(&mesh);
+    f32 max_diag_inv = 2.0f / max_comp_vec3(box.diagonal);
+    FirstTransformContext normalize_context = {
+        .center = box.center,
+        .scale_inv = max_diag_inv,
+    };
 
-    // Transform mesh: center, scale, rotate, translate
-    map_vertices_mesh(&bunny_mesh, first_transform,
-        &(FirstTransformContext){.center = bunny_box.center, .scale_inv = max_diag_inv });
-    map_vertices_mesh(&bunny_mesh, second_transform, NULL);
-    map_vertices_mesh(&bunny_mesh, third_transform, NULL);
-    map_vertices_mesh(&bunny_mesh, fourth_transform, NULL);
+    for (u32 i = 0; i < mesh_entry->transform_count; i++) {
+        void* context = i == 0 ? &normalize_context : NULL;
+        map_vertices_mesh(&mesh, mesh_entry->transforms[i], context);
+    }
 
     // Set colors and materials
-    map_colors_mesh(&bunny_mesh, white_color_mapper, NULL);
-    map_triangles_materials_mesh(&bunny_mesh, glass_material_mapper, NULL);
+    map_colors_mesh(&mesh, white_color_mapper, NULL);
+    map_triangles_materials_mesh(&mesh, glass_material_mapper, NULL);
 
     // Add triangles to scene
-    Array bunny_elems = triangles_to_scene_elems(get_triangles_mesh(&bunny_mesh));
-    add_scene_elems_scene(scene, bunny_elems);
-    free_array(&bunny_elems);
+    Array mesh_elems = triangles_to_scene_elems(get_triangles_mesh(&mesh));
+    add_scene_elems_scene(scene, mesh_elems);
+    free_array(&mesh_elems);
 
     // Build Cornell Box walls
 
@@ -289,18 +357,20 @@ int main(void) {
     Camera camera = create_camera(vec3(3.0f, 0.0f, 0.0f), vec3(1.5f, 1.5f, 1.5f), 1.0f);
     set_orbit_camera(&camera, 3.0f, 0.0f, 0.0f);
 
-    // Build scene
     Scene scene = new_kscene(10);
-    build_scene(&scene);
-    scene.vtable->rebuild_scene(&scene); // force build before rendering
 
     // Application state
     App app = {
       .tela = tela,
       .window = window,
       .camera = &camera,
-      .scene = &scene
+      .scene = &scene,
+      .current_mesh = 0,
+      .pending_mesh = 0
     };
+
+    build_scene(&scene, app.current_mesh);
+    scene.vtable->rebuild_scene(&scene); // force build before rendering
 
     // Animation loop
     Loop* animation = loop(on_frame, &app);
