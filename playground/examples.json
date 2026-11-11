@@ -105,6 +105,11 @@
         "video": "playground/media/fluid.mp4"
     },
     {
+        "title": "Fluid 3D",
+        "thumbnail": "playground/media/fluid_3d.png",
+        "video": "playground/media/fluid_3d.mp4"
+    },
+    {
         "title": "SDF editor",
         "thumbnail": "playground/media/sdf_editor.png",
         "video": "playground/media/sdf_editor.mp4"
